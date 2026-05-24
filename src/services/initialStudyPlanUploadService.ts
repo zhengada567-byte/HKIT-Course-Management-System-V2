@@ -849,7 +849,7 @@ function detectDegreeUploadFormat(row: ParsedExcelRow): DegreeUploadFormat | nul
   return null;
 }
 
-function buildBridgingCatalogByModuleCode(options: StudyPlanModule[]) {
+function buildCatalogByModuleCode(options: StudyPlanModule[]) {
   const map = new Map<string, StudyPlanModule>();
 
   for (const option of options) {
@@ -879,12 +879,16 @@ function buildBridgingCatalogByModuleCode(options: StudyPlanModule[]) {
   return map;
 }
 
-function buildBridgingModulesFromModulePairs(
+function buildDegreeModulesFromModulePairs(
   row: ParsedExcelRow,
   student: StudyPlanStudent,
   bridgingOptions: StudyPlanModule[],
+  degreeProgrammeModules: StudyPlanModule[],
   warnings: InitialStudyPlanUploadWarning[]
-): StudyPlanModule[] {
+): {
+  bridgingModules: StudyPlanModule[];
+  programmeModulesFromImport: StudyPlanModule[];
+} {
   const pairResult = buildModulesFromModulePairs(row, student, warnings);
 
   if (!pairResult.usedPairFormat) {
@@ -893,18 +897,16 @@ function buildBridgingModulesFromModulePairs(
     );
   }
 
-  const catalogByCode = buildBridgingCatalogByModuleCode(bridgingOptions);
-  const result: StudyPlanModule[] = [];
+  const degreeCatalogByCode = buildCatalogByModuleCode(degreeProgrammeModules);
+  const bridgingCatalogByCode = buildCatalogByModuleCode(bridgingOptions);
+
+  const bridgingModules: StudyPlanModule[] = [];
+  const programmeModulesFromImport: StudyPlanModule[] = [];
 
   for (const parsed of pairResult.modules) {
     const moduleCode = normalizeModuleCode(parsed.moduleCode);
-    const matched = catalogByCode.get(moduleCode);
-
-    if (!matched) {
-      throw new Error(
-        `Student ${student.studentId}: Module ${moduleCode} is not allowed by articulation setting.`
-      );
-    }
+    const degreeMatch = degreeCatalogByCode.get(moduleCode);
+    const bridgingMatch = bridgingCatalogByCode.get(moduleCode);
 
     if (parsed.status === "planned" && !parsed.studyTerm) {
       throw new Error(
@@ -912,21 +914,47 @@ function buildBridgingModulesFromModulePairs(
       );
     }
 
-    result.push({
-      ...matched,
-      id: undefined,
-      studentId: student.studentId,
-      studentProfileId: student.id,
-      planStage: "bridging",
-      status: parsed.status ?? "planned",
-      studyTerm: parsed.studyTerm,
-      isExempted: parsed.status === "exempted",
-      isFailed: false,
-      isLocked: false,
-    });
+    if (degreeMatch) {
+      programmeModulesFromImport.push({
+        ...degreeMatch,
+        id: undefined,
+        studentId: student.studentId,
+        studentProfileId: student.id,
+        planStage: "programme",
+        status: parsed.status ?? "planned",
+        studyTerm: parsed.studyTerm,
+        isExempted: parsed.status === "exempted",
+        isFailed: parsed.status === "failed",
+        isLocked: false,
+      });
+      continue;
+    }
+
+    if (bridgingMatch) {
+      bridgingModules.push({
+        ...bridgingMatch,
+        id: undefined,
+        studentId: student.studentId,
+        studentProfileId: student.id,
+        planStage: "bridging",
+        status: parsed.status ?? "planned",
+        studyTerm: parsed.studyTerm,
+        isExempted: parsed.status === "exempted",
+        isFailed: parsed.status === "failed",
+        isLocked: false,
+      });
+      continue;
+    }
+
+    throw new Error(
+      `Student ${student.studentId}: Module ${moduleCode} is not part of this degree programme or its articulated bridging modules.`
+    );
   }
 
-  return result;
+  return {
+    bridgingModules,
+    programmeModulesFromImport,
+  };
 }
 
 async function buildGroupedDegreePlans(
@@ -1038,45 +1066,9 @@ async function buildGroupedDegreePlans(
 
     const rowRecord = parsedRowToRecord(row);
 
-    let bridgingModules: StudyPlanModule[];
-
-    try {
-      if (uploadFormat === "bridging_columns") {
-        bridgingModules = buildBridgingModulesFromUploadRow({
-          row: rowRecord,
-          bridgingOptions,
-          student: studentWithType,
-        });
-      } else {
-        bridgingModules = buildBridgingModulesFromModulePairs(
-          row,
-          studentWithType,
-          bridgingOptions,
-          warnings
-        );
-      }
-    } catch (error) {
-      errors.push({
-        row: row.rowNumber,
-        studentId: studentWithType.studentId,
-        message:
-          error instanceof Error
-            ? error.message
-            : "Failed to parse bridging modules from upload row.",
-      });
-      continue;
-    }
-
-    if (bridgingModules.length === 0) {
-      warnings.push({
-        row: row.rowNumber,
-        studentId: studentWithType.studentId,
-        message:
-          "No bridging modules found. Degree programme modules will start from intake term.",
-      });
-    }
-
-    let programmeModules: StudyPlanModule[];
+    let bridgingModules: StudyPlanModule[] = [];
+    let programmeModulesFromImport: StudyPlanModule[] = [];
+    let programmeModules: StudyPlanModule[] = [];
 
     try {
       programmeModules = await loadProgrammeModules(
@@ -1104,22 +1096,25 @@ async function buildGroupedDegreePlans(
       continue;
     }
 
-    const startTerm = getDegreeStartTermAfterBridging(
-      bridgingModules,
-      studentWithType.intakeTerm
-    );
-
-    let generatedProgrammeModules: StudyPlanModule[];
-
     try {
-      generatedProgrammeModules = generateStudyPlanForStudent({
-        student: studentWithType,
-        modules: programmeModules.map((module) => ({
-          ...module,
-          studentId: studentWithType.studentId,
-        })),
-        startTerm,
-      });
+      if (uploadFormat === "bridging_columns") {
+        bridgingModules = buildBridgingModulesFromUploadRow({
+          row: rowRecord,
+          bridgingOptions,
+          student: studentWithType,
+        });
+      } else {
+        const classified = buildDegreeModulesFromModulePairs(
+          row,
+          studentWithType,
+          bridgingOptions,
+          programmeModules,
+          warnings
+        );
+
+        bridgingModules = classified.bridgingModules;
+        programmeModulesFromImport = classified.programmeModulesFromImport;
+      }
     } catch (error) {
       errors.push({
         row: row.rowNumber,
@@ -1127,14 +1122,76 @@ async function buildGroupedDegreePlans(
         message:
           error instanceof Error
             ? error.message
-            : "Failed to generate degree programme study plan.",
+            : "Failed to parse degree study plan modules from upload row.",
       });
       continue;
     }
 
+    if (
+      uploadFormat === "module_pairs" &&
+      bridgingModules.length === 0 &&
+      programmeModulesFromImport.length === 0
+    ) {
+      warnings.push({
+        row: row.rowNumber,
+        studentId: studentWithType.studentId,
+        message:
+          "No valid module study term or exempted status found for this student.",
+      });
+      continue;
+    }
+
+    if (
+      uploadFormat === "bridging_columns" &&
+      bridgingModules.length === 0
+    ) {
+      warnings.push({
+        row: row.rowNumber,
+        studentId: studentWithType.studentId,
+        message:
+          "No bridging modules found. Degree programme modules will start from intake term.",
+      });
+    }
+
+    let allModules: StudyPlanModule[];
+
+    if (programmeModulesFromImport.length > 0) {
+      allModules = [...bridgingModules, ...programmeModulesFromImport];
+    } else {
+      const startTerm = getDegreeStartTermAfterBridging(
+        bridgingModules,
+        studentWithType.intakeTerm
+      );
+
+      let generatedProgrammeModules: StudyPlanModule[];
+
+      try {
+        generatedProgrammeModules = generateStudyPlanForStudent({
+          student: studentWithType,
+          modules: programmeModules.map((module) => ({
+            ...module,
+            studentId: studentWithType.studentId,
+          })),
+          startTerm,
+        });
+      } catch (error) {
+        errors.push({
+          row: row.rowNumber,
+          studentId: studentWithType.studentId,
+          message:
+            error instanceof Error
+              ? error.message
+              : "Failed to generate degree programme study plan.",
+        });
+        continue;
+      }
+
+      allModules = [...bridgingModules, ...generatedProgrammeModules];
+    }
+
     grouped.set(studentWithType.studentId, {
       student: studentWithType,
-      modules: [...bridgingModules, ...generatedProgrammeModules],
+      modules: allModules,
       rowNumber: row.rowNumber,
     });
   }

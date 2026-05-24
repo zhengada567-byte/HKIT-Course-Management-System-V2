@@ -2,6 +2,10 @@ import { useMemo, useState } from "react";
 
 import type { StudyPlanStudent } from "../types";
 import { deleteStudyPlanStudent } from "../../../../services/studyPlanService";
+import {
+  downloadStudyPlanCsv,
+  type StudyPlanExportScope,
+} from "../../../../services/studyPlanExportService";
 
 interface Props {
   students: StudyPlanStudent[];
@@ -25,6 +29,10 @@ export default function StudentListTab({
 }: Props) {
   const [selectedProgrammeCode, setSelectedProgrammeCode] = useState("");
   const [selectedProgrammeStream, setSelectedProgrammeStream] = useState("");
+  const [exportScope, setExportScope] =
+    useState<StudyPlanExportScope>("stream");
+  const [exportProgrammeType, setExportProgrammeType] = useState("Degree");
+  const [exporting, setExporting] = useState(false);
 
   const programmeCodes = useMemo(() => {
     return Array.from(
@@ -72,6 +80,63 @@ export default function StudentListTab({
 
     await deleteStudyPlanStudent(student.id);
     await onRefresh();
+  }
+
+  async function handleExportStudent(student: StudyPlanStudent) {
+    if (!student.id) return;
+
+    setExporting(true);
+
+    try {
+      const result = await downloadStudyPlanCsv({
+        scope: "student",
+        studentProfileId: student.id,
+      });
+
+      alert(`Exported ${result.rowCount} student study plan to ${result.fileName}.`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to export study plan.";
+
+      alert(`Export failed:\n\n${message}`);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleExport() {
+    if (exportScope === "stream") {
+      if (!selectedProgrammeCode || !selectedProgrammeStream) {
+        alert("Please select programme code and stream first.");
+        return;
+      }
+    }
+
+    if (exportScope === "programme" && !selectedProgrammeCode) {
+      alert("Please select programme code first.");
+      return;
+    }
+
+    setExporting(true);
+
+    try {
+      const result = await downloadStudyPlanCsv({
+        scope: exportScope,
+        programmeCode: selectedProgrammeCode || undefined,
+        programmeStream: selectedProgrammeStream || undefined,
+        programmeType:
+          exportScope === "programme_type" ? exportProgrammeType : undefined,
+      });
+
+      alert(`Exported ${result.rowCount} student study plan(s) to ${result.fileName}.`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to export study plan.";
+
+      alert(`Export failed:\n\n${message}`);
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -176,6 +241,63 @@ export default function StudentListTab({
         </div>
       </div>
 
+      <div className="rounded-md border bg-white p-4 space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold">Export Study Plan (CSV)</h3>
+          <p className="text-xs text-muted-foreground">
+            One row per student. Bridging module pairs come first, then degree
+            programme module pairs, sorted by study term order.
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Export Scope</label>
+            <select
+              value={exportScope}
+              onChange={(event) =>
+                setExportScope(event.target.value as StudyPlanExportScope)
+              }
+              disabled={exporting}
+              className="w-full rounded border px-3 py-2 text-sm"
+            >
+              <option value="stream">Current programme + stream</option>
+              <option value="programme">Current programme code</option>
+              <option value="programme_type">Programme type</option>
+              <option value="all">All students</option>
+            </select>
+          </div>
+
+          {exportScope === "programme_type" && (
+            <div>
+              <label className="mb-1 block text-sm font-medium">
+                Programme Type
+              </label>
+              <select
+                value={exportProgrammeType}
+                onChange={(event) => setExportProgrammeType(event.target.value)}
+                disabled={exporting}
+                className="w-full rounded border px-3 py-2 text-sm"
+              >
+                <option value="Degree">Degree</option>
+                <option value="HD">HD</option>
+              </select>
+            </div>
+          )}
+
+          <div className="flex items-end">
+            <button
+              type="button"
+              className="px-4 py-2 rounded-md bg-emerald-600 text-white text-sm disabled:opacity-50"
+              onClick={handleExport}
+              disabled={exporting || loading}
+            >
+              {exporting ? "Exporting..." : "Export CSV"}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="rounded-md border overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted">
@@ -258,6 +380,14 @@ export default function StudentListTab({
                       disabled={!student.id}
                     >
                       Edit
+                    </button>
+
+                    <button
+                      className="px-3 py-1 rounded-md bg-emerald-100 text-emerald-800 text-xs disabled:opacity-50"
+                      onClick={() => handleExportStudent(student)}
+                      disabled={!student.id || exporting}
+                    >
+                      Export
                     </button>
 
                     <button

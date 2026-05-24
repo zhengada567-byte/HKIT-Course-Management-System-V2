@@ -11,6 +11,7 @@ import {
   getDefaultIntakeLevel,
   getEarliestStudyTerm,
   getLatestStudyTerm,
+  getTermIndex,
   intakeTermToIntakeYear,
   isDegreeProgramme,
   isDegreeProgrammeType,
@@ -1042,6 +1043,243 @@ export async function getStudyPlanStudent(profileId: string) {
     student,
     modules: sortedModules,
   };
+}
+
+export interface StudyPlanExportFilters {
+  studentProfileId?: string;
+  programmeCode?: string;
+  programmeStream?: string;
+  programmeType?: string;
+}
+
+export interface StudyPlanExportBundle {
+  student: StudyPlanStudent;
+  modules: StudyPlanModule[];
+}
+
+export async function listProgrammeCodesByProgrammeType(
+  programmeType: string
+): Promise<string[]> {
+  const normalizedType = String(programmeType ?? "").trim();
+
+  if (!normalizedType) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("programmes")
+    .select("programme_code, programme_type")
+    .not("programme_code", "is", null);
+
+  if (error) {
+    console.error(
+      "[StudyPlanService] Failed to load programme codes by type:",
+      error
+    );
+    throw error;
+  }
+
+  const target = normalizedType.toLowerCase();
+
+  return Array.from(
+    new Set(
+      (data ?? [])
+        .filter((row) => {
+          const rowType = String(row.programme_type ?? "")
+            .trim()
+            .toLowerCase();
+
+          if (target === "degree") {
+            return isDegreeProgrammeType(rowType);
+          }
+
+          if (target === "hd") {
+            return isHDProgrammeType(rowType);
+          }
+
+          return rowType === target;
+        })
+        .map((row) => String(row.programme_code ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+export function shouldIncludeModuleInStudyPlanExport(
+  module: StudyPlanModule
+): boolean {
+  if (module.status === "exempted") {
+    return true;
+  }
+
+  if (module.status === "planned" || module.status === "failed") {
+    return Boolean(String(module.studyTerm ?? "").trim());
+  }
+
+  return false;
+}
+
+function compareModulesForStudyPlanExport(
+  a: StudyPlanModule,
+  b: StudyPlanModule
+): number {
+  const getStudyTermSortKey = (module: StudyPlanModule): number => {
+    if (module.status === "exempted") {
+      return Number.MAX_SAFE_INTEGER - 1;
+    }
+
+    const studyTerm = String(module.studyTerm ?? "").trim();
+
+    if (!studyTerm) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+
+    const termIndex = getTermIndex(studyTerm);
+
+    return Number.isFinite(termIndex) ? termIndex : Number.MAX_SAFE_INTEGER - 2;
+  };
+
+  const termDiff = getStudyTermSortKey(a) - getStudyTermSortKey(b);
+
+  if (termDiff !== 0) return termDiff;
+
+  const yearDiff =
+    getModuleYearOrder(a.moduleYear) - getModuleYearOrder(b.moduleYear);
+
+  if (yearDiff !== 0) return yearDiff;
+
+  const termOrderDiff =
+    getModuleTermOrder(a.moduleTerm ?? a.moduleTermPattern) -
+    getModuleTermOrder(b.moduleTerm ?? b.moduleTermPattern);
+
+  if (termOrderDiff !== 0) return termOrderDiff;
+
+  return String(a.moduleCode ?? "").localeCompare(String(b.moduleCode ?? ""));
+}
+
+export function sortModulesForStudyPlanExport(
+  modules: StudyPlanModule[]
+): StudyPlanModule[] {
+  const bridgingModules = modules
+    .filter((module) => module.planStage === "bridging")
+    .sort(compareModulesForStudyPlanExport);
+
+  const programmeModules = modules
+    .filter((module) => module.planStage !== "bridging")
+    .sort(compareModulesForStudyPlanExport);
+
+  return [...bridgingModules, ...programmeModules];
+}
+
+export async function loadStudyPlanExportBundles(
+  filters: StudyPlanExportFilters = {}
+): Promise<StudyPlanExportBundle[]> {
+  let students = await listStudyPlanStudents({
+    programmeCode: filters.programmeCode,
+    programmeStream: filters.programmeStream,
+  });
+
+  if (filters.programmeType) {
+    const programmeCodes = await listProgrammeCodesByProgrammeType(
+      filters.programmeType
+    );
+    const codeSet = new Set(
+      programmeCodes.map((code) => code.trim().toUpperCase())
+    );
+
+    students = students.filter((student) =>
+      codeSet.has(String(student.programmeCode ?? "").trim().toUpperCase())
+    );
+  }
+
+  if (filters.studentProfileId) {
+    students = students.filter(
+      (student) => student.id === filters.studentProfileId
+    );
+  }
+
+  if (students.length === 0) {
+    return [];
+  }
+
+  const studentsWithType = await Promise.all(
+    students.map((student) => attachProgrammeTypeToStudent(student))
+  );
+
+  const profileIds = studentsWithType
+    .map((student) => student.id)
+    .filter((id): id is string => Boolean(id));
+
+  if (profileIds.length === 0) {
+    return [];
+  }
+
+  const { data: moduleRows, error: moduleError } = await supabase
+    .from("study_plan_modules")
+    .select("*")
+    .in("student_profile_id", profileIds)
+    .order("plan_stage", { ascending: false })
+    .order("module_year", { ascending: true })
+    .order("module_term", { ascending: true })
+    .order("module_sequence", { ascending: true })
+    .order("module_code", { ascending: true });
+
+  if (moduleError) throw moduleError;
+
+  const modulesByProfileId = new Map<string, StudyPlanModule[]>();
+
+  for (const row of moduleRows ?? []) {
+    const profileId = String(row.student_profile_id ?? "");
+
+    if (!profileId) continue;
+
+    const existing = modulesByProfileId.get(profileId) ?? [];
+    existing.push(fromModuleRow(row));
+    modulesByProfileId.set(profileId, existing);
+  }
+
+  const metadataInputs = studentsWithType.flatMap((student) => {
+    if (!student.id) return [];
+
+    return (modulesByProfileId.get(student.id) ?? []).map((module) => ({
+      moduleCode: module.moduleCode,
+      programmeCode: module.programmeCode || student.programmeCode,
+      programmeStream: module.programmeStream || student.programmeStream,
+      moduleTerm: module.moduleTerm,
+      moduleTermPattern: module.moduleTermPattern,
+    }));
+  });
+
+  const moduleMetadataMap = await loadModuleMetadataForPlan(
+    studentsWithType[0]?.programmeCode ?? "",
+    studentsWithType[0]?.programmeStream,
+    metadataInputs
+  );
+
+  return studentsWithType.map((student) => {
+    const savedModules = student.id
+      ? modulesByProfileId.get(student.id) ?? []
+      : [];
+
+    const enrichedModules = savedModules.map((module) =>
+      enrichStudyPlanModuleWithMetadata(
+        {
+          ...module,
+          programmeCode: module.programmeCode || student.programmeCode,
+          programmeStream: normalizeStream(
+            module.programmeStream || student.programmeStream
+          ),
+        },
+        student,
+        moduleMetadataMap
+      )
+    );
+
+    return {
+      student,
+      modules: sortModulesForStudyPlanExport(enrichedModules),
+    };
+  });
 }
 
 export async function upsertStudyPlanStudent(student: StudyPlanStudent) {

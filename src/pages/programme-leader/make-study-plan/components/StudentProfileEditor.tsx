@@ -11,6 +11,8 @@ import {
   type ProgrammeOption,
 } from "../../../../services/studyPlanService";
 
+import { downloadStudyPlanCsv } from "../../../../services/studyPlanExportService";
+
 import {
   getDegreeStartTermAfterBridging,
   generateStudyPlanForStudent,
@@ -62,6 +64,7 @@ export default function StudentProfileEditor({
   const [modules, setModules] = useState<StudyPlanModule[]>(initialModules);
 
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [loadingModules, setLoadingModules] = useState(false);
 
   const [programmeOptions, setProgrammeOptions] = useState<ProgrammeOption[]>(
@@ -530,6 +533,33 @@ useEffect(() => {
     alert(`Study plan generated. Assigned ${assignedCount} module(s).`);
   }
 
+  async function handleExportStudyPlan() {
+    if (!student.id) {
+      alert("Please save this student study plan before exporting.");
+      return;
+    }
+
+    setExporting(true);
+
+    try {
+      const result = await downloadStudyPlanCsv({
+        scope: "student",
+        studentProfileId: student.id,
+      });
+
+      alert(`Exported study plan to ${result.fileName}.`);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unknown error while exporting study plan.";
+
+      alert(`Failed to export study plan:\n\n${message}`);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function handleSave() {
     if (!student.studentId || !student.studentName || !student.programmeCode) {
       alert("Student ID, Student Name and Programme Code are required.");
@@ -929,6 +959,15 @@ useEffect(() => {
             onClick={handleGenerate}
           >
             Generate Study Plan
+          </button>
+
+          <button
+            type="button"
+            className="px-4 py-2 rounded-md bg-emerald-600 text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleExportStudyPlan}
+            disabled={exporting || !student.id}
+          >
+            {exporting ? "Exporting..." : "Export CSV"}
           </button>
 
           <button
