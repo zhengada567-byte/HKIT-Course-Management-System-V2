@@ -3,6 +3,7 @@ import { buildTeacherName, isTBC } from "../lib/utils";
 import type { EmploymentType, TeacherRow } from "../types";
 
 export interface TeacherInput {
+  id?: string;
   title?: string | null;
   family_name: string;
   other_name?: string | null;
@@ -45,6 +46,19 @@ export async function upsertTeacher(input: TeacherInput) {
     employment_type: input.employment_type || null,
     academic_year: input.academic_year,
   };
+
+  if (input.id) {
+    const { data, error } = await supabase
+      .from("teachers")
+      .update(payload)
+      .eq("id", input.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return data as TeacherRow;
+  }
 
   const { data, error } = await supabase
     .from("teachers")

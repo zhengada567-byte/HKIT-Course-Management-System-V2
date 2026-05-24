@@ -3,6 +3,7 @@ import { normalizeOptionalText, normalizeStream } from "../lib/utils";
 import type { ProgrammeRow } from "../types";
 
 export interface ProgrammeInput {
+  id?: string;
   programme_type: string;
   programme_code: string;
   programme_name?: string | null;
@@ -51,6 +52,19 @@ export async function upsertProgramme(input: ProgrammeInput) {
   };
 
   console.log("[ProgrammeService] Upserting programme:", payload);
+
+  if (input.id) {
+    const { data, error } = await supabase
+      .from("programmes")
+      .update(payload)
+      .eq("id", input.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return data as ProgrammeRow;
+  }
 
   const { data, error } = await supabase
     .from("programmes")

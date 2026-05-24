@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { DataTable } from "../../components/tables/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -14,20 +14,30 @@ import {
 } from "../../services/teacherService";
 import type { EmploymentType, TeacherRow } from "../../types";
 
-export function TeacherManagementPage() {
-  const { academicYear } = useAcademicYear();
-  const { t } = useLanguage();
-
-  const [rows, setRows] = useState<TeacherRow[]>([]);
-  const [form, setForm] = useState<TeacherInput>({
+function buildEmptyForm(academicYear: string): TeacherInput {
+  return {
     title: "",
     family_name: "",
     other_name: "",
     employment_type: "",
     academic_year: academicYear,
-  });
+  };
+}
+
+export function TeacherManagementPage() {
+  const { academicYear } = useAcademicYear();
+  const { t } = useLanguage();
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  const [rows, setRows] = useState<TeacherRow[]>([]);
+  const [form, setForm] = useState<TeacherInput>(buildEmptyForm(academicYear));
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+
+  const isEditing = Boolean(editingId);
 
   async function loadRows() {
     setLoading(true);
@@ -44,12 +54,35 @@ export function TeacherManagementPage() {
   }
 
   useEffect(() => {
-    setForm((prev) => ({
-      ...prev,
-      academic_year: academicYear,
-    }));
+    setForm(buildEmptyForm(academicYear));
+    setEditingId(null);
+    setShowForm(false);
     void loadRows();
   }, [academicYear]);
+
+  function scrollToForm() {
+    window.requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }
+
+  function resetForm() {
+    setForm(buildEmptyForm(academicYear));
+    setEditingId(null);
+    setShowForm(false);
+    setMessage("");
+  }
+
+  function handleNew() {
+    setForm(buildEmptyForm(academicYear));
+    setEditingId(null);
+    setShowForm(true);
+    setMessage("");
+    scrollToForm();
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -60,23 +93,22 @@ export function TeacherManagementPage() {
         return;
       }
 
+      setSaving(true);
+      setMessage("");
+
       await upsertTeacher({
         ...form,
+        id: editingId ?? undefined,
         academic_year: academicYear,
       });
 
-      setForm({
-        title: "",
-        family_name: "",
-        other_name: "",
-        employment_type: "",
-        academic_year: academicYear,
-      });
-
+      resetForm();
       await loadRows();
-      setMessage("Saved.");
+      setMessage(isEditing ? "Teacher updated." : "Teacher created.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -85,21 +117,33 @@ export function TeacherManagementPage() {
     if (!ok) return;
 
     try {
+      if (editingId === id) {
+        resetForm();
+      }
+
       await deleteTeacher(id);
       await loadRows();
+      setMessage("Teacher deleted.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Delete failed");
     }
   }
 
   function editRow(row: TeacherRow) {
+    setEditingId(row.id);
+    setShowForm(true);
+
     setForm({
+      id: row.id,
       title: row.title ?? "",
       family_name: row.family_name,
       other_name: row.other_name ?? "",
       employment_type: row.employment_type ?? "",
       academic_year: row.academic_year,
     });
+
+    setMessage(`Editing teacher: ${row.teacher_name}`);
+    scrollToForm();
   }
 
   return (
@@ -115,83 +159,118 @@ export function TeacherManagementPage() {
         </div>
       )}
 
-      <form className="card mb-4" onSubmit={handleSubmit}>
-        <div className="card-body grid gap-3 md:grid-cols-6">
-          <div>
-            <label className="form-label">{t.teacherTitle}</label>
-            <input
-              className="form-input"
-              value={form.title ?? ""}
-              placeholder="Dr / Mr / Ms"
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  title: event.target.value,
-                }))
-              }
-            />
-          </div>
+      <div className="mb-4 flex justify-end">
+        <button type="button" className="btn btn-primary" onClick={handleNew}>
+          {t.create}
+        </button>
+      </div>
 
-          <div>
-            <label className="form-label">{t.teacherFamilyName}</label>
-            <input
-              className="form-input"
-              value={form.family_name}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  family_name: event.target.value,
-                }))
-              }
-            />
-          </div>
+      {showForm && (
+        <form ref={formRef} className="card mb-4" onSubmit={handleSubmit}>
+          <div className="card-body">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">
+                  {isEditing ? t.edit : t.create}
+                </h2>
+                <p className="text-sm text-slate-500">
+                  {isEditing
+                    ? "Update the teacher details and click Save."
+                    : "Fill in the teacher details and click Create."}
+                </p>
+              </div>
 
-          <div>
-            <label className="form-label">{t.teacherOtherName}</label>
-            <input
-              className="form-input"
-              value={form.other_name ?? ""}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  other_name: event.target.value,
-                }))
-              }
-            />
-          </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={resetForm}
+              >
+                {t.cancel}
+              </button>
+            </div>
 
-          <div>
-            <label className="form-label">{t.teacherEmploymentStatus}</label>
-            <select
-              className="form-select"
-              value={form.employment_type ?? ""}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  employment_type: event.target.value as EmploymentType,
-                }))
-              }
-            >
-              <option value="">-</option>
-              <option value="FT">FT</option>
-              <option value="PT">PT</option>
-            </select>
-          </div>
+            <div className="grid gap-3 md:grid-cols-6">
+              <div>
+                <label className="form-label">{t.teacherTitle}</label>
+                <input
+                  className="form-input"
+                  value={form.title ?? ""}
+                  placeholder="Dr / Mr / Ms"
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      title: event.target.value,
+                    }))
+                  }
+                />
+              </div>
 
-          <div>
-            <label className="form-label">{t.academicYear}</label>
-            <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
-              {academicYear}
+              <div>
+                <label className="form-label">{t.teacherFamilyName}</label>
+                <input
+                  className="form-input"
+                  value={form.family_name}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      family_name: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="form-label">{t.teacherOtherName}</label>
+                <input
+                  className="form-input"
+                  value={form.other_name ?? ""}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      other_name: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="form-label">{t.teacherEmploymentStatus}</label>
+                <select
+                  className="form-select"
+                  value={form.employment_type ?? ""}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      employment_type: event.target.value as EmploymentType,
+                    }))
+                  }
+                >
+                  <option value="">-</option>
+                  <option value="FT">FT</option>
+                  <option value="PT">PT</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="form-label">{t.academicYear}</label>
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                  {academicYear}
+                </div>
+              </div>
+
+              <div className="flex items-end gap-2">
+                <button
+                  className="btn btn-primary"
+                  type="submit"
+                  disabled={saving}
+                >
+                  {saving ? t.loading : isEditing ? t.save : t.create}
+                </button>
+              </div>
             </div>
           </div>
-
-          <div className="flex items-end gap-2">
-            <button className="btn btn-primary" type="submit">
-              {t.save}
-            </button>
-          </div>
-        </div>
-      </form>
+        </form>
+      )}
 
       {loading ? (
         <LoadingState />
@@ -233,12 +312,14 @@ export function TeacherManagementPage() {
               render: (row) => (
                 <div className="flex gap-2">
                   <button
+                    type="button"
                     className="btn btn-secondary py-1 text-xs"
                     onClick={() => editRow(row)}
                   >
                     {t.edit}
                   </button>
                   <button
+                    type="button"
                     className="btn btn-danger py-1 text-xs"
                     onClick={() => handleDelete(row.id)}
                   >

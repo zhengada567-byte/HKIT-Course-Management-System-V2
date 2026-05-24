@@ -3,6 +3,7 @@ import { normalizeStream } from "../lib/utils";
 import type { ModuleRow, ModuleTerm } from "../types";
 
 export interface ModuleInput {
+  id?: string;
   module_code: string;
   module_name?: string | null;
   module_year?: string | null;
@@ -47,6 +48,19 @@ export async function upsertModule(input: ModuleInput) {
     programme_code: input.programme_code.trim(),
     stream_code: normalizeStream(input.stream_code),
   };
+
+  if (input.id) {
+    const { data, error } = await supabase
+      .from("modules")
+      .update(payload)
+      .eq("id", input.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return data as ModuleRow;
+  }
 
   const { data, error } = await supabase
     .from("modules")

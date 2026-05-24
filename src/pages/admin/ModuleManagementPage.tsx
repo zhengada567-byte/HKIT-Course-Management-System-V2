@@ -30,6 +30,7 @@ export function ModuleManagementPage() {
   const [rows, setRows] = useState<ModuleRow[]>([]);
   const [form, setForm] = useState<ModuleInput>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -56,10 +57,28 @@ export function ModuleManagementPage() {
     void loadRows();
   }, []);
 
+  function scrollToForm() {
+    window.requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }
+
   function resetForm() {
     setForm(emptyForm);
     setEditingId(null);
+    setShowForm(false);
     setMessage("");
+  }
+
+  function handleNew() {
+    setForm(emptyForm);
+    setEditingId(null);
+    setShowForm(true);
+    setMessage("");
+    scrollToForm();
   }
 
   async function handleSubmit(event: React.FormEvent) {
@@ -79,12 +98,9 @@ export function ModuleManagementPage() {
         id: editingId ?? undefined,
       });
 
-      setForm(emptyForm);
-      setEditingId(null);
-
+      resetForm();
       await loadRows();
-
-      setMessage(isEditing ? "Module updated." : "Module saved.");
+      setMessage(isEditing ? "Module updated." : "Module created.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed");
     } finally {
@@ -101,10 +117,6 @@ export function ModuleManagementPage() {
 
       await deleteModule(id);
 
-      /**
-       * If the deleted row is currently being edited,
-       * reset the form to avoid editing a deleted record.
-       */
       if (editingId === id) {
         resetForm();
       }
@@ -118,6 +130,7 @@ export function ModuleManagementPage() {
 
   function editRow(row: ModuleRow) {
     setEditingId(row.id);
+    setShowForm(true);
 
     setForm({
       id: row.id,
@@ -130,18 +143,7 @@ export function ModuleManagementPage() {
     });
 
     setMessage(`Editing module: ${row.module_code}`);
-
-    /**
-     * The old code did update the form,
-     * but because the form is above the table, users may not notice it.
-     * Scroll to the form so the Edit button visibly responds.
-     */
-    window.requestAnimationFrame(() => {
-      formRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
+    scrollToForm();
   }
 
   return (
@@ -157,135 +159,144 @@ export function ModuleManagementPage() {
         </div>
       )}
 
-      <form ref={formRef} className="card mb-4" onSubmit={handleSubmit}>
-        <div className="card-body">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">
-                {isEditing ? "Edit Module" : "Add Module"}
-              </h2>
+      <div className="mb-4 flex justify-end">
+        <button type="button" className="btn btn-primary" onClick={handleNew}>
+          {t.create}
+        </button>
+      </div>
 
-              <p className="text-sm text-slate-500">
-                {isEditing
-                  ? "You are editing an existing module. Click Save to update it."
-                  : "Fill in the module details and click Save."}
-              </p>
-            </div>
+      {showForm && (
+        <form ref={formRef} className="card mb-4" onSubmit={handleSubmit}>
+          <div className="card-body">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">
+                  {isEditing ? t.edit : t.create}
+                </h2>
 
-            {isEditing && (
+                <p className="text-sm text-slate-500">
+                  {isEditing
+                    ? "Update the module details and click Save."
+                    : "Fill in the module details and click Create."}
+                </p>
+              </div>
+
               <button
                 type="button"
                 className="btn btn-secondary"
                 onClick={resetForm}
               >
-                Cancel Edit
-              </button>
-            )}
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-7">
-            <div>
-              <label className="form-label">{t.moduleCode}</label>
-              <input
-                className="form-input"
-                value={form.module_code}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    module_code: event.target.value,
-                  }))
-                }
-              />
-            </div>
-
-            <div>
-              <label className="form-label">{t.moduleName}</label>
-              <input
-                className="form-input"
-                value={form.module_name ?? ""}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    module_name: event.target.value,
-                  }))
-                }
-              />
-            </div>
-
-            <div>
-              <label className="form-label">{t.moduleYear}</label>
-              <input
-                className="form-input"
-                value={form.module_year ?? ""}
-                placeholder="Year 1"
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    module_year: event.target.value,
-                  }))
-                }
-              />
-            </div>
-
-            <div>
-              <label className="form-label">{t.moduleTerm}</label>
-              <select
-                className="form-select"
-                value={form.module_term}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    module_term: event.target.value as ModuleTerm,
-                  }))
-                }
-              >
-                <option value="Sep">Sep</option>
-                <option value="Feb">Feb</option>
-                <option value="Jun">Jun</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="form-label">{t.programmeCode}</label>
-              <input
-                className="form-input"
-                value={form.programme_code}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    programme_code: event.target.value,
-                  }))
-                }
-              />
-            </div>
-
-            <div>
-              <label className="form-label">{t.programmeStream}</label>
-              <input
-                className="form-input"
-                value={form.stream_code ?? ""}
-                placeholder="nil"
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    stream_code: event.target.value,
-                  }))
-                }
-              />
-            </div>
-
-            <div className="flex items-end gap-2">
-              <button
-                className="btn btn-primary"
-                type="submit"
-                disabled={saving}
-              >
-                {saving ? "Saving..." : isEditing ? "Update" : t.save}
+                {t.cancel}
               </button>
             </div>
+
+            <div className="grid gap-3 md:grid-cols-7">
+              <div>
+                <label className="form-label">{t.moduleCode}</label>
+                <input
+                  className="form-input"
+                  value={form.module_code}
+                  disabled={isEditing}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      module_code: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="form-label">{t.moduleName}</label>
+                <input
+                  className="form-input"
+                  value={form.module_name ?? ""}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      module_name: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="form-label">{t.moduleYear}</label>
+                <input
+                  className="form-input"
+                  value={form.module_year ?? ""}
+                  placeholder="Year 1"
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      module_year: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="form-label">{t.moduleTerm}</label>
+                <select
+                  className="form-select"
+                  value={form.module_term}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      module_term: event.target.value as ModuleTerm,
+                    }))
+                  }
+                >
+                  <option value="Sep">Sep</option>
+                  <option value="Feb">Feb</option>
+                  <option value="Jun">Jun</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="form-label">{t.programmeCode}</label>
+                <input
+                  className="form-input"
+                  value={form.programme_code}
+                  disabled={isEditing}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      programme_code: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="form-label">{t.programmeStream}</label>
+                <input
+                  className="form-input"
+                  value={form.stream_code ?? ""}
+                  placeholder="nil"
+                  disabled={isEditing}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      stream_code: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="flex items-end gap-2">
+                <button
+                  className="btn btn-primary"
+                  type="submit"
+                  disabled={saving}
+                >
+                  {saving ? t.loading : isEditing ? t.save : t.create}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
+      )}
 
       {loading ? (
         <LoadingState />
@@ -295,92 +306,97 @@ export function ModuleManagementPage() {
         <DataTable
           rows={rows}
           rowKey={(row) => row.id}
-columns={[
-  {
-    key: "programme",
-    header: t.programmeCode,
-    render: (row) => (
-      <span className="block max-w-[90px] truncate" title={row.programme_code}>
-        {row.programme_code}
-      </span>
-    ),
-  },
-  {
-    key: "stream",
-    header: t.programmeStream,
-    render: (row) => (
-      <span
-        className="block max-w-[130px] truncate"
-        title={row.stream_code ?? ""}
-      >
-        {row.stream_code}
-      </span>
-    ),
-  },
-  {
-    key: "code",
-    header: t.moduleCode,
-    render: (row) => (
-      <span className="block max-w-[110px] font-medium" title={row.module_code}>
-        {row.module_code}
-      </span>
-    ),
-  },
-  {
-    key: "name",
-    header: t.moduleName,
-    render: (row) => (
-      <span
-        className="block max-w-[320px] whitespace-normal break-words leading-snug"
-        title={row.module_name ?? ""}
-      >
-        {row.module_name ?? "-"}
-      </span>
-    ),
-  },
-  {
-    key: "year",
-    header: t.moduleYear,
-    render: (row) => (
-      <span className="block w-[70px] whitespace-nowrap">
-        {row.module_year ?? "-"}
-      </span>
-    ),
-  },
-  {
-    key: "term",
-    header: t.moduleTerm,
-    render: (row) => (
-      <span className="block w-[55px] whitespace-nowrap">
-        {row.module_term}
-      </span>
-    ),
-  },
-  {
-    key: "actions",
-    header: t.action,
-    render: (row) => (
-      <div className="flex w-[120px] flex-nowrap gap-2">
-        <button
-          type="button"
-          className="btn btn-secondary py-1 text-xs"
-          onClick={() => editRow(row)}
-        >
-          {t.edit}
-        </button>
+          columns={[
+            {
+              key: "programme",
+              header: t.programmeCode,
+              render: (row) => (
+                <span
+                  className="block max-w-[90px] truncate"
+                  title={row.programme_code}
+                >
+                  {row.programme_code}
+                </span>
+              ),
+            },
+            {
+              key: "stream",
+              header: t.programmeStream,
+              render: (row) => (
+                <span
+                  className="block max-w-[130px] truncate"
+                  title={row.stream_code ?? ""}
+                >
+                  {row.stream_code}
+                </span>
+              ),
+            },
+            {
+              key: "code",
+              header: t.moduleCode,
+              render: (row) => (
+                <span
+                  className="block max-w-[110px] font-medium"
+                  title={row.module_code}
+                >
+                  {row.module_code}
+                </span>
+              ),
+            },
+            {
+              key: "name",
+              header: t.moduleName,
+              render: (row) => (
+                <span
+                  className="block max-w-[320px] whitespace-normal break-words leading-snug"
+                  title={row.module_name ?? ""}
+                >
+                  {row.module_name ?? "-"}
+                </span>
+              ),
+            },
+            {
+              key: "year",
+              header: t.moduleYear,
+              render: (row) => (
+                <span className="block w-[70px] whitespace-nowrap">
+                  {row.module_year ?? "-"}
+                </span>
+              ),
+            },
+            {
+              key: "term",
+              header: t.moduleTerm,
+              render: (row) => (
+                <span className="block w-[55px] whitespace-nowrap">
+                  {row.module_term}
+                </span>
+              ),
+            },
+            {
+              key: "actions",
+              header: t.action,
+              render: (row) => (
+                <div className="flex w-[120px] flex-nowrap gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-secondary py-1 text-xs"
+                    onClick={() => editRow(row)}
+                  >
+                    {t.edit}
+                  </button>
 
-        <button
-          type="button"
-          className="btn btn-danger py-1 text-xs"
-          onClick={() => handleDelete(row.id)}
-        >
-          {t.delete}
-        </button>
-      </div>
-    ),
-  },
-]}
-
+                  <button
+                    type="button"
+                    className="btn btn-danger py-1 text-xs"
+                    onClick={() => handleDelete(row.id)}
+                  >
+                    {t.delete}
+                  </button>
+                </div>
+              ),
+            },
+          ]}
         />
       )}
     </div>
