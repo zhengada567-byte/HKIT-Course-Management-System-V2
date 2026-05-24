@@ -1,5 +1,5 @@
 import { supabase } from "../lib/supabase";
-import { normalizeStream } from "../lib/utils";
+import { getAcademicYearVariants, normalizeStream } from "../lib/utils";
 import type {
   ModuleAdjustmentRow,
   ModuleRow,
@@ -211,7 +211,7 @@ export async function ensureTimetablePlanningModules(
       let query = supabase
         .from("timetable_planning_modules")
         .select("*")
-        .eq("academic_year", params.academicYear);
+        .in("academic_year", getAcademicYearVariants(params.academicYear));
 
       if (params.programmeCode) {
         query = query.eq("programme_code", params.programmeCode);
@@ -226,8 +226,10 @@ export async function ensureTimetablePlanningModules(
   if (existingError) throw existingError;
 
   const moduleRows = (modules ?? []) as ModuleRow[];
-  const existingRows = (existingPlanningModules ??
-    []) as TimetablePlanningModuleRow[];
+  const existingRows = normalizePlanningRowsToYear(
+    (existingPlanningModules ?? []) as TimetablePlanningModuleRow[],
+    params.academicYear
+  );
 
   const existingModuleIds = new Set(existingRows.map((row) => row.module_id));
 
@@ -274,20 +276,35 @@ export async function ensureTimetablePlanningModules(
 
   return [
     ...existingRows,
-    ...((insertedRows ?? []) as TimetablePlanningModuleRow[]),
+    ...normalizePlanningRowsToYear(
+      (insertedRows ?? []) as TimetablePlanningModuleRow[],
+      params.academicYear
+    ),
   ];
 }
 
+
+function normalizePlanningRowsToYear(
+  rows: TimetablePlanningModuleRow[],
+  academicYear: string
+) {
+  return rows.map((row) => ({
+    ...row,
+    academic_year: academicYear,
+  }));
+}
 
 export async function listPlanningModules(params: {
   academicYear: string;
   programmeCode?: string;
   streamCode?: string;
 }) {
+  const yearVariants = getAcademicYearVariants(params.academicYear);
+
   let query = supabase
     .from("timetable_planning_modules")
     .select("*")
-    .eq("academic_year", params.academicYear)
+    .in("academic_year", yearVariants)
     .order("programme_code")
     .order("stream_code")
     .order("module_code");
@@ -300,7 +317,10 @@ export async function listPlanningModules(params: {
 
   if (error) throw error;
 
-  const rows = (data ?? []) as TimetablePlanningModuleRow[];
+  const rows = normalizePlanningRowsToYear(
+    (data ?? []) as TimetablePlanningModuleRow[],
+    params.academicYear
+  );
 
   if (!params.streamCode) {
     return rows;
@@ -315,19 +335,21 @@ async function attachStudentNumbersAndDefaults(params: {
   academicYear: string;
   planningModules: TimetablePlanningModuleRow[];
 }) {
+  const yearVariants = getAcademicYearVariants(params.academicYear);
+
   const [studentNumbers, enrollmentsResult, defaultsResult] = await Promise.all([
     supabase
       .from("timetable_student_numbers")
       .select("*")
-      .eq("academic_year", params.academicYear),
+      .in("academic_year", yearVariants),
     supabase
       .from("module_enrollment")
       .select("*")
-      .eq("academic_year", params.academicYear),
+      .in("academic_year", yearVariants),
     supabase
       .from("module_default_assignments")
       .select("*")
-      .eq("academic_year", params.academicYear),
+      .in("academic_year", yearVariants),
   ]);
 
   if (studentNumbers.error) throw studentNumbers.error;
@@ -344,7 +366,7 @@ async function attachStudentNumbersAndDefaults(params: {
 
   for (const row of studentNumbers.data ?? []) {
     const key = buildSimpleKey({
-      academicYear: row.academic_year,
+      academicYear: params.academicYear,
       moduleCode: row.module_code,
       programmeCode: row.programme_code,
       moduleTerm: getOptionalModuleTerm(row),
@@ -366,7 +388,7 @@ async function attachStudentNumbersAndDefaults(params: {
 
   for (const row of (enrollmentsResult.data ?? []) as ModuleEnrollmentRow[]) {
     const key = buildSimpleKey({
-      academicYear: row.academic_year,
+      academicYear: params.academicYear,
       moduleCode: row.module_code,
       programmeCode: row.programme_code,
       moduleTerm: getOptionalModuleTerm(row),
@@ -382,7 +404,7 @@ async function attachStudentNumbersAndDefaults(params: {
 
   for (const row of (defaultsResult.data ?? []) as ModuleDefaultAssignmentRow[]) {
     const key = buildSimpleKey({
-      academicYear: row.academic_year,
+      academicYear: params.academicYear,
       moduleCode: row.module_code,
       programmeCode: row.programme_code,
       moduleTerm: getOptionalModuleTerm(row),

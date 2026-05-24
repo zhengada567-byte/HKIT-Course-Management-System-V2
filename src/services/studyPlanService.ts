@@ -1813,41 +1813,39 @@ export async function recalculateAllStudentStatuses(
 }
 
 export async function recalculateActualStudentNumbers() {
-  const { data, error } = await supabase
-    .from("study_plan_modules")
-    .select(
-      `
-      module_code,
-      module_name,
-      programme_code,
-      programme_stream,
-      study_term,
-      status,
-      plan_stage,
-      student_profile_id,
-      study_plan_students!inner (
-        study_mode
-      )
-    `
-    )
-    .eq("status", "planned")
-    .eq("plan_stage", "programme")
-    .not("study_term", "is", null);
+  const [{ data: moduleRows, error: moduleError }, { data: studentRows, error: studentError }] =
+    await Promise.all([
+      supabase
+        .from("study_plan_modules")
+        .select(
+          "module_code, module_name, programme_code, programme_stream, study_term, status, plan_stage, student_profile_id"
+        )
+        .eq("status", "planned")
+        .eq("plan_stage", "programme")
+        .not("study_term", "is", null),
+      supabase.from("study_plan_students").select("id, study_mode"),
+    ]);
 
-  if (error) throw error;
+  if (moduleError) throw moduleError;
+  if (studentError) throw studentError;
+
+  const studyModeByProfileId = new Map<string, string>();
+
+  for (const student of studentRows ?? []) {
+    studyModeByProfileId.set(
+      String(student.id),
+      String(student.study_mode ?? "").trim()
+    );
+  }
 
   const counts = new Map<string, any>();
 
-  for (const row of data ?? []) {
+  for (const row of moduleRows ?? []) {
     const studyTerm = row.study_term as string;
     const academicYear = studyTermToAcademicYear(studyTerm);
     const programmeStream = normalizeStream(row.programme_stream);
-
-    const joinedStudent = Array.isArray(row.study_plan_students)
-      ? row.study_plan_students[0]
-      : row.study_plan_students;
-
-    const studyMode = joinedStudent?.study_mode ?? "";
+    const studyMode =
+      studyModeByProfileId.get(String(row.student_profile_id ?? "")) ?? "";
 
     const key = [
       academicYear,

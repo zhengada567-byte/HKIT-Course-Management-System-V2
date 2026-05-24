@@ -166,15 +166,25 @@ export function MakeTimetablePage() {
     });
 
     setPlanningModules(data);
+    return data;
   }
 
-  async function refreshStudentRows(planning = planningModules) {
+  async function refreshStudentRows(
+    planning: PlanningModuleWithStudentNumber[] = planningModules
+  ) {
     const data = await getStudentNumberInputRows({
       academicYear,
       planningModules: planning,
     });
 
     setStudentRows(data);
+    return data;
+  }
+
+  async function loadStudentNumberRows() {
+    const planning = await refreshPlanning();
+    const rows = await refreshStudentRows(planning);
+    return { planning, rows };
   }
 
   async function refreshCombineGroups(filters?: {
@@ -233,12 +243,24 @@ export function MakeTimetablePage() {
 
   async function handleSyncFromStudyPlan() {
     if (!user) {
-      setMessage("Please login before syncing student numbers.");
+      const text = "Please login before syncing student numbers.";
+      setMessage(text);
+      alert(text);
+      return;
+    }
+
+    if (!user.id) {
+      const text =
+        "Login session is invalid. Please log out and log in again before syncing.";
+      setMessage(text);
+      alert(text);
       return;
     }
 
     if (!programmeCode) {
-      setMessage("Please select a programme before syncing from study plan.");
+      const text = "Please select a programme before syncing from study plan.";
+      setMessage(text);
+      alert(text);
       return;
     }
 
@@ -253,22 +275,23 @@ export function MakeTimetablePage() {
         createdBy: user.id,
       });
 
-      await refreshPlanning();
-      await refreshStudentRows();
+      const { rows } = await loadStudentNumberRows();
 
       if (result.syncedCount === 0) {
-        setMessage(
-          "No planning modules found for this programme. Check that modules exist for the selected academic year."
-        );
+        const text = `No planning modules found for ${programmeCode} in ${academicYear}. Check modules catalog and academic year settings.`;
+        setMessage(text);
+        alert(text);
         return;
       }
 
-      setMessage(
-        `Synced ${result.syncedCount} module row(s) from study plan (${result.zeroActualCount} with actual = 0).`
-      );
+      const text = `Synced ${result.syncedCount} module row(s) from study plan (${result.zeroActualCount} with actual = 0). Loaded ${rows.length} row(s) in the table.`;
+      setMessage(text);
     } catch (error) {
       console.error("[MakeTimetablePage] Sync student numbers failed:", error);
-      setMessage(error instanceof Error ? error.message : "Sync failed");
+      const text =
+        error instanceof Error ? error.message : "Sync failed unexpectedly.";
+      setMessage(text);
+      alert(`Sync failed:\n\n${text}`);
     } finally {
       setSyncing(false);
     }
@@ -295,7 +318,7 @@ export function MakeTimetablePage() {
         createdBy: user.id,
       });
 
-      await refreshPlanning();
+      await loadStudentNumberRows();
 
       await refreshCombineGroups({
         programmeCode,
@@ -866,14 +889,17 @@ export function MakeTimetablePage() {
   }
 
   useEffect(() => {
-    let cancelled = false;
+    let requestId = 0;
 
     async function refreshFilteredData() {
       if (!user) {
         setPlanningModules([]);
         setStudentRows([]);
+        setLoading(false);
         return;
       }
+
+      const currentRequest = ++requestId;
 
       try {
         setLoading(true);
@@ -881,21 +907,11 @@ export function MakeTimetablePage() {
         await ensureTimetablePlanningModules({
           academicYear,
           programmeCode: programmeCode || undefined,
+          streamCode: streamCode || undefined,
           createdBy: user.id,
         });
 
-        if (cancelled) return;
-
-        if (programmeCode) {
-          await syncStudyPlanStudentNumbersToTimetable({
-            academicYear,
-            programmeCode: programmeCode || undefined,
-            streamCode: streamCode || undefined,
-            createdBy: user.id,
-          });
-        }
-
-        if (cancelled) return;
+        if (currentRequest !== requestId) return;
 
         const data = await listPlanningModulesWithStudentNumbers({
           academicYear,
@@ -903,7 +919,7 @@ export function MakeTimetablePage() {
           streamCode: streamCode || undefined,
         });
 
-        if (cancelled) return;
+        if (currentRequest !== requestId) return;
 
         setPlanningModules(data);
 
@@ -912,7 +928,7 @@ export function MakeTimetablePage() {
           planningModules: data,
         });
 
-        if (cancelled) return;
+        if (currentRequest !== requestId) return;
 
         setStudentRows(studentData);
 
@@ -923,7 +939,7 @@ export function MakeTimetablePage() {
           });
         }
 
-        if (cancelled) return;
+        if (currentRequest !== requestId) return;
 
         if (step === "split" || step === "assignment") {
           await refreshTimetableAndAssignments({
@@ -932,12 +948,14 @@ export function MakeTimetablePage() {
           });
         }
       } catch (error) {
-        if (!cancelled) {
+        if (currentRequest === requestId) {
           console.error("[MakeTimetablePage] Refresh filtered data failed:", error);
-          setMessage(error instanceof Error ? error.message : "Refresh failed");
+          const text =
+            error instanceof Error ? error.message : "Failed to load timetable data.";
+          setMessage(text);
         }
       } finally {
-        if (!cancelled) {
+        if (currentRequest === requestId) {
           setLoading(false);
         }
       }
@@ -946,9 +964,27 @@ export function MakeTimetablePage() {
     void refreshFilteredData();
 
     return () => {
-      cancelled = true;
+      requestId += 1;
     };
-  }, [academicYear, programmeCode, streamCode, step, user]);
+  }, [academicYear, programmeCode, streamCode, user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    if (step === "combine" || step === "split") {
+      void refreshCombineGroups({
+        programmeCode,
+        streamCode,
+      });
+    }
+
+    if (step === "split" || step === "assignment") {
+      void refreshTimetableAndAssignments({
+        programmeCode,
+        streamCode,
+      });
+    }
+  }, [step, user, programmeCode, streamCode, academicYear]);
 
   return (
     <div className="page-container">
@@ -963,7 +999,7 @@ export function MakeTimetablePage() {
       />
 
       {message && (
-        <div className="mb-4 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
           {message}
         </div>
       )}
@@ -1026,20 +1062,27 @@ export function MakeTimetablePage() {
 
       <StepTabs step={step} setStep={setStep} />
 
-      {loading ? (
+      {loading && step !== "student_numbers" ? (
         <LoadingState />
       ) : (
         <>
           {step === "student_numbers" && (
-            <StudentNumberStep
-              rows={studentRows}
-              updateRow={updateStudentRow}
-              onSync={handleSyncFromStudyPlan}
-              onSave={handleSaveStudentNumbers}
-              syncDisabled={!programmeCode}
-              syncing={syncing}
-              programmeSelected={Boolean(programmeCode)}
-            />
+            <>
+              {loading && (
+                <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  Loading planning modules...
+                </div>
+              )}
+              <StudentNumberStep
+                rows={studentRows}
+                updateRow={updateStudentRow}
+                onSync={handleSyncFromStudyPlan}
+                onSave={handleSaveStudentNumbers}
+                syncDisabled={!programmeCode || loading}
+                syncing={syncing}
+                programmeSelected={Boolean(programmeCode)}
+              />
+            </>
           )}
 
           {step === "combine" && (

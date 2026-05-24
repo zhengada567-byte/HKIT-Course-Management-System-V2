@@ -4,6 +4,8 @@ import {
   normalizeStream,
   offeredTermToStudyTerm,
 } from "../lib/utils";
+import { offeredTermFromStudyTerm } from "../pages/programme-leader/make-study-plan/helpers";
+import type { ModuleTerm } from "../types/common";
 import { recalculateActualStudentNumbers } from "./studyPlanService";
 import type { ModuleEnrollmentRow } from "./moduleEnrollmentService";
 import {
@@ -25,6 +27,64 @@ function buildSyncKey(params: {
     params.programmeCode,
     params.programmeStream,
     params.studyTerm,
+  ].join("|");
+}
+
+function normalizeOfferedTermKey(value: ModuleTerm) {
+  return value.toLowerCase();
+}
+
+function catalogModuleTermToOfferedTerm(
+  academicYear: string,
+  moduleTerm: string | null | undefined
+): ModuleTerm {
+  const text = String(moduleTerm ?? "").trim();
+
+  if (/^T\d{4}[ABC]$/i.test(text)) {
+    return offeredTermFromStudyTerm(text.toUpperCase());
+  }
+
+  const upper = text.toUpperCase();
+
+  if (upper === "FEB" || upper === "FEBRUARY" || upper === "A") {
+    return "Feb";
+  }
+
+  if (upper === "JUN" || upper === "JUNE" || upper === "B") {
+    return "Jun";
+  }
+
+  if (
+    upper === "SEP" ||
+    upper === "SEPT" ||
+    upper === "SEPTEMBER" ||
+    upper === "C"
+  ) {
+    return "Sep";
+  }
+
+  if (text) {
+    return offeredTermFromStudyTerm(
+      offeredTermToStudyTerm(academicYear, text)
+    );
+  }
+
+  return "Feb";
+}
+
+function buildActualCountKey(params: {
+  academicYear: string;
+  moduleCode: string;
+  programmeCode: string;
+  programmeStream: string;
+  offeredTerm: ModuleTerm;
+}) {
+  return [
+    params.academicYear,
+    params.moduleCode,
+    params.programmeCode,
+    params.programmeStream,
+    normalizeOfferedTermKey(params.offeredTerm),
   ].join("|");
 }
 
@@ -80,7 +140,7 @@ export async function syncStudyPlanStudentNumbersToTimetable(params: {
       supabase
         .from("module_enrollment")
         .select("*")
-        .eq("academic_year", params.academicYear),
+        .in("academic_year", yearVariants),
     ]);
 
   if (studyPlanError) throw studyPlanError;
@@ -89,13 +149,21 @@ export async function syncStudyPlanStudentNumbersToTimetable(params: {
   const actualByKey = new Map<string, number>();
 
   for (const row of studyPlanRows ?? []) {
+    if (
+      params.programmeCode &&
+      String(row.programme_code ?? "").trim() !== params.programmeCode
+    ) {
+      continue;
+    }
+
     const studyTerm = String(row.study_term ?? "").trim();
-    const key = buildSyncKey({
+    const offeredTerm = offeredTermFromStudyTerm(studyTerm);
+    const key = buildActualCountKey({
       academicYear: params.academicYear,
-      moduleCode: row.module_code,
-      programmeCode: row.programme_code,
+      moduleCode: String(row.module_code ?? "").trim(),
+      programmeCode: String(row.programme_code ?? "").trim(),
       programmeStream: normalizeStream(row.programme_stream),
-      studyTerm,
+      offeredTerm,
     });
 
     actualByKey.set(
@@ -168,7 +236,17 @@ export async function syncStudyPlanStudentNumbersToTimetable(params: {
 
     const existing = existingMap.get(key);
     const enrollment = enrollmentMap.get(key);
-    const actual = actualByKey.get(key) ?? 0;
+    const actualCountKey = buildActualCountKey({
+      academicYear: module.academic_year,
+      moduleCode: module.module_code,
+      programmeCode: module.programme_code,
+      programmeStream,
+      offeredTerm: catalogModuleTermToOfferedTerm(
+        module.academic_year,
+        module.module_term
+      ),
+    });
+    const actual = actualByKey.get(actualCountKey) ?? 0;
 
     if (actual === 0) {
       zeroActualCount += 1;
@@ -199,6 +277,12 @@ export async function syncStudyPlanStudentNumbersToTimetable(params: {
 
   if (upsertError) {
     const message = String(upsertError.message ?? upsertError);
+
+    if (message.includes("created_by") || message.includes("foreign key")) {
+      throw new Error(
+        "Could not save student numbers because the login session is invalid. Please log out and log in again."
+      );
+    }
 
     if (
       message.includes("programme_stream") ||

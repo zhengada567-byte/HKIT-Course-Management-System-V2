@@ -1,5 +1,5 @@
 import { supabase } from "../lib/supabase";
-import { normalizeStream, offeredTermToStudyTerm } from "../lib/utils";
+import { getAcademicYearVariants, normalizeStream, offeredTermToStudyTerm } from "../lib/utils";
 import type {
   TimetablePlanningModuleRow,
   TimetableStudentNumberRow,
@@ -222,14 +222,17 @@ export async function listStudentNumbers(academicYear: string) {
   const { data, error } = await supabase
     .from("timetable_student_numbers")
     .select("*")
-    .eq("academic_year", academicYear)
+    .in("academic_year", getAcademicYearVariants(academicYear))
     .order("programme_code")
     .order("module_code")
     .order("module_term");
 
   if (error) throw error;
 
-  return (data ?? []) as TimetableStudentNumberRow[];
+  return ((data ?? []) as TimetableStudentNumberRow[]).map((row) => ({
+    ...row,
+    academic_year: academicYear,
+  }));
 }
 
 export async function getStudentNumberInputRows(params: {
@@ -241,7 +244,7 @@ export async function getStudentNumberInputRows(params: {
     supabase
       .from("module_enrollment")
       .select("*")
-      .eq("academic_year", params.academicYear),
+      .in("academic_year", getAcademicYearVariants(params.academicYear)),
   ]);
 
   if (enrollmentResult.error) throw enrollmentResult.error;
