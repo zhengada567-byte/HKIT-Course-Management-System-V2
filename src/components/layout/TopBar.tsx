@@ -4,7 +4,12 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
 
-export function TopBar() {
+interface TopBarProps {
+  mobileNavOpen: boolean;
+  onToggleMobileNav: () => void;
+}
+
+export function TopBar({ mobileNavOpen, onToggleMobileNav }: TopBarProps) {
   const { user, logout } = useAuth();
   const { language, setLanguage, t } = useLanguage();
   const { academicYear, currentStudyTerm, currentOfferedTerm } = useAcademicYear();
@@ -13,7 +18,14 @@ export function TopBar() {
     <header className="sticky top-0 z-20 border-b border-slate-200 bg-white">
       <div className="mx-auto flex h-14 max-w-[1600px] items-center justify-between px-4">
         <div className="flex items-center gap-3">
-          <button className="btn btn-secondary lg:hidden" type="button">
+          <button
+            className="btn btn-secondary lg:hidden"
+            type="button"
+            aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
+            aria-expanded={mobileNavOpen}
+            aria-controls="app-sidebar"
+            onClick={onToggleMobileNav}
+          >
             <Menu className="h-4 w-4" />
           </button>
 

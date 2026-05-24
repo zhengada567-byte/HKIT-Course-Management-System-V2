@@ -18,9 +18,15 @@ import {
   Users,
 } from "lucide-react";
 
+import { cn } from "../../lib/utils";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import type { UserRole } from "../../types";
+
+interface SidebarProps {
+  mobileOpen: boolean;
+  onMobileClose: () => void;
+}
 
 interface NavItem {
   to: string;
@@ -31,7 +37,7 @@ interface NavItem {
   disabledReason?: string;
 }
 
-export function Sidebar() {
+export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const { role } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -140,50 +146,77 @@ export function Sidebar() {
     return item.roles.includes(role);
   });
 
-  return (
-    <aside className="hidden min-h-[calc(100vh-3.5rem)] w-64 border-r border-slate-200 bg-white p-3 lg:block">
-      <nav className="space-y-1">
-        {visibleItems.map((item) => {
-          const Icon = item.icon;
+  const nav = (
+    <nav className="space-y-1">
+      {visibleItems.map((item) => {
+        const Icon = item.icon;
 
-          if (item.disabled) {
-            return (
-              <button
-                key={item.to}
-                type="button"
-                title={item.disabledReason}
-                onClick={() => {
-                  if (role === "admin") {
-                    navigate("/admin/assignment-confirmation-monitor");
-                  }
-                }}
-                className="flex w-full cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-400 transition hover:bg-slate-50"
-              >
-                <Icon className="h-4 w-4" />
-                <span>{item.label}</span>
-              </button>
-            );
-          }
-
+        if (item.disabled) {
           return (
-            <NavLink
+            <button
               key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                [
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
-                  isActive
-                    ? "bg-blue-50 text-blue-700"
-                    : "text-slate-700 hover:bg-slate-100",
-                ].join(" ")
-              }
+              type="button"
+              title={item.disabledReason}
+              onClick={() => {
+                if (role === "admin") {
+                  navigate("/admin/assignment-confirmation-monitor");
+                  onMobileClose();
+                }
+              }}
+              className="flex w-full cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-400 transition hover:bg-slate-50"
             >
               <Icon className="h-4 w-4" />
               <span>{item.label}</span>
-            </NavLink>
+            </button>
           );
-        })}
-      </nav>
-    </aside>
+        }
+
+        return (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            onClick={onMobileClose}
+            className={({ isActive }) =>
+              cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
+                isActive
+                  ? "bg-blue-50 text-blue-700"
+                  : "text-slate-700 hover:bg-slate-100"
+              )
+            }
+          >
+            <Icon className="h-4 w-4" />
+            <span>{item.label}</span>
+          </NavLink>
+        );
+      })}
+    </nav>
+  );
+
+  return (
+    <>
+      {mobileOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 top-14 z-30 bg-black/40 lg:hidden"
+          aria-label="Close menu"
+          onClick={onMobileClose}
+        />
+      )}
+
+      <aside
+        id="app-sidebar"
+        className={cn(
+          "w-64 shrink-0 border-r border-slate-200 bg-white p-3",
+          "min-h-[calc(100vh-3.5rem)]",
+          "lg:static lg:block",
+          mobileOpen
+            ? "fixed left-0 top-14 z-40 block h-[calc(100vh-3.5rem)] overflow-y-auto shadow-xl"
+            : "hidden lg:block"
+        )}
+      >
+        {nav}
+      </aside>
+    </>
   );
 }

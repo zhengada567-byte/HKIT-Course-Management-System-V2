@@ -1,0 +1,13 @@
+# Dependencies & build output
+node_modules/
+dist/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Private test data (do not commit)
+Testing Data/
+
+# Office / editor temp files
+~$*
+*.tmp
