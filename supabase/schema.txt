@@ -1,0 +1,37 @@
+modules table schema:
+ordinal_position,column_name,data_type,is_nullable,column_default
+1,id,uuid,NO,gen_random_uuid()
+2,module_code,text,NO,null
+3,module_name,text,YES,null
+4,module_year,text,YES,null
+5,module_term,text,NO,null
+6,programme_code,text,NO,null
+7,stream_code,text,NO,'nil'::text
+8,created_at,timestamp with time zone,NO,now()
+9,updated_at,timestamp with time zone,NO,now()    
+
+
+programmes table schema:
+ordinal_position,column_name,data_type,is_nullable,column_default
+1,id,uuid,NO,gen_random_uuid()
+2,programme_type,text,NO,null
+3,programme_code,text,NO,null
+4,programme_name,text,YES,null
+5,programme_stream,text,NO,'nil'::text
+6,programme_leader,text,YES,null
+7,created_at,timestamp with time zone,NO,now()
+8,updated_at,timestamp with time zone,NO,now()
+9,stream_abbr,text,YES,null
+
+timetable_student_numbers schema:
+column_name,data_type,is_nullable,column_default
+id,uuid,NO,gen_random_uuid()
+academic_year,text,NO,null
+module_code,text,NO,null
+programme_code,text,NO,null
+expected_student_number,integer,NO,0
+actual_student_number,integer,YES,null
+created_by,uuid,YES,null
+created_at,timestamp with time zone,NO,now()
+updated_at,timestamp with time zone,NO,now()
+module_term,text,NO,null

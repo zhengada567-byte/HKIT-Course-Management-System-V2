@@ -1,0 +1,1963 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>彈球對戰遊戲</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#000;color:#fff;font-family:'Microsoft JhengHei',Arial,sans-serif;overflow:hidden;width:100vw;height:100vh;}
+.screen{position:absolute;width:100%;height:100%;display:none;flex-direction:column;align-items:center;justify-content:center;}
+.screen.active{display:flex;}
+#startScreen{background:radial-gradient(ellipse at center,#1a0a00,#000);}
+#startScreen h1{font-size:38px;color:#ffcc00;text-shadow:0 0 30px #ff6b00;margin-bottom:8px;letter-spacing:2px;}
+#startScreen p{color:#aaa;font-size:14px;margin-bottom:32px;}
+#startBtn{padding:18px 50px;font-size:24px;background:linear-gradient(135deg,#ff6b00,#ffcc00);border:none;border-radius:12px;color:#000;font-weight:bold;cursor:pointer;box-shadow:0 0 30px #ff6b0088;transition:transform .2s;}
+#startBtn:hover{transform:scale(1.08);}
+#nameScreen{background:#000;gap:20px;}
+#nameScreen h2{font-size:28px;color:#ffcc00;}
+#nameInput{padding:12px 20px;font-size:18px;border-radius:8px;border:2px solid #ffcc00;background:#111;color:#fff;width:280px;text-align:center;}
+#nameConfirmBtn{padding:12px 40px;font-size:18px;background:#ffcc00;border:none;border-radius:8px;color:#000;font-weight:bold;cursor:pointer;}
+#pickScreen{background:#000;gap:20px;}
+#pickScreen h2{font-size:26px;color:#ffcc00;}
+#pickScreen p{color:#aaa;font-size:13px;}
+.pick-cards{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;max-width:580px;}
+.pick-card{width:136px;padding:16px;background:#1a1a1a;border:2px solid #444;border-radius:14px;text-align:center;cursor:pointer;transition:border-color .2s,transform .2s;}
+.pick-card:hover{border-color:#ffcc00;transform:scale(1.05);}
+.pick-card .ball-icon{width:54px;height:54px;border-radius:50%;margin:0 auto 10px;}
+.pick-card h3{font-size:14px;color:#fff;margin-bottom:4px;}
+.pick-card p{font-size:10px;color:#aaa;line-height:1.5;}
+#worldScreen{background:#2d7a2d;position:relative;}
+#worldCanvas{position:absolute;top:0;left:0;}
+#coinDisplay{position:absolute;top:14px;right:16px;font-size:17px;color:#ffcc00;font-weight:bold;background:#00000088;padding:5px 11px;border-radius:8px;z-index:10;}
+#voucherDisplay{position:absolute;top:46px;right:16px;font-size:13px;color:#aaffaa;font-weight:bold;background:#00000088;padding:3px 9px;border-radius:8px;z-index:10;}
+#fruitDisplay{position:absolute;top:76px;right:16px;font-size:13px;color:#ffaaff;font-weight:bold;background:#00000088;padding:3px 9px;border-radius:8px;z-index:10;}
+#playerNameTag{position:absolute;top:14px;left:16px;font-size:14px;color:#fff;background:#00000088;padding:5px 11px;border-radius:8px;z-index:10;}
+#worldEventBanner{position:absolute;top:110px;left:50%;transform:translateX(-50%);font-size:13px;color:#ffcc00;background:#00000099;padding:4px 14px;border-radius:8px;z-index:10;display:none;animation:pulse 1s infinite alternate;}
+@keyframes pulse{from{opacity:.7}to{opacity:1}}
+.world-btn{position:absolute;bottom:18px;padding:10px 16px;font-size:13px;font-weight:bold;border:none;border-radius:10px;cursor:pointer;z-index:10;}
+#btnLottery{left:8px;background:#cc44ff;color:#fff;}
+#btnShop{left:104px;background:#ff8800;color:#fff;}
+#btnBag{left:200px;background:#00aaff;color:#fff;}
+#btnArena{right:8px;background:#ff3333;color:#fff;}
+#btnGuide{position:absolute;top:108px;right:16px;font-size:12px;color:#fff;background:#00000088;padding:3px 9px;border-radius:8px;z-index:10;border:1px solid #ffffff44;cursor:pointer;font-weight:bold;}
+#rankBoard{position:absolute;bottom:62px;right:10px;background:#00000099;border:1px solid #ffcc0055;border-radius:10px;padding:8px 12px;z-index:10;min-width:165px;}
+#rankBoard h4{color:#ffcc00;font-size:12px;margin-bottom:6px;text-align:center;}
+#rankBoard .rank-item{font-size:11px;color:#fff;margin-bottom:4px;line-height:1.5;}
+#rankBoard .rank-item span{color:#aaa;font-size:10px;display:block;padding-left:14px;}
+.modal{position:absolute;width:100%;height:100%;background:#000000cc;display:none;align-items:center;justify-content:center;z-index:100;}
+.modal.active{display:flex;}
+.modal-box{background:#1a1a1a;border-radius:16px;padding:22px;min-width:290px;max-width:92vw;max-height:88vh;overflow-y:auto;position:relative;}
+.modal-box h2{color:#ffcc00;margin-bottom:13px;text-align:center;}
+.close-btn{position:absolute;top:9px;right:13px;background:none;border:none;color:#aaa;font-size:21px;cursor:pointer;}
+.close-btn:hover{color:#fff;}
+.bag-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;}
+.bag-item{background:#2a2a2a;border:2px solid #444;border-radius:10px;padding:10px;text-align:center;cursor:pointer;transition:border-color .2s;position:relative;}
+.bag-item:hover{border-color:#ffcc00;}
+.bag-item.selected{border-color:#00ff88;}
+.bag-item.in-team{border-color:#ff8800;}
+.bag-item .b-icon{width:38px;height:38px;border-radius:50%;margin:0 auto 6px;}
+.bag-item h4{font-size:11px;color:#fff;}
+.bag-item p{font-size:9px;color:#888;}
+.bag-item .lv-badge{position:absolute;top:3px;left:3px;font-size:8px;background:#ffcc0099;color:#000;border-radius:3px;padding:1px 3px;font-weight:bold;}
+.bag-item .team-badge{position:absolute;top:3px;right:3px;font-size:8px;background:#ff880099;color:#fff;border-radius:3px;padding:1px 3px;font-weight:bold;}
+#bagTeamHint{text-align:center;color:#ff8800;font-size:11px;margin-bottom:8px;}
+#bagConfirmBtn{display:block;margin:12px auto 0;padding:8px 26px;background:#00ff88;border:none;border-radius:8px;color:#000;font-weight:bold;cursor:pointer;font-size:13px;}
+#lotteryModal .modal-box{background:linear-gradient(135deg,#1a0033,#330066);border:2px solid #cc44ff;}
+#lotteryModal h2{color:#ff88ff;}
+.lottery-machine{font-size:68px;text-align:center;margin:7px 0;animation:spinAnim 2s infinite linear;display:none;}
+@keyframes spinAnim{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+#lotteryResult{text-align:center;min-height:34px;font-size:15px;color:#ffcc00;margin:7px 0;}
+#lotteryBtn{display:block;margin:0 auto;padding:10px 30px;background:#cc44ff;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer;}
+.shop-item{display:flex;justify-content:space-between;align-items:center;background:#2a2a2a;border-radius:10px;padding:9px 13px;margin-bottom:7px;}
+.shop-item span{font-size:12px;color:#fff;}
+.shop-item button{padding:6px 12px;background:#ff8800;border:none;border-radius:7px;color:#fff;font-weight:bold;cursor:pointer;font-size:11px;}
+/* 强化面板 */
+#upgradeModal .modal-box{background:linear-gradient(135deg,#0a1a0a,#0a2a0a);border:2px solid #44ff88;}
+#upgradeModal h2{color:#44ff88;}
+.upg-ball-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:12px;}
+.upg-ball-btn{width:48px;height:48px;border-radius:50%;border:3px solid #444;cursor:pointer;transition:border-color .2s,transform .2s;position:relative;flex-shrink:0;}
+.upg-ball-btn:hover{transform:scale(1.1);}
+.upg-ball-btn.active{border-color:#44ff88;}
+.upg-ball-btn .upg-lv{position:absolute;bottom:-1px;right:-1px;font-size:8px;background:#ffcc00;color:#000;border-radius:3px;padding:1px 3px;font-weight:bold;}
+.upg-info-box{background:#ffffff11;border-radius:10px;padding:12px;margin-bottom:10px;}
+.upg-info-box .upg-name{font-size:16px;font-weight:bold;margin-bottom:5px;}
+.upg-info-box .upg-stats{font-size:11px;color:#aaa;line-height:1.9;}
+.upg-cost-row{text-align:center;font-size:12px;color:#ffcc00;margin-bottom:9px;}
+#upgradeBallBtn{display:block;margin:0 auto;padding:9px 26px;background:#44ff88;border:none;border-radius:8px;color:#000;font-weight:bold;cursor:pointer;font-size:13px;}
+/* 资质面板 */
+#qualityModal .modal-box{background:linear-gradient(135deg,#1a1a2e,#16213e);border:2px solid #f9a825;min-width:280px;}
+#qualityModal h2{color:#f9a825;}
+.quality-row{display:flex;align-items:center;justify-content:space-between;background:#ffffff11;border-radius:10px;padding:11px 13px;margin-bottom:9px;}
+.quality-row-info{flex:1;}
+.quality-row-info .q-title{font-size:13px;font-weight:bold;margin-bottom:2px;}
+.quality-row-info .q-sub{font-size:10px;color:#aaa;}
+.quality-plus-btn{width:34px;height:34px;border-radius:9px;border:none;font-size:19px;font-weight:bold;cursor:pointer;color:#fff;flex-shrink:0;margin-left:9px;transition:transform .1s,background .2s;}
+.quality-plus-btn:active{transform:scale(0.9);}
+.quality-plus-btn.enabled{background:#f9a825;}
+.quality-plus-btn.disabled{background:#444;cursor:not-allowed;}
+.quality-fruit-bar{text-align:center;font-size:13px;color:#ffaaff;background:#ffffff11;border-radius:8px;padding:6px;margin-bottom:13px;}
+/* 竞技场 */
+#arenaScreen{background:#000;position:relative;}
+#arenaCanvas{display:block;}
+#arenaInfo{position:absolute;top:11px;left:50%;transform:translateX(-50%);font-size:15px;color:#fff;background:#00000099;padding:5px 16px;border-radius:8px;z-index:10;white-space:nowrap;}
+#debuffBanner{position:absolute;top:44px;left:50%;transform:translateX(-50%);font-size:12px;padding:3px 13px;border-radius:8px;z-index:10;display:none;font-weight:bold;}
+#arenaHpBar{position:absolute;top:74px;left:0;width:100%;display:flex;justify-content:space-between;padding:0 14px;z-index:10;}
+.hp-wrap{width:45%;}
+.hp-label{font-size:11px;color:#fff;margin-bottom:2px;}
+.hp-bar-bg{background:#333;border-radius:5px;height:11px;overflow:hidden;}
+.hp-bar-fill{height:100%;border-radius:5px;transition:width .1s;}
+.hp-bar-fill.player{background:#00ff88;}
+.hp-bar-fill.enemy{background:#ff4444;}
+#arenaBackBtn{position:absolute;top:11px;left:13px;padding:6px 13px;background:#555;border:none;border-radius:8px;color:#fff;cursor:pointer;z-index:10;font-size:12px;}
+#arenaResult{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:32px;font-weight:bold;text-shadow:0 0 20px currentColor;display:none;z-index:20;pointer-events:none;text-align:center;}
+/* 队伍栏 */
+#teamBar{position:absolute;bottom:220px;left:50%;transform:translateX(-50%);display:none;gap:10px;z-index:30;}
+#teamBar.show{display:flex;}
+.team-slot{width:56px;height:56px;border-radius:50%;border:3px solid #444;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:#fff;position:relative;transition:border-color .2s,transform .2s;background:#00000066;}
+.team-slot:hover{transform:scale(1.1);}
+.team-slot.active-slot{border-color:#00ff88;transform:scale(1.15);}
+.team-slot.dead-slot{opacity:.3;pointer-events:none;}
+.team-slot .slot-hp{position:absolute;bottom:-15px;font-size:8px;color:#aaa;white-space:nowrap;}
+.team-slot .slot-cd-badge{position:absolute;top:-3px;right:-3px;font-size:8px;background:#ff8800;color:#fff;border-radius:3px;padding:1px 3px;}
+/* CD面板 */
+#cdPanel{position:absolute;bottom:148px;left:50%;transform:translateX(-50%);display:none;gap:13px;z-index:30;pointer-events:none;}
+#cdPanel.show{display:flex;}
+.cd-btn-wrap{display:flex;flex-direction:column;align-items:center;gap:3px;}
+.cd-circle{width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:19px;position:relative;border:3px solid #ffffff44;background:#00000066;}
+.cd-circle canvas{position:absolute;top:0;left:0;border-radius:50%;}
+.cd-label{font-size:10px;color:#ccc;}
+.cd-key{font-size:9px;color:#888;}
+#keyHint{position:absolute;bottom:88px;left:13px;background:#00000099;border-radius:8px;padding:6px 11px;z-index:10;font-size:10px;color:#aaa;line-height:2;display:none;}
+/* 手机控制器 */
+#mobileControls{position:absolute;bottom:0;left:0;width:100%;height:230px;display:none;z-index:50;}
+#joystickZone{position:absolute;left:18px;bottom:18px;width:128px;height:128px;touch-action:none;}
+#joystickBase{width:128px;height:128px;border-radius:50%;background:#ffffff18;border:3px solid #ffffff55;position:relative;}
+#joystickKnob{width:50px;height:50px;border-radius:50%;background:radial-gradient(circle,#ffffffcc,#ffffff66);border:2px solid #fff;position:absolute;top:39px;left:39px;pointer-events:none;}
+.mobile-action-btn{position:absolute;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:bold;color:#fff;border:3px solid;cursor:pointer;touch-action:none;user-select:none;gap:1px;}
+#mBtnAtk{width:70px;height:70px;right:100px;bottom:28px;background:#ff333388;border-color:#ff5555;font-size:11px;}
+#mBtnSkill{width:70px;height:70px;right:20px;bottom:28px;background:#cc44ff88;border-color:#dd66ff;font-size:11px;}
+#mBtnSwitch{width:54px;height:54px;right:100px;bottom:108px;background:#ff880088;border-color:#ffaa44;font-size:10px;}
+.mobile-action-btn .btn-icon{font-size:17px;}
+.mobile-action-btn .btn-cd{font-size:9px;color:#ffcc00;min-height:11px;}
+/* 模式选择 */
+#modeModal .modal-box{background:linear-gradient(135deg,#1a0000,#2a0000);border:2px solid #ff4444;max-width:340px;}
+#modeModal h2{color:#ff4444;}
+.mode-btn{display:block;width:100%;padding:13px;margin-bottom:9px;border:none;border-radius:10px;font-size:15px;font-weight:bold;cursor:pointer;transition:transform .15s;text-align:left;padding-left:18px;}
+.mode-btn:hover{transform:scale(1.02);}
+#modeNormal{background:linear-gradient(135deg,#1a5500,#33aa00);color:#fff;}
+#modeHard{background:linear-gradient(135deg,#882200,#ff4400);color:#fff;}
+#modeHell{background:linear-gradient(135deg,#330033,#880088);color:#fff;}
+.mode-desc{font-size:10px;color:#ffffff99;display:block;margin-top:2px;}
+/* 胜利 */
+#victoryScreen{background:radial-gradient(ellipse at center,#fffbe6 0%,#f9a825 100%);}
+#victoryScreen h1{font-size:44px;color:#b71c1c;text-shadow:0 0 20px #ff000066;margin-bottom:14px;}
+.victory-stats{background:#00000033;border-radius:14px;padding:16px 30px;margin-bottom:22px;text-align:center;}
+.victory-stats p{font-size:17px;color:#222;margin:6px 0;font-weight:bold;}
+#victoryBackBtn{padding:12px 38px;font-size:16px;background:#e53935;border:none;border-radius:12px;color:#fff;font-weight:bold;cursor:pointer;box-shadow:0 0 20px #e5393588;}
+/* 通知 */
+#notification{position:absolute;top:74px;left:50%;transform:translateX(-50%);background:#ffcc00;color:#000;padding:8px 20px;border-radius:10px;font-weight:bold;font-size:13px;z-index:200;display:none;opacity:0;transition:opacity .3s;pointer-events:none;}
+/* 攻略 */
+#guideModal .modal-box{background:#0a0a1a;border:2px solid #00ddff55;max-width:680px;}
+#guideModal h2{color:#00ddff;}
+.guide-table{width:100%;border-collapse:collapse;font-size:11px;}
+.guide-table th{background:#ffffff15;color:#ffcc00;padding:6px 8px;text-align:left;border-bottom:1px solid #ffffff22;}
+.guide-table td{padding:5px 8px;border-bottom:1px solid #ffffff11;color:#ddd;vertical-align:top;}
+.guide-table tr:hover td{background:#ffffff08;}
+.guide-ball-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle;}
+/* 祝福 */
+#blessingModal .modal-box{background:#0a1a0a;border:2px solid #44ff88;min-width:310px;}
+#blessingCanvas{display:block;margin:0 auto;border:2px solid #ff8800;border-radius:4px;}
+#blessingResult{text-align:center;font-size:15px;color:#ffcc00;margin-top:7px;min-height:22px;}
+#blessingCloseBtn{display:block;margin:7px auto 0;padding:6px 20px;background:#44ff88;border:none;border-radius:8px;color:#000;font-weight:bold;cursor:pointer;}
+/* BOSS特效 */
+@keyframes bossGlow{0%{box-shadow:0 0 20px #ff0000}50%{box-shadow:0 0 50px #ff4400,0 0 80px #ff0000}100%{box-shadow:0 0 20px #ff0000}}
+.boss-alert{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:28px;font-weight:bold;color:#ff4444;text-shadow:0 0 20px #ff0000;z-index:25;pointer-events:none;animation:bossGlow 1s infinite;}
+</style>
+</head>
+<body>
+
+<!-- 开始 -->
+<div id="startScreen" class="screen active">
+  <h1>⚡ 彈球對戰</h1>
+  <p>收集球球 · 挑戰關卡 · 成為最強</p>
+  <button id="startBtn">開始遊戲</button>
+</div>
+
+<!-- 昵称 -->
+<div id="nameScreen" class="screen">
+  <h2>輸入你的暱稱</h2>
+  <input id="nameInput" type="text" placeholder="例：Alex" maxlength="12"/>
+  <button id="nameConfirmBtn">確認</button>
+</div>
+
+<!-- 选球 -->
+<div id="pickScreen" class="screen">
+  <h2>選擇你的初始球球！</h2>
+  <p>三選一，最多攜帶3顆出戰</p>
+  <div class="pick-cards" id="pickCards"></div>
+</div>
+
+<!-- 世界 -->
+<div id="worldScreen" class="screen">
+  <canvas id="worldCanvas"></canvas>
+  <div id="playerNameTag"></div>
+  <div id="coinDisplay">🪙 0</div>
+  <div id="voucherDisplay">🎟️ 0</div>
+  <div id="fruitDisplay">🍎 0</div>
+  <button id="btnGuide">📖 攻略</button>
+  <div id="worldEventBanner">⚡ 球球入侵！快去競技場！</div>
+  <button class="world-btn" id="btnLottery">🎰 抽獎</button>
+  <button class="world-btn" id="btnShop">🛒 商場</button>
+  <button class="world-btn" id="btnBag">🎒 背包</button>
+  <button class="world-btn" id="btnArena">⚔️ 競技場</button>
+  <div id="rankBoard">
+    <h4>🏆 強度排行</h4>
+    <div class="rank-item">🥇 劍豪<span>無限硬控·全場最速</span></div>
+    <div class="rank-item">🥈 吸血鬼<span>束縛+吸血·越打越肉</span></div>
+    <div class="rank-item">🥉 魔術師<span>全場傷害·雙技能輪放</span></div>
+  </div>
+
+  <!-- 背包 -->
+  <div class="modal" id="bagModal">
+    <div class="modal-box">
+      <button class="close-btn" id="bagClose">✕</button>
+      <h2>🎒 背包</h2>
+      <div id="bagTeamHint">點擊選擇出戰隊伍（最多3顆）</div>
+      <div class="bag-grid" id="bagGrid"></div>
+      <button id="bagConfirmBtn">出戰！</button>
+    </div>
+  </div>
+
+  <!-- 抽奖 -->
+  <div class="modal" id="lotteryModal">
+    <div class="modal-box">
+      <button class="close-btn" id="lotteryClose">✕</button>
+      <h2>🎰 抽獎機</h2>
+      <div class="lottery-machine" id="lotteryMachine">🎰</div>
+      <div id="lotteryResult">消耗 10 金幣抽一次！</div>
+      <button id="lotteryBtn">抽獎（10金幣）</button>
+    </div>
+  </div>
+
+  <!-- 商场 -->
+  <div class="modal" id="shopModal">
+    <div class="modal-box">
+      <button class="close-btn" id="shopClose">✕</button>
+      <h2>🛒 商場</h2>
+      <div class="shop-item"><span>🍎 資質果（250券）</span><button id="shopFruit">兌換</button></div>
+      <div class="shop-item"><span>👊 一拳男人（200券）</span><button id="shopOnePunch">兌換</button></div>
+      <div class="shop-item"><span>⚔️ 劍豪（300券）</span><button id="shopSword">兌換</button></div>
+      <div class="shop-item"><span>🌩️ 雷電使者（350券）</span><button id="shopThunder">兌換</button></div>
+      <div class="shop-item"><span>🪨 磐石守衛（280券）</span><button id="shopRock">兌換</button></div>
+    </div>
+  </div>
+
+  <!-- 强化 -->
+  <div class="modal" id="upgradeModal">
+    <div class="modal-box">
+      <button class="close-btn" id="upgradeClose">✕</button>
+      <h2>⬆️ 球球強化</h2>
+      <div class="upg-ball-row" id="upgBallRow"></div>
+      <div class="upg-info-box" id="upgInfoBox">
+        <div class="upg-name" id="upgName">—</div>
+        <div class="upg-stats" id="upgStats"></div>
+      </div>
+      <div class="upg-cost-row" id="upgCost"></div>
+      <button id="upgradeBallBtn">強化！</button>
+    </div>
+  </div>
+
+  <!-- 祝福 -->
+  <div class="modal" id="blessingModal">
+    <div class="modal-box">
+      <button class="close-btn" id="blessingClose">✕</button>
+      <h2>✨ 祝福雕像挑戰</h2>
+      <canvas id="blessingCanvas" width="320" height="200"></canvas>
+      <div id="blessingResult"></div>
+      <button id="blessingCloseBtn" style="display:none">關閉</button>
+    </div>
+  </div>
+
+  <!-- 攻略 -->
+  <div class="modal" id="guideModal">
+    <div class="modal-box">
+      <button class="close-btn" id="guideClose">✕</button>
+      <h2>📖 球球攻略</h2>
+      <div id="guideTableWrap"></div>
+    </div>
+  </div>
+
+  <!-- 资质 -->
+  <div class="modal" id="qualityModal">
+    <div class="modal-box">
+      <button class="close-btn" id="qualityClose">✕</button>
+      <h2>⚡ 資質面板</h2>
+      <div class="quality-fruit-bar" id="qualityFruitBar">🍎 資質果：0</div>
+      <div class="quality-row">
+        <div class="quality-row-info">
+          <div class="q-title" style="color:#ff8a65;">⚔️ 攻擊資質</div>
+          <div class="q-sub" id="atkQualityDesc">Lv.0 (+0%)</div>
+        </div>
+        <button class="quality-plus-btn" id="atkPlusBtn">+</button>
+      </div>
+      <div class="quality-row">
+        <div class="quality-row-info">
+          <div class="q-title" style="color:#81c784;">❤️ 生命資質</div>
+          <div class="q-sub" id="hpQualityDesc">Lv.0 (+0)</div>
+        </div>
+        <button class="quality-plus-btn" id="hpPlusBtn">+</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 竞技场 -->
+<div id="arenaScreen" class="screen">
+  <canvas id="arenaCanvas"></canvas>
+  <div id="arenaInfo">第1關</div>
+  <div id="debuffBanner"></div>
+  <div id="arenaHpBar">
+    <div class="hp-wrap">
+      <div class="hp-label" id="playerHpLabel">我方：100</div>
+      <div class="hp-bar-bg"><div class="hp-bar-fill player" id="playerHpFill" style="width:100%"></div></div>
+    </div>
+    <div class="hp-wrap" style="text-align:right">
+      <div class="hp-label" id="enemyHpLabel">敵方：100</div>
+      <div class="hp-bar-bg"><div class="hp-bar-fill enemy" id="enemyHpFill" style="width:100%"></div></div>
+    </div>
+  </div>
+  <button id="arenaBackBtn">← 返回</button>
+  <div id="arenaResult"></div>
+  <!-- 队伍切换栏 -->
+  <div id="teamBar"></div>
+  <!-- CD面板 -->
+  <div id="cdPanel">
+    <div class="cd-btn-wrap">
+      <div class="cd-circle">⚔️<canvas id="cdCanvasAtk" width="58" height="58"></canvas></div>
+      <div class="cd-label">攻擊</div>
+      <div class="cd-key" id="cdKeyAtk">[J]</div>
+    </div>
+    <div class="cd-btn-wrap">
+      <div class="cd-circle">💥<canvas id="cdCanvasSkill" width="58" height="58"></canvas></div>
+      <div class="cd-label">技能</div>
+      <div class="cd-key">[K]</div>
+    </div>
+    <div class="cd-btn-wrap">
+      <div class="cd-circle">🔄<canvas id="cdCanvasSwitch" width="58" height="58"></canvas></div>
+      <div class="cd-label">換球</div>
+      <div class="cd-key">[Tab]</div>
+    </div>
+  </div>
+  <!-- 键位提示 -->
+  <div id="keyHint">🕹️ WASD/方向鍵 移動<br>⚔️ J 攻擊 &nbsp; 💥 K 技能<br>🔄 Tab 切換球球</div>
+  <!-- 手机控制器 -->
+  <div id="mobileControls">
+    <div id="joystickZone"><div id="joystickBase"><div id="joystickKnob"></div></div></div>
+    <div class="mobile-action-btn" id="mBtnSwitch"><div class="btn-icon">🔄</div><div class="btn-cd" id="mCdSwitch"></div></div>
+    <div class="mobile-action-btn" id="mBtnAtk"><div class="btn-icon">⚔️</div><div class="btn-cd" id="mCdAtk"></div></div>
+    <div class="mobile-action-btn" id="mBtnSkill"><div class="btn-icon">💥</div><div class="btn-cd" id="mCdSkill"></div></div>
+  </div>
+</div>
+
+<!-- 模式选择 -->
+<div class="modal" id="modeModal">
+  <div class="modal-box">
+    <button class="close-btn" id="modeClose">✕</button>
+    <h2>⚔️ 選擇模式</h2>
+    <button class="mode-btn" id="modeNormal">🟢 普通模式<span class="mode-desc">標準難度 · 通關獎勵金幣+資質果</span></button>
+    <button class="mode-btn" id="modeHard">🔴 困難模式<span class="mode-desc">敵人傷害+30%·移速+20% · 額外獎勵</span></button>
+    <button class="mode-btn" id="modeHell">💀 地獄模式<span class="mode-desc">敵人傷害+60%·技能CD縮短 · 限定獎勵</span></button>
+  </div>
+</div>
+
+<!-- 胜利 -->
+<div id="victoryScreen" class="screen">
+  <h1>🎉 恭喜通關！</h1>
+  <div class="victory-stats">
+    <p id="victoryModeStat"></p>
+    <p id="victoryAtkStat"></p>
+    <p id="victoryHpStat"></p>
+    <p id="victoryFruitStat"></p>
+  </div>
+  <button id="victoryBackBtn">返回主選單</button>
+</div>
+
+<div id="notification"></div>
+<script>
+// ============================================================
+// BALL DEFS — 含属性克制标签
+// ============================================================
+const ELEMENT = { FIRE:'火',WATER:'水',DARK:'暗',LIGHT:'光',ROCK:'岩',WIND:'風',THUNDER:'雷',POISON:'毒' };
+const ELEMENT_COLOR = { 火:'#ff4400',水:'#0088ff',暗:'#880088',光:'#ffdd00',岩:'#888866',風:'#88ffcc',雷:'#ffff00',毒:'#44ff44' };
+// 克制关系：key克制value，增伤25%
+const ELEMENT_COUNTER = { 火:'岩',水:'火',暗:'光',光:'暗',雷:'水',風:'雷',毒:'風',岩:'毒' };
+
+const BALL_DEFS = {
+  thorn:       {id:'thorn',       name:'毒刺',     color:'#44ff44', elem:'毒', desc:'撞框留毒刺；技能毒刺環',              skill:'thornRing',   skillCd:8,   dmg:2,  speed:6.4},
+  sunflash:    {id:'sunflash',    name:'太陽閃',   color:'#ffdd00', elem:'光', desc:'領域持續傷害；技能太陽爆發15傷',      skill:'burst',       skillCd:12,  auraDmg:0.5,auraInterval:100,auraRadius:160,speed:6.0},
+  blackhole:   {id:'blackhole',   name:'黑洞',     color:'#6600cc', elem:'暗', desc:'重力吸附；技能強力引力+8傷',          skill:'pull',        skillCd:10,  gravRadius:100,gravDmg:4,speed:6.0},
+  giant:       {id:'giant',       name:'巨人',     color:'#cc8800', elem:'岩', desc:'錘擊5傷；技能旋轉巨錘',              skill:'spin',        skillCd:20,  dmg:5,  skillDmg:15,speed:6.0},
+  cat:         {id:'cat',         name:'貓咪',     color:'#ff88cc', elem:'風', desc:'爪擊6傷；技能瞬移追蹤15傷',          skill:'track',       skillCd:12,  dmg:6,  skillDmg:15,speed:7.0},
+  wolf:        {id:'wolf',        name:'雙頭小狼', color:'#aaaaaa', elem:'風', desc:'碰觸爪擊8傷；技能狂暴16傷',          skill:'rage',        skillCd:8,   dmg:8,  speed:6.7},
+  fireball:    {id:'fireball',    name:'火焰球',   color:'#ff4400', elem:'火', desc:'燒傷；技能爆炸20傷',                  skill:'explode',     skillCd:8,   burnDmg:5,burnInterval:200,speed:7.2,maxHp:150},
+  dragon:      {id:'dragon',      name:'龍王',     color:'#0088ff', elem:'水', desc:'冰錐1傷/秒；技能石球5傷',            skill:'boulder',     skillCd:12,  dmg:0.9,skillDmg:5,speed:7.0},
+  vampire:     {id:'vampire',     name:'吸血鬼',   color:'#880000', elem:'暗', desc:'近身束縛3秒；技能立即束縛',          skill:'bind',        skillCd:10,  vampireRadius:100,bindDur:3,dmgPerTick:4,healPerTick:1,speed:5.9},
+  onepunch:    {id:'onepunch',    name:'一拳男人', color:'#ffffff', elem:'光', desc:'技能：20%打空，命中50傷',            skill:'onepunch',    skillCd:30,  skillDmg:50,missChance:0.2,speed:5.8},
+  swordmaster: {id:'swordmaster', name:'劍豪',     color:'#00ddff', elem:'風', desc:'旋轉劍束縛4秒；技能立即束縛',        skill:'swordbind',   skillCd:8,   swordRadius:100,bindDur:4,dmg:4,speed:8.1},
+  magician:    {id:'magician',    name:'魔術師',   color:'#ff44ff', elem:'暗', desc:'技能：驚嚇暈3秒+全場10傷',          skill:'magic',       skillCd:10,  boxDmg:2,stunDur:3,allDmg:10,speed:6.0},
+  thunder:     {id:'thunder',     name:'雷電使者', color:'#ffff00', elem:'雷', desc:'近身7傷；技能雷電領域',              skill:'thunderField',skillCd:12,  dmg:7,fieldDmg:2,fieldDur:2,fieldRadius:90,speed:6.4},
+  rock:        {id:'rock',        name:'磐石守衛', color:'#888866', elem:'岩', desc:'減傷2；技能無敵衝撞10傷',            skill:'petrify',     skillCd:18,  dmg:8,skillDmg:10,armor:2,speed:5.6},
+  windassassin:{id:'windassassin',name:'風影刺客', color:'#88ffcc', elem:'風', desc:'技能閃避衝刺暴擊10傷',              skill:'dash',        skillCd:8,   dmg:5,critDmg:10,speed:7.0}
+};
+
+// BOSS专属球
+const BOSS_DEFS = {
+  boss5:  {id:'boss5',  name:'熔岩巨獸', color:'#ff2200', elem:'火', desc:'BOSS：熔岩衝擊+爆炸', skill:'lavaBlast', skillCd:6, dmg:12, skillDmg:30, speed:5.0, maxHp:200, isBoss:true},
+  boss10: {id:'boss10', name:'暗影領主', color:'#440088', elem:'暗', desc:'BOSS：暗影束縛+全場傷害', skill:'shadowAll', skillCd:8, dmg:10, skillDmg:25, speed:6.0, maxHp:200, isBoss:true},
+  boss15: {id:'boss15', name:'天地神球', color:'#ffffff', elem:'光', desc:'BOSS：終極大招', skill:'godBlast', skillCd:10, dmg:15, skillDmg:40, speed:7.0, maxHp:250, isBoss:true},
+};
+// 合并BALL_DEFS和BOSS_DEFS供查询
+const ALL_DEFS = {...BALL_DEFS, ...BOSS_DEFS};
+
+const STARTER_BALLS = ['thorn','sunflash','blackhole'];
+
+// ============================================================
+// SAVE SYSTEM
+// ============================================================
+function loadSave(n){const r=localStorage.getItem('ballgame_'+n);return r?JSON.parse(r):null;}
+function createSave(n){
+  return {
+    name:n, coins:0, vouchers:0, balls:[], activeBall:null,
+    team:[], // 最多3颗出战队伍
+    arenaStage:1, gameMode:'normal',
+    ballBoost:{dmgMul:1,hpBonus:0,atkBonus:0},
+    qualityFruits:0, atkQuality:0, hpQuality:0,
+    ballLevels:{}, // {ballId: level}  最高10级
+    totalWins:0, totalKills:0,
+    unlockedHard:false, unlockedHell:false,
+    fragments:{}, // {ballId: count} 碎片
+  };
+}
+function writeSave(s){localStorage.setItem('ballgame_'+s.name,JSON.stringify(s));}
+function migrateSave(s){
+  if(!s.ballBoost) s.ballBoost={dmgMul:1,hpBonus:0,atkBonus:0};
+  if(!s.team) s.team=s.activeBall?[s.activeBall]:[];
+  if(!s.ballLevels) s.ballLevels={};
+  if(!s.fragments) s.fragments={};
+  if(!s.gameMode) s.gameMode='normal';
+  if(s.qualityFruits===undefined) s.qualityFruits=0;
+  if(s.atkQuality===undefined) s.atkQuality=0;
+  if(s.hpQuality===undefined) s.hpQuality=0;
+  if(s.totalWins===undefined) s.totalWins=0;
+  if(s.unlockedHard===undefined) s.unlockedHard=false;
+  if(s.unlockedHell===undefined) s.unlockedHell=false;
+  return s;
+}
+// 球球等级加成
+function getBallLevel(ballId){return (save.ballLevels&&save.ballLevels[ballId])||0;}
+function getBallLevelBonus(ballId){
+  const lv=getBallLevel(ballId);
+  return {atkPct:lv*0.05, hpFlat:lv*5, skillPct:lv*0.05};
+}
+// 升级费用
+function getUpgradeCost(ballId){
+  const lv=getBallLevel(ballId);
+  if(lv>=10)return null;
+  return 30+lv*20; // 30,50,70...210
+}
+
+// ============================================================
+// GLOBALS
+// ============================================================
+let save=null, selectedBagBall=null;
+let worldKeys={}, worldPlayer={x:400,y:300,size:18}, worldItems=[];
+let worldAnimId=null, arenaAnimId=null, blessingAnimId=null;
+let arenaState=null;
+let currentUpgBall=null;
+
+// 竞技场输入
+const aKeys={up:false,down:false,left:false,right:false};
+let atkPressed=false, skillPressed=false, switchPressed=false;
+const joy={active:false,touchId:null,dx:0,dy:0};
+
+// 世界事件
+let worldEventTimer=0, worldEventActive=false;
+
+// ============================================================
+// UTILS
+// ============================================================
+function showNotif(msg,color='#ffcc00'){
+  const n=document.getElementById('notification');
+  n.textContent=msg;n.style.background=color;
+  n.style.display='block';n.style.opacity='1';
+  clearTimeout(n._t);
+  n._t=setTimeout(()=>{n.style.opacity='0';setTimeout(()=>{n.style.display='none';},300);},2400);
+}
+function rand(a,b){return Math.random()*(b-a)+a;}
+function randInt(a,b){return Math.floor(rand(a,b+1));}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+function showModal(id){document.getElementById(id).classList.add('active');}
+function hideModal(id){document.getElementById(id).classList.remove('active');}
+function updateHUD(){
+  document.getElementById('coinDisplay').textContent='🪙 '+save.coins;
+  document.getElementById('voucherDisplay').textContent='🎟️ '+save.vouchers;
+  document.getElementById('fruitDisplay').textContent='🍎 '+save.qualityFruits;
+}
+function ballName(id){return ALL_DEFS[id]?ALL_DEFS[id].name:id;}
+function isMobile(){return window.innerWidth<800||('ontouchstart' in window);}
+// 属性克制计算
+function getElementMul(sourceId,targetId){
+  const sd=ALL_DEFS[sourceId],td=ALL_DEFS[targetId];
+  if(!sd||!td)return 1;
+  if(ELEMENT_COUNTER[sd.elem]===td.elem)return 1.25;
+  return 1;
+}
+
+// ============================================================
+// QUALITY PANEL
+// ============================================================
+function openQualityPanel(){refreshQualityPanel();showModal('qualityModal');}
+function refreshQualityPanel(){
+  document.getElementById('qualityFruitBar').textContent=`🍎 資質果：${save.qualityFruits}`;
+  document.getElementById('atkQualityDesc').textContent=`Lv.${save.atkQuality} (+${save.atkQuality*20}% 傷害)`;
+  document.getElementById('hpQualityDesc').textContent=`Lv.${save.hpQuality} (+${save.hpQuality*2} 血量)`;
+  const en=save.qualityFruits>0;
+  document.getElementById('atkPlusBtn').className='quality-plus-btn '+(en?'enabled':'disabled');
+  document.getElementById('hpPlusBtn').className='quality-plus-btn '+(en?'enabled':'disabled');
+}
+function setupQualityEvents(){
+  document.getElementById('qualityClose').onclick=()=>hideModal('qualityModal');
+  document.getElementById('atkPlusBtn').onclick=()=>{
+    if(save.qualityFruits<=0){showNotif('資質果不足！','#ff4444');return;}
+    save.qualityFruits--;save.atkQuality++;
+    save.ballBoost.dmgMul=+((save.ballBoost.dmgMul+0.2).toFixed(2));
+    writeSave(save);updateHUD();refreshQualityPanel();
+    showNotif('⚔️ 攻擊資質提升！傷害+20%','#ff8a65');
+  };
+  document.getElementById('hpPlusBtn').onclick=()=>{
+    if(save.qualityFruits<=0){showNotif('資質果不足！','#ff4444');return;}
+    save.qualityFruits--;save.hpQuality++;
+    save.ballBoost.hpBonus=(save.ballBoost.hpBonus||0)+2;
+    writeSave(save);updateHUD();refreshQualityPanel();
+    showNotif('❤️ 生命資質提升！血量+2','#81c784');
+  };
+}
+
+// ============================================================
+// UPGRADE PANEL — 球球等级强化
+// ============================================================
+function openUpgradePanel(){
+  buildUpgBallRow();
+  if(save.balls.length>0) selectUpgBall(save.balls[0]);
+  showModal('upgradeModal');
+}
+function buildUpgBallRow(){
+  const row=document.getElementById('upgBallRow');
+  row.innerHTML='';
+  save.balls.forEach(id=>{
+    const def=BALL_DEFS[id];if(!def)return;
+    const lv=getBallLevel(id);
+    const btn=document.createElement('div');
+    btn.className='upg-ball-btn'+(currentUpgBall===id?' active':'');
+    btn.style.background=def.color;
+    btn.innerHTML=`<div class="upg-lv">Lv${lv}</div>`;
+    btn.title=def.name;
+    btn.onclick=()=>selectUpgBall(id);
+    row.appendChild(btn);
+  });
+}
+function selectUpgBall(id){
+  currentUpgBall=id;
+  buildUpgBallRow();
+  const def=BALL_DEFS[id];if(!def)return;
+  const lv=getBallLevel(id);
+  const bonus=getBallLevelBonus(id);
+  const cost=getUpgradeCost(id);
+  const elemColor=ELEMENT_COLOR[def.elem]||'#fff';
+  document.getElementById('upgName').innerHTML=
+    `<span style="color:${def.color}">${def.name}</span> `+
+    `<span style="font-size:12px;background:${elemColor}33;color:${elemColor};padding:2px 6px;border-radius:4px;">${def.elem}</span> `+
+    `<span style="font-size:13px;color:#ffcc00">Lv.${lv}/10</span>`;
+  document.getElementById('upgStats').innerHTML=
+    `攻擊加成：+${(bonus.atkPct*100).toFixed(0)}%　`+
+    `血量加成：+${bonus.hpFlat}　`+
+    `技能加成：+${(bonus.skillPct*100).toFixed(0)}%`;
+  if(lv>=10){
+    document.getElementById('upgCost').textContent='已達最高等級！';
+    document.getElementById('upgradeBallBtn').disabled=true;
+    document.getElementById('upgradeBallBtn').style.opacity='0.4';
+  }else{
+    document.getElementById('upgCost').textContent=`強化費用：${cost} 金幣（現有：${save.coins}）`;
+    document.getElementById('upgradeBallBtn').disabled=false;
+    document.getElementById('upgradeBallBtn').style.opacity='1';
+  }
+}
+function doUpgrade(){
+  if(!currentUpgBall)return;
+  const lv=getBallLevel(currentUpgBall);
+  if(lv>=10){showNotif('已達最高等級！','#ff4444');return;}
+  const cost=getUpgradeCost(currentUpgBall);
+  if(save.coins<cost){showNotif('金幣不足！','#ff4444');return;}
+  save.coins-=cost;
+  save.ballLevels[currentUpgBall]=(lv+1);
+  writeSave(save);updateHUD();
+  selectUpgBall(currentUpgBall);
+  showNotif(`⬆️ ${ballName(currentUpgBall)} 升至 Lv.${lv+1}！`,'#44ff88');
+}
+
+// ============================================================
+// VICTORY
+// ============================================================
+function triggerVictory(){
+  if(arenaAnimId)cancelAnimationFrame(arenaAnimId);
+  const modeLabel={normal:'普通',hard:'困難',hell:'地獄'}[save.gameMode]||'普通';
+  document.getElementById('victoryModeStat').textContent=`🏆 ${modeLabel}模式通關！`;
+  document.getElementById('victoryAtkStat').textContent=`⚔️ 攻擊資質：${save.atkQuality}級（+${save.atkQuality*20}%）`;
+  document.getElementById('victoryHpStat').textContent=`❤️ 生命資質：${save.hpQuality}級（+${save.hpQuality*2}血量）`;
+  document.getElementById('victoryFruitStat').textContent=`🍎 剩餘資質果：${save.qualityFruits}`;
+  showScreen('victoryScreen');
+}
+
+// ============================================================
+// PICK SCREEN
+// ============================================================
+function buildPickScreen(){
+  const c=document.getElementById('pickCards');c.innerHTML='';
+  STARTER_BALLS.forEach(id=>{
+    const def=BALL_DEFS[id];
+    const card=document.createElement('div');card.className='pick-card';
+    const ec=ELEMENT_COLOR[def.elem]||'#fff';
+    card.innerHTML=`<div class="ball-icon" style="background:${def.color};box-shadow:0 0 14px ${def.color}"></div>
+      <h3>${def.name} <span style="font-size:10px;color:${ec}">[${def.elem}]</span></h3>
+      <p>${def.desc}</p>`;
+    card.onclick=()=>{save.balls=[id];save.team=[id];save.activeBall=id;writeSave(save);enterWorld();};
+    c.appendChild(card);
+  });
+}
+
+// ============================================================
+// WORLD
+// ============================================================
+function enterWorld(){
+  showScreen('worldScreen');
+  document.getElementById('playerNameTag').textContent='👤 '+save.name;
+  updateHUD();initWorldCanvas();spawnWorldItems();worldLoop();
+  // 世界事件定时器
+  clearInterval(worldEventTimer);
+  worldEventTimer=setInterval(()=>{
+    if(!worldEventActive){
+      worldEventActive=true;
+      const banner=document.getElementById('worldEventBanner');
+      banner.style.display='block';
+      banner.textContent='⚡ 球球入侵！限時1分鐘！進入競技場可獲額外獎勵！';
+      setTimeout(()=>{worldEventActive=false;banner.style.display='none';},60000);
+    }
+  },120000); // 每2分钟触发一次
+}
+function initWorldCanvas(){
+  const c=document.getElementById('worldCanvas');
+  c.width=window.innerWidth;c.height=window.innerHeight;
+}
+function spawnWorldItems(){
+  worldItems=[];
+  const c=document.getElementById('worldCanvas'),W=c.width,H=c.height;
+  for(let i=0;i<20;i++) worldItems.push({type:'coin', x:rand(40,W-40),y:rand(40,H-100),r:10,val:randInt(1,5)});
+  for(let i=0;i<4;i++)  worldItems.push({type:'chest',x:rand(60,W-60),y:rand(60,H-120),r:16});
+  for(let i=0;i<3;i++)  worldItems.push({type:'statue',x:rand(80,W-80),y:rand(80,H-120),r:18});
+  // 随机临时buff道具
+  for(let i=0;i<3;i++)  worldItems.push({type:'buff',x:rand(60,W-60),y:rand(60,H-120),r:13,
+    buffType:['dmgUp','shield','cdHalf'][i%3]});
+  // 隐藏点
+  for(let i=0;i<2;i++)  worldItems.push({type:'hidden',x:rand(100,W-100),y:rand(100,H-150),r:8,found:false});
+}
+function worldLoop(){
+  if(worldAnimId)cancelAnimationFrame(worldAnimId);
+  const canvas=document.getElementById('worldCanvas'),ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height,SPD=3;
+  function tick(){
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#2d7a2d';ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#2a722a';
+    for(let gx=0;gx<W;gx+=40)for(let gy=0;gy<H;gy+=40)
+      if((gx/40+gy/40)%2===0)ctx.fillRect(gx,gy,40,40);
+    // 移动
+    if(worldKeys['ArrowUp']||worldKeys['w'])   worldPlayer.y=Math.max(worldPlayer.size,worldPlayer.y-SPD);
+    if(worldKeys['ArrowDown']||worldKeys['s']) worldPlayer.y=Math.min(H-worldPlayer.size-70,worldPlayer.y+SPD);
+    if(worldKeys['ArrowLeft']||worldKeys['a']) worldPlayer.x=Math.max(worldPlayer.size,worldPlayer.x-SPD);
+    if(worldKeys['ArrowRight']||worldKeys['d'])worldPlayer.x=Math.min(W-worldPlayer.size,worldPlayer.x+SPD);
+    // 绘制道具
+    worldItems.forEach(item=>{
+      if(item.collected)return;
+      if(item.type==='coin'){
+        ctx.beginPath();ctx.arc(item.x,item.y,item.r,0,Math.PI*2);
+        ctx.fillStyle='#ffcc00';ctx.fill();
+        ctx.fillStyle='#000';ctx.font='8px Arial';ctx.textAlign='center';ctx.fillText(item.val,item.x,item.y+3);
+      }else if(item.type==='chest'){
+        ctx.fillStyle='#884400';ctx.fillRect(item.x-item.r,item.y-item.r,item.r*2,item.r*2);
+        ctx.fillStyle='#fff';ctx.font='11px Arial';ctx.textAlign='center';ctx.fillText('📦',item.x,item.y+4);
+      }else if(item.type==='statue'){
+        ctx.beginPath();ctx.arc(item.x,item.y,item.r,0,Math.PI*2);
+        ctx.fillStyle='#888';ctx.fill();
+        ctx.fillStyle='#fff';ctx.font='12px Arial';ctx.textAlign='center';ctx.fillText('🗿',item.x,item.y+5);
+      }else if(item.type==='buff'){
+        const icons={dmgUp:'⚔️',shield:'🛡️',cdHalf:'⚡'};
+        const colors={dmgUp:'#ff4444',shield:'#4444ff',cdHalf:'#ffff00'};
+        ctx.beginPath();ctx.arc(item.x,item.y,item.r,0,Math.PI*2);
+        ctx.fillStyle=colors[item.buffType]+'55';ctx.fill();
+        ctx.strokeStyle=colors[item.buffType];ctx.lineWidth=2;ctx.stroke();
+        ctx.font='12px Arial';ctx.textAlign='center';ctx.fillText(icons[item.buffType],item.x,item.y+4);
+      }else if(item.type==='hidden'){
+        // 隐藏点：微弱闪烁
+        const alpha=0.15+Math.sin(Date.now()/400)*0.1;
+        ctx.beginPath();ctx.arc(item.x,item.y,item.r,0,Math.PI*2);
+        ctx.fillStyle=`rgba(255,255,255,${alpha})`;ctx.fill();
+      }
+    });
+    // 绘制玩家
+    const ab=save.team&&save.team.length>0?save.team[0]:save.activeBall;
+    const def=BALL_DEFS[ab]||BALL_DEFS.thorn;
+    const lv=getBallLevel(ab);
+    ctx.beginPath();ctx.arc(worldPlayer.x,worldPlayer.y,worldPlayer.size,0,Math.PI*2);
+    ctx.fillStyle=def.color;ctx.shadowColor=def.color;ctx.shadowBlur=12;ctx.fill();ctx.shadowBlur=0;
+    ctx.fillStyle='#fff';ctx.font='bold 10px Arial';ctx.textAlign='center';
+    ctx.fillText(def.name+(lv>0?` Lv${lv}`:''),worldPlayer.x,worldPlayer.y-worldPlayer.size-4);
+    // 碰撞检测
+    worldItems.forEach(item=>{
+      if(item.collected)return;
+      if(dist(worldPlayer,item)<worldPlayer.size+item.r){
+        item.collected=true;
+        if(item.type==='coin'){
+          save.coins+=item.val;writeSave(save);updateHUD();showNotif('+'+item.val+' 金幣！');
+        }else if(item.type==='chest') openChest();
+        else if(item.type==='statue') openBlessing();
+        else if(item.type==='buff')   pickupBuff(item.buffType);
+        else if(item.type==='hidden') foundHidden();
+      }
+    });
+    if(worldItems.every(i=>i.collected))spawnWorldItems();
+    worldAnimId=requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+// ============================================================
+// WORLD ITEMS
+// ============================================================
+function openChest(){
+  const r=Math.random();
+  if(r<0.5){
+    const v=randInt(80,150);save.coins+=v;writeSave(save);updateHUD();
+    showNotif(`📦 寶箱！獲得 ${v} 金幣！`,'#ffcc00');
+  }else if(r<0.65){
+    addBall('magician');showNotif('📦 寶箱！獲得【魔術師】！','#ff44ff');
+  }else if(r<0.8){
+    addBall('giant');showNotif('📦 寶箱！獲得【巨人】！','#cc8800');
+  }else if(r<0.9){
+    save.qualityFruits=(save.qualityFruits||0)+1;writeSave(save);updateHUD();
+    showNotif('📦 寶箱！獲得資質果！','#ffaaff');
+  }else{
+    const v=randInt(60,100);save.vouchers+=v;writeSave(save);updateHUD();
+    showNotif(`📦 寶箱！獲得 ${v} 兌換券！`,'#aaffaa');
+  }
+}
+function addBall(id){
+  if(!save.balls.includes(id)){
+    save.balls.push(id);writeSave(save);
+  }else{
+    // 重复给碎片
+    save.fragments=save.fragments||{};
+    save.fragments[id]=(save.fragments[id]||0)+3;
+    writeSave(save);
+    showNotif(`🔁 重複！獲得 ${id} 碎片×3`,'#aaa');
+  }
+}
+function pickupBuff(buffType){
+  save._tempBuffs=save._tempBuffs||{};
+  save._tempBuffs[buffType]=Date.now()+30000; // 30秒
+  const msgs={dmgUp:'⚔️ 傷害加成！30秒',shield:'🛡️ 無敵護盾！30秒',cdHalf:'⚡ 技能CD減半！30秒'};
+  const colors={dmgUp:'#ff4444',shield:'#4444ff',cdHalf:'#ffff00'};
+  showNotif(msgs[buffType],colors[buffType]);
+  writeSave(save);
+}
+function foundHidden(){
+  save.coins+=50;save.qualityFruits=(save.qualityFruits||0)+2;
+  writeSave(save);updateHUD();
+  showNotif('🌟 發現隱藏點！+50金幣 +2資質果','#ffffff');
+}
+function openBlessing(){
+  showModal('blessingModal');
+  document.getElementById('blessingResult').textContent='';
+  document.getElementById('blessingCloseBtn').style.display='none';
+  startBlessingBattle();
+}
+function startBlessingBattle(){
+  if(blessingAnimId)cancelAnimationFrame(blessingAnimId);
+  const canvas=document.getElementById('blessingCanvas'),ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height;
+  const ids=Object.keys(BALL_DEFS).sort(()=>Math.random()-0.5);
+  const b1=makeBattleBall(ids[0],55,H/2,W,H);
+  const b2=makeBattleBall(ids[1],W-55,H/2,W,H);
+  b1.isPlayer=true;b2.isEnemy=true;
+  let done=false;
+  function tick(){
+    ctx.clearRect(0,0,W,H);ctx.fillStyle='#0a1a0a';ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle='#ff8800';ctx.lineWidth=2;ctx.strokeRect(2,2,W-4,H-4);
+    if(!done){updateBattleBall(b1,[b2],W,H);updateBattleBall(b2,[b1],W,H);}
+    drawBattleBall(ctx,b1);drawBattleBall(ctx,b2);
+    updateParticles();drawParticles(ctx);
+    drawMiniHp(ctx,b1,8,8,110,9);drawMiniHp(ctx,b2,W-118,8,110,9);
+    if(!done&&(b1.hp<=0||b2.hp<=0)){
+      done=true;const won=b2.hp<=0;
+      document.getElementById('blessingResult').textContent=won?'🎉 挑戰成功！獲得 8 金幣 + 1資質果！':'😢 挑戰失敗，無懲罰。';
+      document.getElementById('blessingCloseBtn').style.display='block';
+      if(won){save.coins+=8;save.qualityFruits=(save.qualityFruits||0)+1;writeSave(save);updateHUD();}
+    }
+    if(!done)blessingAnimId=requestAnimationFrame(tick);
+  }
+  tick();
+}
+function drawMiniHp(ctx,ball,x,y,w,h){
+  ctx.fillStyle='#333';ctx.fillRect(x,y,w,h);
+  ctx.fillStyle=ball.isPlayer?'#00ff88':'#ff4444';
+  ctx.fillRect(x,y,w*Math.max(0,ball.hp/ball.maxHp),h);
+  ctx.fillStyle='#fff';ctx.font='8px Arial';ctx.textAlign='center';
+  ctx.fillText(ALL_DEFS[ball.id]?ALL_DEFS[ball.id].name:ball.id,x+w/2,y+h+9);
+}
+
+// ============================================================
+// BAG
+// ============================================================
+function openBag(){
+  const grid=document.getElementById('bagGrid');grid.innerHTML='';
+  save.balls.forEach(id=>{
+    const def=BALL_DEFS[id];if(!def)return;
+    const lv=getBallLevel(id);
+    const inTeam=save.team&&save.team.includes(id);
+    const teamIdx=save.team?save.team.indexOf(id):-1;
+    const item=document.createElement('div');
+    item.className='bag-item'+(inTeam?' in-team':'');
+    const ec=ELEMENT_COLOR[def.elem]||'#fff';
+    item.innerHTML=
+      `<div class="lv-badge">Lv${lv}</div>`+
+      (inTeam?`<div class="team-badge">${teamIdx+1}號</div>`:'')+
+      `<div class="b-icon" style="background:${def.color};box-shadow:0 0 7px ${def.color}"></div>`+
+      `<h4>${def.name}</h4>`+
+      `<p style="color:${ec}">[${def.elem}]</p>`+
+      `<p>${def.desc}</p>`;
+    item.onclick=()=>{
+      // 双击已选中 → 资质面板
+      if(item.classList.contains('in-team')&&selectedBagBall===id){
+        openQualityPanel();return;
+      }
+      selectedBagBall=id;
+      // 切换队伍
+      if(!save.team)save.team=[];
+      if(save.team.includes(id)){
+        save.team=save.team.filter(x=>x!==id);
+      }else{
+        if(save.team.length>=3){showNotif('最多攜帶3顆球球！','#ff4444');return;}
+        save.team.push(id);
+      }
+      writeSave(save);openBag();
+    };
+    grid.appendChild(item);
+  });
+  // 强化入口
+  const upgBtn=document.createElement('button');
+  upgBtn.style.cssText='display:block;margin:10px auto 0;padding:7px 20px;background:#44ff88;border:none;border-radius:8px;color:#000;font-weight:bold;cursor:pointer;font-size:12px;';
+  upgBtn.textContent='⬆️ 球球強化';
+  upgBtn.onclick=()=>{hideModal('bagModal');openUpgradePanel();};
+  document.getElementById('bagGrid').after(upgBtn);
+  const tip=document.createElement('p');
+  tip.style.cssText='text-align:center;color:#888;font-size:10px;margin-top:8px;';
+  tip.textContent='💡 點擊選入/移出隊伍 · 再次點擊已選球球開啟資質面板';
+  upgBtn.after(tip);
+  showModal('bagModal');
+}
+
+// ============================================================
+// LOTTERY
+// ============================================================
+function doLottery(){
+  if(save.coins<10){showNotif('金幣不足！','#ff4444');return;}
+  save.coins-=10;writeSave(save);updateHUD();
+  const machine=document.getElementById('lotteryMachine');
+  const result=document.getElementById('lotteryResult');
+  machine.style.display='block';result.textContent='抽獎中...';
+  setTimeout(()=>{
+    machine.style.display='none';
+    const r=Math.random();let msg='';
+    if(r<0.45){const v=randInt(30,55);save.vouchers+=v;msg=`🎟️ 獲得 ${v} 兌換券！`;}
+    else if(r<0.60){addBallLottery('fireball');msg='🔥 獲得【火焰球】！';}
+    else if(r<0.72){addBallLottery('dragon');  msg='🐉 獲得【龍王】！';}
+    else if(r<0.82){addBallLottery('cat');     msg='🐱 獲得【貓咪】！';}
+    else if(r<0.91){addBallLottery('vampire'); msg='🧛 獲得【吸血鬼】！';}
+    else            {addBallLottery('magician');msg='🎩 獲得【魔術師】！';}
+    writeSave(save);updateHUD();result.textContent=msg;
+  },1200);
+}
+function addBallLottery(id){
+  if(save.balls.includes(id)){
+    save.vouchers+=50;
+    document.getElementById('lotteryResult').textContent=`🔁 重複！獲得 50 兌換券！`;
+  }else{
+    save.balls.push(id);
+  }
+}
+
+// ============================================================
+// SHOP
+// ============================================================
+function setupShop(){
+  document.getElementById('shopFruit').onclick=()=>{
+    if(save.vouchers>=250){save.vouchers-=250;save.qualityFruits=(save.qualityFruits||0)+1;writeSave(save);updateHUD();showNotif('🍎 獲得資質果！','#ffaaff');hideModal('shopModal');}
+    else showNotif('兌換券不足！','#ff4444');
+  };
+  document.getElementById('shopOnePunch').onclick=()=>{
+    if(save.vouchers>=200){save.vouchers-=200;addBall('onepunch');writeSave(save);updateHUD();showNotif('👊 獲得【一拳男人】！','#fff');hideModal('shopModal');}
+    else showNotif('兌換券不足！','#ff4444');
+  };
+  document.getElementById('shopSword').onclick=()=>{
+    if(save.vouchers>=300){save.vouchers-=300;addBall('swordmaster');writeSave(save);updateHUD();showNotif('⚔️ 獲得【劍豪】！','#00ddff');hideModal('shopModal');}
+    else showNotif('兌換券不足！','#ff4444');
+  };
+  document.getElementById('shopThunder').onclick=()=>{
+    if(save.vouchers>=350){save.vouchers-=350;addBall('thunder');writeSave(save);updateHUD();showNotif('🌩️ 獲得【雷電使者】！','#ffff00');hideModal('shopModal');}
+    else showNotif('兌換券不足！','#ff4444');
+  };
+  document.getElementById('shopRock').onclick=()=>{
+    if(save.vouchers>=280){save.vouchers-=280;addBall('rock');writeSave(save);updateHUD();showNotif('🪨 獲得【磐石守衛】！','#888866');hideModal('shopModal');}
+    else showNotif('兌換券不足！','#ff4444');
+  };
+}
+// ============================================================
+// BATTLE BALL ENGINE
+// ============================================================
+function makeBattleBall(id,x,y,W,H){
+  const def=ALL_DEFS[id]||BALL_DEFS.thorn;
+  const angle=Math.random()*Math.PI*2;
+  const hp=def.maxHp||100;
+  return{id,hp,maxHp:hp,x,y,r:def.isBoss?26:18,
+    vx:Math.cos(angle)*(def.speed||3),vy:Math.sin(angle)*(def.speed||3),
+    skillTimer:0,skill2Timer:0,wolfCdTimer:0,
+    burnTimer:0,gravTimer:0,auraTimer:0,
+    stunTimer:0,petrifyTimer:0,
+    dashCrit:false,spinTimer:0,
+    thorns:[],_fireZones:[],W,H,isBoss:!!def.isBoss};
+}
+
+function updateBattleBall(ball,enemies,W,H){
+  if(ball.hp<=0)return;
+  const def=ALL_DEFS[ball.id]||BALL_DEFS.thorn;
+  const alive=enemies.filter(e=>e&&e.hp>0);
+  if(ball.stunTimer>0){ball.stunTimer-=16;if(ball.stunTimer<0)ball.stunTimer=0;}
+  if(ball.petrifyTimer>0){ball.petrifyTimer-=16;return;}
+  if(ball.stunTimer<=0){
+    ball.x+=ball.vx;ball.y+=ball.vy;
+    if(ball.x-ball.r<0){ball.x=ball.r;ball.vx*=-1;onBounce(ball);}
+    if(ball.x+ball.r>W){ball.x=W-ball.r;ball.vx*=-1;onBounce(ball);}
+    if(ball.y-ball.r<0){ball.y=ball.r;ball.vy*=-1;onBounce(ball);}
+    if(ball.y+ball.r>H){ball.y=H-ball.r;ball.vy*=-1;onBounce(ball);}
+  }
+  if(ball.skillTimer>0)ball.skillTimer-=16;
+  if(ball.wolfCdTimer>0)ball.wolfCdTimer-=16;
+  // 接触伤害
+  ball._contactTimer=(ball._contactTimer||0)+16;
+  if(ball._contactTimer>=600){
+    ball._contactTimer=0;
+    alive.forEach(en=>{
+      if(dist(ball,en)<ball.r+en.r+2){
+        const mul=getElementMul(ball.id,en.id);
+        dealDamage(en,(def.dmg||1)*mul,ball);
+        dealDamage(ball,(ALL_DEFS[en.id]?.dmg||1),en);
+      }
+    });
+  }
+  switch(def.id){
+    case 'thorn':       handleThorn(ball,alive);break;
+    case 'sunflash':    handleAura(ball,alive,def.auraDmg,def.auraRadius,def.auraInterval);break;
+    case 'blackhole':   handleGravity(ball,alive,def);break;
+    case 'giant':       handleGiant(ball,alive,def);break;
+    case 'cat':         handleCat(ball,alive,def);break;
+    case 'wolf':        handleWolf(ball,alive,def);break;
+    case 'fireball':    handleFireball(ball,alive,def);break;
+    case 'dragon':      handleDragon(ball,alive,def);break;
+    case 'vampire':     handleVampire(ball,alive,def);break;
+    case 'onepunch':    handleOnePunch(ball,alive,def);break;
+    case 'swordmaster': handleSword(ball,alive,def);break;
+    case 'magician':    handleMagician(ball,alive,def);break;
+    case 'thunder':     handleThunder(ball,alive,def);break;
+    case 'rock':        handleRock(ball,alive,def);break;
+    case 'windassassin':handleWind(ball,alive,def);break;
+    case 'boss5':       handleBoss5(ball,alive,def);break;
+    case 'boss10':      handleBoss10(ball,alive,def);break;
+    case 'boss15':      handleBoss15(ball,alive,def);break;
+  }
+}
+
+function onBounce(ball){
+  if(ball.id==='thorn')ball.thorns.push({x:ball.x,y:ball.y,life:8000});
+  if(ball.id==='fireball'){ball._fireZones=ball._fireZones||[];if(ball._fireZones.length<5)ball._fireZones.push({x:ball.x,y:ball.y,r:28,life:4000,_dmgTimer:0});}
+}
+
+// AI技能处理函数
+function handleThorn(ball,en){ball.thorns.forEach(t=>{en.forEach(e=>{if(dist(e,t)<e.r+20)dealDamage(e,2,ball);});t.life-=16;});ball.thorns=ball.thorns.filter(t=>t.life>0);}
+function handleAura(ball,en,dmg,r,iv){ball.auraTimer=(ball.auraTimer||0)+16;if(ball.auraTimer>=iv){ball.auraTimer=0;en.forEach(e=>{if(dist(ball,e)<r)dealDamage(e,dmg,ball);});}}
+function handleGravity(ball,en,def){en.forEach(e=>{if(dist(ball,e)<def.gravRadius){const dx=ball.x-e.x,dy=ball.y-e.y,d=Math.hypot(dx,dy)||1;e.vx+=dx/d*0.5;e.vy+=dy/d*0.5;ball.gravTimer=(ball.gravTimer||0)+16;if(ball.gravTimer>=1000){ball.gravTimer-=1000;dealDamage(e,def.gravDmg,ball);}}});}
+function handleGiant(ball,en,def){if(ball.spinTimer>0){ball.spinTimer-=16;ball._spinDmgTimer=(ball._spinDmgTimer||0)+16;if(ball._spinDmgTimer>=300){ball._spinDmgTimer=0;en.forEach(e=>{if(dist(ball,e)<ball.r+e.r+22)dealDamage(e,def.skillDmg*0.1,ball);});}return;}ball._meleeDmgTimer=(ball._meleeDmgTimer||0)+16;if(ball._meleeDmgTimer>=500){ball._meleeDmgTimer=0;en.forEach(e=>{if(dist(ball,e)<ball.r+e.r+5)dealDamage(e,def.dmg,ball);});}if(ball.skillTimer<=0){ball.skillTimer=def.skillCd*1000;ball.spinTimer=3000;}}
+function handleCat(ball,en,def){const enemy=en[0];ball._blinkTimer=(ball._blinkTimer||2500)-16;if(ball._blinkTimer<=0&&enemy){ball._blinkTimer=2500;const a=Math.random()*Math.PI*2,off=rand(30,60);ball.x=Math.max(ball.r,Math.min(ball.W-ball.r,enemy.x+Math.cos(a)*off));ball.y=Math.max(ball.r,Math.min(ball.H-ball.r,enemy.y+Math.sin(a)*off));const dx=enemy.x-ball.x,dy=enemy.y-ball.y,d=Math.hypot(dx,dy)||1;ball.vx=(dx/d)*def.speed;ball.vy=(dy/d)*def.speed;}ball._clawTimer=(ball._clawTimer||0)+16;if(ball._clawTimer>=1500){ball._clawTimer=0;en.forEach(e=>{if(dist(ball,e)<ball.r+e.r+30)dealDamage(e,def.dmg,ball);});}if(ball.skillTimer<=0){ball.skillTimer=def.skillCd*1000;en.forEach(e=>dealDamage(e,def.skillDmg,ball));}}
+function handleWolf(ball,en,def){en.forEach(e=>{if(ball.wolfCdTimer<=0&&dist(ball,e)<ball.r+e.r+4){dealDamage(e,def.dmg,ball);ball.wolfCdTimer=def.skillCd*1000;}});}
+function handleFireball(ball,en,def){en.forEach(e=>{const t=dist(ball,e)<ball.r+e.r+2;if(t){ball._burnLinger=2000;ball.burnTimer=(ball.burnTimer||0)+16;if(ball.burnTimer>=def.burnInterval){ball.burnTimer=0;dealDamage(e,def.burnDmg,ball);}}else{if(ball._burnLinger>0){ball._burnLinger-=16;ball.burnTimer=(ball.burnTimer||0)+16;if(ball.burnTimer>=def.burnInterval){ball.burnTimer=0;dealDamage(e,def.burnDmg*0.6,ball);}}else ball.burnTimer=0;}});if(ball._explodeTimer===undefined)ball._explodeTimer=8000;ball._explodeTimer-=16;if(ball._explodeTimer<=0){ball._explodeTimer=8000;ball._explodeAnim=400;en.forEach(e=>{if(dist(ball,e)<120)dealDamage(e,20,ball);});}if(ball._explodeAnim>0)ball._explodeAnim-=16;ball._fireZones=ball._fireZones||[];ball._fireZones.forEach(z=>{z.life-=16;z._dmgTimer=(z._dmgTimer||0)+16;if(z._dmgTimer>=300){z._dmgTimer=0;en.forEach(e=>{if(dist(e,z)<z.r+e.r)dealDamage(e,3,ball);});}});ball._fireZones=ball._fireZones.filter(z=>z.life>0);}
+function handleDragon(ball,en,def){ball._spikeTimer=(ball._spikeTimer||0)+16;if(ball._spikeTimer>=1000){ball._spikeTimer=0;en.forEach(e=>dealDamage(e,def.dmg,ball));}if(ball.skillTimer<=0){ball.skillTimer=def.skillCd*1000;en.forEach(e=>dealDamage(e,def.skillDmg,ball));}}
+function handleVampire(ball,en,def){const enemy=en[0];if(!enemy)return;const d=dist(ball,enemy);if(ball._vampBound){ball._vampBindRemain=(ball._vampBindRemain||0)-16;enemy.vx=0;enemy.vy=0;if(d>def.vampireRadius*0.8){const dx=ball.x-enemy.x,dy=ball.y-enemy.y,dd=Math.hypot(dx,dy)||1;enemy.vx=(dx/dd)*6;enemy.vy=(dy/dd)*6;}ball._vampDmgTimer=(ball._vampDmgTimer||0)+16;if(ball._vampDmgTimer>=1000){ball._vampDmgTimer-=1000;dealDamage(enemy,def.dmgPerTick,ball);ball.hp=Math.min(ball.maxHp,ball.hp+def.healPerTick);}if(ball._vampBindRemain<=0){ball._vampBound=false;ball._vampDmgTimer=0;ball._vampBindRemain=0;enemy.stunTimer=0;const ex=enemy.x-ball.x,ey=enemy.y-ball.y,ed=Math.hypot(ex,ey)||1,spd=ALL_DEFS[enemy.id]?.speed||3;enemy.vx=(ex/ed)*spd*1.5;enemy.vy=(ey/ed)*spd*1.5;enemy._vampImmune=1500;}return;}if(enemy._vampImmune>0){enemy._vampImmune-=16;return;}if(d<def.vampireRadius){ball._vampBound=true;ball._vampDmgTimer=0;ball._vampBindRemain=def.bindDur*1000;enemy.stunTimer=def.bindDur*1000;}}
+function handleOnePunch(ball,en,def){if(ball.skillTimer<=0){ball.skillTimer=def.skillCd*1000;en.forEach(e=>{if(Math.random()>def.missChance)dealDamage(e,def.skillDmg,ball);});}}
+function handleSword(ball,en,def){const enemy=en[0];if(!enemy)return;const d=dist(ball,enemy);if(ball._swordBound){ball._swordBindRemain=(ball._swordBindRemain||0)-16;enemy.vx=0;enemy.vy=0;if(d>def.swordRadius*0.8){const dx=ball.x-enemy.x,dy=ball.y-enemy.y,dd=Math.hypot(dx,dy)||1;enemy.vx=(dx/dd)*6;enemy.vy=(dy/dd)*6;}ball._swordDmgTimer=(ball._swordDmgTimer||0)+16;if(ball._swordDmgTimer>=1000){ball._swordDmgTimer-=1000;dealDamage(enemy,def.dmg,ball);}if(ball._swordBindRemain<=0){ball._swordBound=false;ball._swordDmgTimer=0;ball._swordBindRemain=0;enemy.stunTimer=0;const ex=enemy.x-ball.x,ey=enemy.y-ball.y,ed=Math.hypot(ex,ey)||1,spd=ALL_DEFS[enemy.id]?.speed||3;enemy.vx=(ex/ed)*spd*1.5;enemy.vy=(ey/ed)*spd*1.5;enemy._swordImmune=1500;}return;}if(enemy._swordImmune>0){enemy._swordImmune-=16;return;}if(d<def.swordRadius){ball._swordBound=true;ball._swordDmgTimer=0;ball._swordBindRemain=def.bindDur*1000;enemy.stunTimer=def.bindDur*1000;}}
+function handleMagician(ball,en,def){if(ball.skillTimer<=0){ball.skillTimer=def.skillCd*1000;en.forEach(e=>{dealDamage(e,def.boxDmg,ball);e.stunTimer=def.stunDur*1000;});}ball._skill2Timer=(ball._skill2Timer||18000)-16;if(ball._skill2Timer<=0){ball._skill2Timer=18000;en.forEach(e=>dealDamage(e,def.allDmg,ball));}}
+function handleThunder(ball,en,def){ball._thunderMeleeTimer=(ball._thunderMeleeTimer||0)+16;if(ball._thunderMeleeTimer>=500){ball._thunderMeleeTimer=0;en.forEach(e=>{if(dist(ball,e)<ball.r+e.r+4)dealDamage(e,def.dmg,ball);});}if(ball.skillTimer<=0){ball.skillTimer=def.skillCd*1000;ball._fieldTimer=def.fieldDur*1000;}if(ball._fieldTimer>0){ball._fieldTimer-=16;ball._fieldDmgT=(ball._fieldDmgT||0)+16;if(ball._fieldDmgT>=1000){ball._fieldDmgT=0;en.forEach(e=>{if(dist(ball,e)<def.fieldRadius)dealDamage(e,def.fieldDmg,ball);});}}}
+function handleRock(ball,en,def){ball._rockMeleeTimer=(ball._rockMeleeTimer||0)+16;if(ball._rockMeleeTimer>=500){ball._rockMeleeTimer=0;en.forEach(e=>{if(dist(ball,e)<ball.r+e.r+2)dealDamage(e,def.dmg,ball);});}if(ball.skillTimer<=0){ball.skillTimer=def.skillCd*1000;ball.petrifyTimer=2000;setTimeout(()=>{en.forEach(e=>{if(e.hp>0)dealDamage(e,def.skillDmg,ball);});},2000);}}
+function handleWind(ball,en,def){en.forEach(e=>{if(dist(ball,e)<ball.r+e.r+2){dealDamage(e,ball.dashCrit?def.critDmg:def.dmg,ball);ball.dashCrit=false;}});if(ball.skillTimer<=0){ball.skillTimer=def.skillCd*1000;const t=en[0];if(t){const dx=t.x-ball.x,dy=t.y-ball.y,d=Math.hypot(dx,dy)||1;ball.x+=dx/d*60;ball.y+=dy/d*60;ball.dashCrit=true;}}}
+
+// BOSS技能
+function handleBoss5(ball,en,def){
+  ball._meleeDmgTimer=(ball._meleeDmgTimer||0)+16;
+  if(ball._meleeDmgTimer>=400){ball._meleeDmgTimer=0;en.forEach(e=>{if(dist(ball,e)<ball.r+e.r+5)dealDamage(e,def.dmg,ball);});}
+  if(ball.skillTimer<=0){
+    ball.skillTimer=def.skillCd*1000;
+    // 熔岩爆炸：全场范围伤害
+    en.forEach(e=>{if(dist(ball,e)<180)dealDamage(e,def.skillDmg,ball);});
+    ball._explodeAnim=500;
+    spawnParticles(ball.x,ball.y,'#ff4400',30,{minSpeed:4,maxSpeed:14,life:600,minSize:5,maxSize:14,gravity:0.2});
+  }
+  if(ball._explodeAnim>0)ball._explodeAnim-=16;
+}
+function handleBoss10(ball,en,def){
+  ball._meleeDmgTimer=(ball._meleeDmgTimer||0)+16;
+  if(ball._meleeDmgTimer>=400){ball._meleeDmgTimer=0;en.forEach(e=>{if(dist(ball,e)<ball.r+e.r+5)dealDamage(e,def.dmg,ball);});}
+  if(ball.skillTimer<=0){
+    ball.skillTimer=def.skillCd*1000;
+    // 暗影全场
+    en.forEach(e=>{dealDamage(e,def.skillDmg*0.5,ball);e.stunTimer=2000;});
+    spawnParticles(ball.x,ball.y,'#880088',24,{shape:'star',minSpeed:3,maxSpeed:10,life:700,minSize:5,maxSize:12});
+  }
+}
+function handleBoss15(ball,en,def){
+  ball._meleeDmgTimer=(ball._meleeDmgTimer||0)+16;
+  if(ball._meleeDmgTimer>=350){ball._meleeDmgTimer=0;en.forEach(e=>{if(dist(ball,e)<ball.r+e.r+5)dealDamage(e,def.dmg,ball);});}
+  if(ball.skillTimer<=0){
+    ball.skillTimer=def.skillCd*1000;
+    en.forEach(e=>dealDamage(e,def.skillDmg,ball));
+    spawnParticles(ball.x,ball.y,'#ffffff',40,{shape:'star',minSpeed:5,maxSpeed:16,life:800,minSize:6,maxSize:15});
+  }
+}
+
+// ============================================================
+// PARTICLES
+// ============================================================
+const particles=[],dmgNumbers=[];
+function spawnParticles(x,y,color,count,opt={}){
+  for(let i=0;i<count;i++){
+    const a=Math.random()*Math.PI*2,spd=rand(opt.minSpeed||2,opt.maxSpeed||7);
+    particles.push({x,y,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,
+      life:opt.life||rand(400,700),maxLife:opt.life||550,
+      size:rand(opt.minSize||3,opt.maxSize||9),
+      color:opt.color||color,shape:opt.shape||'circle',gravity:opt.gravity||0});
+  }
+}
+function spawnDmgNumber(x,y,dmg,isElem=false){
+  dmgNumbers.push({x,y:y-10,vy:-2.2,life:700,maxLife:700,
+    text:'-'+Math.ceil(dmg),color:isElem?'#ffaa00':'#ff2222'});
+}
+function updateParticles(){
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=p.gravity;p.vx*=0.94;p.vy*=0.94;p.life-=16;
+    if(p.life<=0)particles.splice(i,1);
+  }
+  for(let i=dmgNumbers.length-1;i>=0;i--){
+    const d=dmgNumbers[i];d.y+=d.vy;d.vy*=0.97;d.life-=16;
+    if(d.life<=0)dmgNumbers.splice(i,1);
+  }
+}
+function drawParticles(ctx){
+  particles.forEach(p=>{
+    const alpha=Math.max(0,p.life/p.maxLife);
+    ctx.save();ctx.globalAlpha=alpha;ctx.fillStyle=p.color;ctx.shadowColor=p.color;ctx.shadowBlur=8;
+    if(p.shape==='star'){
+      ctx.beginPath();
+      for(let s=0;s<10;s++){const a=(s*Math.PI)/5-Math.PI/2,r=s%2===0?p.size:p.size*0.4;
+        s===0?ctx.moveTo(p.x+Math.cos(a)*r,p.y+Math.sin(a)*r):ctx.lineTo(p.x+Math.cos(a)*r,p.y+Math.sin(a)*r);}
+      ctx.closePath();ctx.fill();
+    }else if(p.shape==='spark'){
+      ctx.strokeStyle=p.color;ctx.lineWidth=Math.max(1,p.size*0.6);
+      ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x-p.vx*4,p.y-p.vy*4);ctx.stroke();
+    }else{ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();}
+    ctx.restore();
+  });
+  dmgNumbers.forEach(d=>{
+    const alpha=Math.max(0,d.life/d.maxLife),scale=1+(1-d.life/d.maxLife)*0.4;
+    ctx.save();ctx.globalAlpha=alpha;
+    ctx.font=`bold ${Math.round(15*scale)}px Arial`;ctx.textAlign='center';
+    ctx.strokeStyle='#000';ctx.lineWidth=3;ctx.strokeText(d.text,d.x,d.y);
+    ctx.fillStyle=d.color||'#ff2222';ctx.fillText(d.text,d.x,d.y);
+    ctx.restore();
+  });
+}
+
+// ============================================================
+// DEAL DAMAGE — 含属性克制 + 等级加成 + 临时buff
+// ============================================================
+function dealDamage(target,amount,source){
+  if(target.hp<=0||target.petrifyTimer>0)return;
+  let dmg=amount;
+  // 资质倍率
+  if(source&&source._dmgMul&&source._dmgMul!==1)dmg*=source._dmgMul;
+  if(source&&source._atkBonus)dmg+=source._atkBonus;
+  // 等级加成
+  if(source&&source.isPlayer){
+    const lvBonus=getBallLevelBonus(source.id);
+    dmg*=(1+lvBonus.atkPct);
+  }
+  // 属性克制
+  let isElem=false;
+  if(source&&target){
+    const mul=getElementMul(source.id,target.id);
+    if(mul>1){dmg*=mul;isElem=true;}
+  }
+  // 临时buff：伤害加成
+  if(source&&source.isPlayer&&save._tempBuffs?.dmgUp&&Date.now()<save._tempBuffs.dmgUp){
+    dmg*=1.5;
+  }
+  // 护盾：玩家无敌
+  if(target.isPlayer&&save._tempBuffs?.shield&&Date.now()<save._tempBuffs.shield){
+    return;
+  }
+  // 磐石减伤
+  if(target.id==='rock')dmg=Math.max(0,dmg-(BALL_DEFS.rock.armor||2));
+  target.hp=Math.max(0,target.hp-dmg);
+  if(source&&dmg>0){
+    spawnDmgNumber(target.x+rand(-16,16),target.y-target.r-rand(3,10),dmg,isElem);
+    const x=target.x,y=target.y;
+    const sc=source.id;
+    if(sc==='swordmaster')spawnParticles(x,y,'#00ddff',12,{shape:'spark',minSpeed:5,maxSpeed:12,life:300,minSize:2,maxSize:4});
+    else if(sc==='vampire')spawnParticles(x,y,'#ff0044',10,{minSpeed:2,maxSpeed:6,life:450,minSize:3,maxSize:7});
+    else if(sc==='magician')spawnParticles(x,y,'#ff44ff',14,{shape:'star',minSpeed:3,maxSpeed:8,life:550,minSize:4,maxSize:9});
+    else if(sc==='fireball')spawnParticles(x,y,'#ff4400',12,{minSpeed:3,maxSpeed:8,life:450,minSize:3,maxSize:8,gravity:0.15});
+    else if(sc==='thunder')spawnParticles(x,y,'#ffff00',14,{shape:'spark',minSpeed:6,maxSpeed:14,life:220,minSize:2,maxSize:4});
+    else if(sc==='giant'||sc==='boss5')spawnParticles(x,y,'#ff4400',16,{minSpeed:3,maxSpeed:9,life:500,minSize:5,maxSize:12,gravity:0.2});
+    else if(sc==='onepunch')spawnParticles(x,y,'#fff',28,{minSpeed:6,maxSpeed:18,life:650,minSize:5,maxSize:13});
+    else if(sc==='boss10')spawnParticles(x,y,'#880088',16,{shape:'star',minSpeed:3,maxSpeed:9,life:600,minSize:4,maxSize:10});
+    else if(sc==='boss15')spawnParticles(x,y,'#ffffff',20,{shape:'star',minSpeed:5,maxSpeed:14,life:700,minSize:5,maxSize:12});
+    else spawnParticles(x,y,ALL_DEFS[sc]?.color||'#fff',8,{minSpeed:2,maxSpeed:6,life:320,minSize:3,maxSize:7});
+  }
+}
+
+// ============================================================
+// DRAW BATTLE BALL
+// ============================================================
+function drawBattleBall(ctx,ball){
+  const def=ALL_DEFS[ball.id];if(!def||ball.hp<=0)return;
+  const isBoss=ball.isBoss;
+  ctx.shadowColor=def.color;ctx.shadowBlur=ball.petrifyTimer>0?0:(isBoss?24:14);
+  ctx.beginPath();ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);
+  ctx.fillStyle=ball.petrifyTimer>0?'#888':def.color;ctx.fill();ctx.shadowBlur=0;
+  // BOSS光环
+  if(isBoss){
+    ctx.beginPath();ctx.arc(ball.x,ball.y,ball.r+8,0,Math.PI*2);
+    ctx.strokeStyle=def.color+'88';ctx.lineWidth=4;ctx.stroke();
+  }
+  // 属性标签
+  const ec=ELEMENT_COLOR[def.elem]||'#fff';
+  ctx.fillStyle=ec;ctx.font='bold 8px Arial';ctx.textAlign='center';
+  ctx.fillText('['+def.elem+']',ball.x,ball.y+ball.r+14);
+  // 特效圆圈
+  if(def.id==='sunflash'){ctx.beginPath();ctx.arc(ball.x,ball.y,def.auraRadius,0,Math.PI*2);ctx.strokeStyle='#ffdd0033';ctx.lineWidth=2;ctx.stroke();}
+  if(def.id==='blackhole'){ctx.beginPath();ctx.arc(ball.x,ball.y,def.gravRadius,0,Math.PI*2);ctx.strokeStyle='#6600cc33';ctx.lineWidth=2;ctx.stroke();}
+  if(def.id==='swordmaster'){ctx.beginPath();ctx.arc(ball.x,ball.y,def.swordRadius,0,Math.PI*2);ctx.strokeStyle='#00ddff33';ctx.lineWidth=2;ctx.stroke();}
+  if(def.id==='thunder'&&ball._fieldTimer>0){ctx.beginPath();ctx.arc(ball.x,ball.y,def.fieldRadius,0,Math.PI*2);ctx.strokeStyle='#ffff0055';ctx.lineWidth=3;ctx.stroke();}
+  if(def.id==='fireball'){
+    (ball._fireZones||[]).forEach(z=>{const a=z.life/4000;ctx.beginPath();ctx.arc(z.x,z.y,z.r,0,Math.PI*2);ctx.fillStyle=`rgba(255,80,0,${a*0.4})`;ctx.fill();});
+    if(ball._explodeAnim>0){const prog=1-ball._explodeAnim/500,r=prog*140,al=(1-prog).toFixed(2);ctx.beginPath();ctx.arc(ball.x,ball.y,r,0,Math.PI*2);ctx.strokeStyle=`rgba(255,200,0,${al})`;ctx.lineWidth=4;ctx.stroke();}
+  }
+  if(def.id==='thorn'||(ball.thorns&&ball.thorns.length>0)){
+    (ball.thorns||[]).forEach(t=>{const a=Math.min(1,t.life/2000);ctx.beginPath();ctx.arc(t.x,t.y,9,0,Math.PI*2);ctx.fillStyle=`rgba(0,255,80,${a*0.3})`;ctx.fill();ctx.strokeStyle=`rgba(0,255,80,${a*0.8})`;ctx.lineWidth=2;ctx.stroke();});
+  }
+  if(def.id==='giant'&&ball.spinTimer>0){ctx.beginPath();ctx.arc(ball.x,ball.y,ball.r+12,0,Math.PI*2);ctx.strokeStyle='#ffcc0077';ctx.lineWidth=4;ctx.stroke();}
+  // boss5爆炸
+  if((def.id==='boss5')&&ball._explodeAnim>0){const prog=1-ball._explodeAnim/500,r=prog*160,al=(1-prog).toFixed(2);ctx.beginPath();ctx.arc(ball.x,ball.y,r,0,Math.PI*2);ctx.strokeStyle=`rgba(255,100,0,${al})`;ctx.lineWidth=5;ctx.stroke();}
+  // 名字
+  ctx.fillStyle='#fff';ctx.font=`bold ${isBoss?11:9}px Arial`;ctx.textAlign='center';
+  ctx.fillText(def.name,ball.x,ball.y-ball.r-(isBoss?8:4));
+  // 血条
+  const bw=isBoss?50:34,bh=isBoss?6:4;
+  ctx.fillStyle='#333';ctx.fillRect(ball.x-bw/2,ball.y+ball.r+4,bw,bh);
+  ctx.fillStyle=ball.isPlayer?'#00ff88':(isBoss?'#ff2200':'#ff4444');
+  ctx.fillRect(ball.x-bw/2,ball.y+ball.r+4,bw*Math.max(0,ball.hp/ball.maxHp),bh);
+}
+
+// ============================================================
+// ARENA — 手动控制 + 三球切换 + BOSS + debuff + 难度模式
+// ============================================================
+// 随机debuff池
+const DEBUFFS=[
+  {id:'slippery', name:'🧊 滑動場', desc:'球球摩擦力極低', color:'#88ddff',
+   onUpdate:(ball)=>{ball.vx*=1.002;ball.vy*=1.002;}},  // 速度不衰减
+  {id:'poison',   name:'☠️ 毒氣場', desc:'全場每3秒扣2血', color:'#44ff44', _timer:0,
+   onTick:(balls)=>{balls.forEach(b=>{if(b.hp>0)b.hp=Math.max(0,b.hp-2);});}},
+  {id:'gravity',  name:'🌀 重力場', desc:'偶爾隨機改變方向', color:'#ff8800', _timer:0,
+   onUpdate:(ball)=>{ball._gravDebuffTimer=(ball._gravDebuffTimer||0)+16;if(ball._gravDebuffTimer>=3000){ball._gravDebuffTimer=0;if(Math.random()<0.4){ball.vx*=-1;ball.vy*=-1;}}}},
+  {id:'none',     name:'✨ 無特殊效果', desc:'', color:'#ffffff'},
+];
+let currentDebuff=null;
+let debuffTimer=0;
+
+// 难度倍率
+const MODE_MULT={
+  normal:{dmg:1,  speed:1,   cdMul:1,   rewardCoins:20, rewardFruits:1},
+  hard:  {dmg:1.3,speed:1.2, cdMul:0.8, rewardCoins:40, rewardFruits:2},
+  hell:  {dmg:1.6,speed:1.4, cdMul:0.6, rewardCoins:70, rewardFruits:3},
+};
+
+let arenaTeamBalls=[];   // 当前场上队伍球对象数组
+let arenaActiveIdx=0;    // 当前操控的球索引
+let switchCd=0;
+const SWITCH_CD_MAX=3000;
+
+function enterArena(){
+  // 检查队伍
+  if(!save.team||save.team.length===0){
+    showNotif('請先在背包選擇出戰球球！','#ff4444');
+    return;
+  }
+  // 15关后解锁困难模式，弹出模式选择
+  if(save.arenaStage===1&&save.totalWins>=15&&!save._modeChosen){
+    save.unlockedHard=true;writeSave(save);
+    showModal('modeModal');
+    return;
+  }
+  _doEnterArena();
+}
+
+function _doEnterArena(){
+  save._modeChosen=false;
+  if(arenaAnimId)cancelAnimationFrame(arenaAnimId);
+  particles.length=0;dmgNumbers.length=0;
+  showScreen('arenaScreen');
+  const canvas=document.getElementById('arenaCanvas');
+  canvas.width=window.innerWidth;canvas.height=window.innerHeight;
+  const stage=save.arenaStage||1,W=canvas.width,H=canvas.height;
+  const mode=save.gameMode||'normal';
+  const modeMult=MODE_MULT[mode]||MODE_MULT.normal;
+  const all=Object.keys(BALL_DEFS);
+
+  // 随机debuff
+  currentDebuff=DEBUFFS[randInt(0,DEBUFFS.length-1)];
+  debuffTimer=0;
+  const db=document.getElementById('debuffBanner');
+  if(currentDebuff.id!=='none'){
+    db.style.display='block';
+    db.style.background=currentDebuff.color+'33';
+    db.style.color=currentDebuff.color;
+    db.style.border=`1px solid ${currentDebuff.color}`;
+    db.textContent=`${currentDebuff.name} — ${currentDebuff.desc}`;
+  }else{
+    db.style.display='none';
+  }
+
+  // 判断是否BOSS关
+  const isBossStage=(stage%5===0);
+  let enemyIds=[];
+  if(isBossStage){
+    if(stage===5)       enemyIds=['boss5'];
+    else if(stage===10) enemyIds=['boss10'];
+    else if(stage===15) enemyIds=['boss15'];
+    else{
+      // 15关后循环BOSS
+      const bossPool=['boss5','boss10','boss15'];
+      enemyIds=[bossPool[(Math.floor(stage/5)-1)%3]];
+    }
+  }else if(stage===1)      enemyIds=['giant'];
+  else if(stage===2)       enemyIds=['cat'];
+  else if(stage===3)       enemyIds=['wolf'];
+  else if(stage>=10&&!isBossStage) enemyIds=[...all].sort(()=>Math.random()-0.5).slice(0,2);
+  else                     enemyIds=[all[randInt(0,all.length-1)]];
+
+  // 创建玩家队伍球
+  const boost=save.ballBoost||{dmgMul:1,hpBonus:0,atkBonus:0};
+  arenaTeamBalls=save.team.map((id,i)=>{
+    const def=BALL_DEFS[id];if(!def)return null;
+    const lvBonus=getBallLevelBonus(id);
+    const baseHp=(def.maxHp||100)+(boost.hpBonus||0)+lvBonus.hpFlat;
+    const pb=makeBattleBall(id,W*0.2,H*0.5,W,H);
+    pb.isPlayer=true;pb.vx=0;pb.vy=0;
+    pb.hp=Math.floor(baseHp);pb.maxHp=Math.floor(baseHp);
+    pb._dmgMul=boost.dmgMul||1;
+    pb._atkBonus=boost.atkBonus||0;
+    pb._atkCd=0;pb._atkCdMax=800;
+    // CD减半buff
+    const cdMulBuff=(save._tempBuffs?.cdHalf&&Date.now()<save._tempBuffs.cdHalf)?0.5:1;
+    pb._skillCd=0;pb._skillCdMax=Math.max(500,(def.skillCd||10)*1000*cdMulBuff);
+    pb._alive=true;
+    return pb;
+  }).filter(Boolean);
+  arenaActiveIdx=0;
+  switchCd=0;
+
+  // 创建敌人
+  const enemyBalls=enemyIds.map((id,i)=>{
+    const def=ALL_DEFS[id];if(!def)return null;
+    const ex=enemyIds.length>1?W*0.7+i*100:W*0.75;
+    const ey=enemyIds.length>1?H*0.35+i*130:H*0.5;
+    const eb=makeBattleBall(id,ex,ey,W,H);
+    eb.isEnemy=true;
+    // 难度加成
+    eb.hp=Math.floor(eb.hp*(isBossStage?1:1));
+    eb.maxHp=eb.hp;
+    eb.vx*=modeMult.speed;eb.vy*=modeMult.speed;
+    eb._modeDmgMul=modeMult.dmg;
+    eb._skillCdMul=modeMult.cdMul;
+    return eb;
+  }).filter(Boolean);
+
+  arenaState={enemyBalls,stage,done:false,isBossStage,mode};
+
+  // 标题
+  let stageLabel=`第${stage}關`;
+  if(isBossStage)stageLabel+=` 🔥BOSS`;
+  if(mode==='hard')stageLabel+=' [困難]';
+  if(mode==='hell')stageLabel+=' [地獄]';
+  stageLabel+=` — ${enemyIds.map(id=>ALL_DEFS[id]?.name||id).join(' + ')}`;
+  document.getElementById('arenaInfo').textContent=stageLabel;
+  document.getElementById('arenaResult').style.display='none';
+
+  // UI
+  const mobile=isMobile();
+  document.getElementById('mobileControls').style.display=mobile?'block':'none';
+  document.getElementById('cdPanel').classList.add('show');
+  document.getElementById('keyHint').style.display=mobile?'none':'block';
+  if(mobile){['cdKeyAtk'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='';})}
+
+  // BOSS提示
+  if(isBossStage){
+    const alert=document.createElement('div');
+    alert.className='boss-alert';
+    alert.textContent='⚠️ BOSS戰！';
+    document.getElementById('arenaScreen').appendChild(alert);
+    setTimeout(()=>alert.remove(),2000);
+  }
+
+  buildTeamBar();
+  setupMobileControls();
+  arenaLoop(canvas);
+}
+
+// ── 队伍切换栏 ────────────────────────────────────────────────
+function buildTeamBar(){
+  const bar=document.getElementById('teamBar');
+  bar.innerHTML='';
+  if(arenaTeamBalls.length<=1){bar.classList.remove('show');return;}
+  bar.classList.add('show');
+  arenaTeamBalls.forEach((pb,i)=>{
+    const def=BALL_DEFS[pb.id];if(!def)return;
+    const slot=document.createElement('div');
+    slot.className='team-slot'+(i===arenaActiveIdx?' active-slot':'')+(pb.hp<=0?' dead-slot':'');
+    slot.style.background=def.color+'44';
+    slot.style.borderColor=i===arenaActiveIdx?'#00ff88':'#444';
+    slot.innerHTML=
+      `<span style="color:${def.color};font-size:10px">${def.name}</span>`+
+      `<div class="slot-hp">${Math.ceil(pb.hp)}/${pb.maxHp}</div>`;
+    slot.onclick=()=>{if(pb.hp>0&&i!==arenaActiveIdx)doSwitch(i);};
+    bar.appendChild(slot);
+  });
+}
+
+function doSwitch(idx){
+  if(switchCd>0){showNotif(`換球CD：${(switchCd/1000).toFixed(1)}s`,'#ff8800');return;}
+  if(!arenaTeamBalls[idx]||arenaTeamBalls[idx].hp<=0)return;
+  arenaActiveIdx=idx;
+  switchCd=SWITCH_CD_MAX;
+  buildTeamBar();
+  showNotif(`🔄 切換為【${ballName(arenaTeamBalls[idx].id)}】！`,'#ff8800');
+}
+
+// ── 手机摇杆 ──────────────────────────────────────────────────
+function setupMobileControls(){
+  const zone=document.getElementById('joystickZone');
+  const knob=document.getElementById('joystickKnob');
+  zone.ontouchstart=e=>{
+    e.preventDefault();
+    const t=e.changedTouches[0],rect=zone.getBoundingClientRect();
+    joy.active=true;joy.touchId=t.identifier;
+    joy.dx=t.clientX-rect.left-64;joy.dy=t.clientY-rect.top-64;
+    clampJoy();updateKnob();
+  };
+  zone.ontouchmove=e=>{
+    e.preventDefault();
+    for(const t of e.changedTouches){
+      if(t.identifier!==joy.touchId)continue;
+      const rect=zone.getBoundingClientRect();
+      joy.dx=t.clientX-rect.left-64;joy.dy=t.clientY-rect.top-64;
+      clampJoy();updateKnob();
+    }
+  };
+  zone.ontouchend=zone.ontouchcancel=()=>{
+    joy.active=false;joy.dx=0;joy.dy=0;
+    knob.style.transform='translate(0,0)';
+  };
+  function clampJoy(){const len=Math.hypot(joy.dx,joy.dy),max=40;if(len>max){joy.dx=joy.dx/len*max;joy.dy=joy.dy/len*max;}}
+  function updateKnob(){knob.style.transform=`translate(${joy.dx}px,${joy.dy}px)`;}
+
+  const mBtnAtk=document.getElementById('mBtnAtk');
+  const mBtnSkill=document.getElementById('mBtnSkill');
+  const mBtnSwitch=document.getElementById('mBtnSwitch');
+  mBtnAtk.ontouchstart=e=>{e.preventDefault();atkPressed=true;};
+  mBtnAtk.ontouchend=mBtnAtk.ontouchcancel=e=>{e.preventDefault();atkPressed=false;};
+  mBtnSkill.ontouchstart=e=>{e.preventDefault();skillPressed=true;};
+  mBtnSkill.ontouchend=mBtnSkill.ontouchcancel=e=>{e.preventDefault();skillPressed=false;};
+  mBtnSwitch.ontouchstart=e=>{
+    e.preventDefault();
+    // 找下一个存活球
+    const next=findNextAlive();
+    if(next!==-1)doSwitch(next);
+  };
+}
+
+function findNextAlive(){
+  for(let i=1;i<=arenaTeamBalls.length;i++){
+    const idx=(arenaActiveIdx+i)%arenaTeamBalls.length;
+    if(arenaTeamBalls[idx]&&arenaTeamBalls[idx].hp>0&&idx!==arenaActiveIdx)return idx;
+  }
+  return -1;
+}
+
+// ── 玩家手动更新 ──────────────────────────────────────────────
+function updatePlayerManual(pb,enemies,W,H,dt){
+  if(!pb||pb.hp<=0||arenaState.done)return;
+  const SPEED=5.5;
+  let mx=0,my=0;
+  if(aKeys.up)   my-=1;
+  if(aKeys.down) my+=1;
+  if(aKeys.left) mx-=1;
+  if(aKeys.right)mx+=1;
+  if(joy.active&&Math.hypot(joy.dx,joy.dy)>6){mx=joy.dx/40;my=joy.dy/40;}
+  const mlen=Math.hypot(mx,my);
+  if(mlen>0){mx/=mlen;my/=mlen;}
+  pb.vx=mx*SPEED;pb.vy=my*SPEED;
+
+  if(pb.stunTimer<=0&&pb.petrifyTimer<=0){
+    pb.x+=pb.vx;pb.y+=pb.vy;
+    pb.x=Math.max(pb.r,Math.min(W-pb.r,pb.x));
+    pb.y=Math.max(pb.r,Math.min(H-pb.r,pb.y));
+  }
+  if(pb.stunTimer>0){pb.stunTimer=Math.max(0,pb.stunTimer-dt);}
+  if(pb.petrifyTimer>0){pb.petrifyTimer=Math.max(0,pb.petrifyTimer-dt);}
+
+  // debuff效果
+  if(currentDebuff&&currentDebuff.onUpdate)currentDebuff.onUpdate(pb);
+
+  if(pb._atkCd>0)  pb._atkCd  =Math.max(0,pb._atkCd-dt);
+  if(pb._skillCd>0)pb._skillCd=Math.max(0,pb._skillCd-dt);
+  if(switchCd>0)   switchCd   =Math.max(0,switchCd-dt);
+
+  const alive=enemies.filter(e=>e&&e.hp>0);
+
+  // 攻击
+  if(atkPressed&&pb._atkCd<=0){
+    pb._atkCd=pb._atkCdMax;atkPressed=false;
+    const def=BALL_DEFS[pb.id];
+    const target=alive.sort((a,b)=>dist(pb,a)-dist(pb,b))[0];
+    if(target){
+      const mul=getElementMul(pb.id,target.id);
+      dealDamage(target,(def.dmg||5)*mul,pb);
+      const dx=target.x-pb.x,dy=target.y-pb.y,d=Math.hypot(dx,dy)||1;
+      target.vx+=dx/d*4;target.vy+=dy/d*4;
+    }
+  }
+
+  // 技能
+  if(skillPressed&&pb._skillCd<=0){
+    pb._skillCd=pb._skillCdMax;skillPressed=false;
+    triggerPlayerSkill(pb,alive);
+  }
+
+  // Tab切换
+  if(switchPressed){
+    switchPressed=false;
+    const next=findNextAlive();
+    if(next!==-1)doSwitch(next);
+  }
+
+  // 被动
+  handlePlayerPassive(pb,alive);
+
+  // 接触伤害（敌人碰玩家）
+  pb._contactTimer=(pb._contactTimer||0)+dt;
+  if(pb._contactTimer>=800){
+    pb._contactTimer=0;
+    alive.forEach(e=>{
+      if(dist(pb,e)<pb.r+e.r+2){
+        const modeMult=MODE_MULT[save.gameMode||'normal']||MODE_MULT.normal;
+        const dmg=(ALL_DEFS[e.id]?.dmg||1)*modeMult.dmg*(e._modeDmgMul||1);
+        dealDamage(pb,dmg,e);
+      }
+    });
+  }
+}
+
+// ── 玩家技能 ──────────────────────────────────────────────────
+function triggerPlayerSkill(pb,alive){
+  const def=BALL_DEFS[pb.id];if(!def)return;
+  const target=alive.sort((a,b)=>dist(pb,a)-dist(pb,b))[0];
+  const lvBonus=getBallLevelBonus(pb.id);
+  const skillMul=1+lvBonus.skillPct;
+  switch(def.id){
+    case 'thorn':
+      for(let i=0;i<8;i++){const a=(i/8)*Math.PI*2;pb.thorns.push({x:pb.x+Math.cos(a)*50,y:pb.y+Math.sin(a)*50,life:6000});}
+      showNotif('🌿 毒刺環！','#44ff44');break;
+    case 'sunflash':
+      alive.forEach(e=>dealDamage(e,15*skillMul,pb));
+      showNotif('☀️ 太陽爆發！','#ffdd00');break;
+    case 'blackhole':
+      alive.forEach(e=>{const dx=pb.x-e.x,dy=pb.y-e.y,d=Math.hypot(dx,dy)||1;e.vx+=dx/d*14;e.vy+=dy/d*14;dealDamage(e,8*skillMul,pb);});
+      showNotif('🌀 黑洞引力！','#6600cc');break;
+    case 'giant':
+      pb.spinTimer=3000;showNotif('🔨 旋轉巨錘！','#cc8800');break;
+    case 'cat':
+      if(target){const a=Math.random()*Math.PI*2;pb.x=Math.max(pb.r,Math.min(pb.W-pb.r,target.x+Math.cos(a)*40));pb.y=Math.max(pb.r,Math.min(pb.H-pb.r,target.y+Math.sin(a)*40));dealDamage(target,def.skillDmg*skillMul,pb);}
+      showNotif('🐱 瞬移追蹤！','#ff88cc');break;
+    case 'wolf':
+      alive.forEach(e=>dealDamage(e,16*skillMul,pb));
+      showNotif('🐺 狂暴嚎叫！','#aaa');break;
+    case 'fireball':
+      alive.forEach(e=>{if(dist(pb,e)<160)dealDamage(e,20*skillMul,pb);});pb._explodeAnim=400;
+      showNotif('💥 爆炸！','#ff4400');break;
+    case 'dragon':
+      alive.forEach(e=>dealDamage(e,(def.skillDmg||5)*skillMul,pb));
+      showNotif('🐉 石球衝擊！','#0088ff');break;
+    case 'vampire':
+      if(target){pb._vampBound=true;pb._vampDmgTimer=0;pb._vampBindRemain=(def.bindDur||3)*1000;target.stunTimer=(def.bindDur||3)*1000;}
+      showNotif('🧛 束縛！','#880000');break;
+    case 'onepunch':
+      if(target){if(Math.random()>def.missChance)dealDamage(target,def.skillDmg*skillMul,pb);else showNotif('😅 打空了！','#888');}
+      else showNotif('👊 一拳！','#fff');break;
+    case 'swordmaster':
+      if(target){pb._swordBound=true;pb._swordDmgTimer=0;pb._swordBindRemain=(def.bindDur||4)*1000;target.stunTimer=(def.bindDur||4)*1000;}
+      showNotif('⚔️ 旋轉劍束縛！','#00ddff');break;
+    case 'magician':
+      alive.forEach(e=>{dealDamage(e,(def.allDmg||10)*skillMul,pb);e.stunTimer=2000;});
+      showNotif('🎩 全場衝擊！','#ff44ff');break;
+    case 'thunder':
+      pb._fieldTimer=(def.fieldDur||2)*1000;alive.forEach(e=>dealDamage(e,(def.dmg||7)*skillMul,pb));
+      showNotif('⚡ 雷電領域！','#ffff00');break;
+    case 'rock':
+      pb.petrifyTimer=1500;
+      setTimeout(()=>{alive.forEach(e=>{if(e.hp>0)dealDamage(e,(def.skillDmg||10)*skillMul,pb);});},1500);
+      showNotif('🪨 無敵衝撞！','#888866');break;
+    case 'windassassin':
+      if(target){const dx=target.x-pb.x,dy=target.y-pb.y,d=Math.hypot(dx,dy)||1;pb.x+=dx/d*90;pb.y+=dy/d*90;pb.dashCrit=true;dealDamage(target,(def.critDmg||10)*skillMul,pb);}
+      showNotif('💨 閃避暴擊！','#88ffcc');break;
+    default:
+      alive.forEach(e=>dealDamage(e,10*skillMul,pb));showNotif('💥 技能！','#fff');
+  }
+}
+
+// ── 玩家被动 ──────────────────────────────────────────────────
+function handlePlayerPassive(pb,alive){
+  const def=BALL_DEFS[pb.id];if(!def)return;
+  if(def.id==='thorn')    handleThorn(pb,alive);
+  if(def.id==='sunflash') handleAura(pb,alive,def.auraDmg,def.auraRadius,def.auraInterval);
+  if(def.id==='blackhole')handleGravity(pb,alive,def);
+  if(def.id==='giant'&&pb.spinTimer>0){
+    pb.spinTimer-=16;pb._spinDmgTimer=(pb._spinDmgTimer||0)+16;
+    if(pb._spinDmgTimer>=300){pb._spinDmgTimer=0;alive.forEach(e=>{if(dist(pb,e)<pb.r+e.r+20)dealDamage(e,BALL_DEFS.giant.skillDmg*0.1,pb);});}
+  }
+  if(def.id==='vampire'&&pb._vampBound)handleVampire(pb,alive,def);
+  if(def.id==='swordmaster'&&pb._swordBound)handleSword(pb,alive,def);
+  if(def.id==='thunder'&&pb._fieldTimer>0){
+    pb._fieldTimer-=16;pb._fieldDmgT=(pb._fieldDmgT||0)+16;
+    if(pb._fieldDmgT>=1000){pb._fieldDmgT=0;alive.forEach(e=>{if(dist(pb,e)<def.fieldRadius)dealDamage(e,def.fieldDmg,pb);});}
+  }
+  if(def.id==='fireball')handleFireball(pb,alive,def);
+}
+
+// ── CD圆环 ────────────────────────────────────────────────────
+function drawCdRing(canvasId,cdNow,cdMax){
+  const c=document.getElementById(canvasId);if(!c)return;
+  const ctx=c.getContext('2d');
+  ctx.clearRect(0,0,58,58);
+  if(cdNow>0){
+    const pct=cdNow/cdMax;
+    ctx.beginPath();ctx.moveTo(29,29);
+    ctx.arc(29,29,27,-Math.PI/2,-Math.PI/2+Math.PI*2*pct);
+    ctx.closePath();ctx.fillStyle='rgba(0,0,0,0.65)';ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='bold 12px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(Math.ceil(cdNow/1000)+'s',29,29);
+  }
+}
+
+function updateMobileCdText(pb){
+  const ta=document.getElementById('mCdAtk'),ts=document.getElementById('mCdSkill'),tw=document.getElementById('mCdSwitch');
+  if(ta)ta.textContent=pb._atkCd>0?(pb._atkCd/1000).toFixed(1)+'s':'Ready';
+  if(ts)ts.textContent=pb._skillCd>0?(pb._skillCd/1000).toFixed(1)+'s':'Ready';
+  if(tw)tw.textContent=switchCd>0?(switchCd/1000).toFixed(1)+'s':'Tab';
+  const ba=document.getElementById('mBtnAtk'),bs=document.getElementById('mBtnSkill');
+  if(ba)ba.style.opacity=pb._atkCd>0?'0.5':'1';
+  if(bs)bs.style.opacity=pb._skillCd>0?'0.5':'1';
+}
+
+// ── 主循环 ────────────────────────────────────────────────────
+function arenaLoop(canvas){
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height;
+  const {enemyBalls}=arenaState;
+  let lastTime=performance.now();
+
+  function tick(now){
+    const dt=Math.min(now-lastTime,50);lastTime=now;
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#0a0a0a';ctx.fillRect(0,0,W,H);
+
+    // 边框颜色根据模式
+    const borderColors={normal:'#ff8800',hard:'#ff3300',hell:'#aa00ff'};
+    ctx.strokeStyle=borderColors[save.gameMode||'normal']||'#ff8800';
+    ctx.lineWidth=4;ctx.strokeRect(4,4,W-8,H-8);
+
+    // 网格
+    ctx.strokeStyle='#ffffff08';ctx.lineWidth=1;
+    for(let gx=0;gx<W;gx+=60){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,H);ctx.stroke();}
+    for(let gy=0;gy<H;gy+=60){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(W,gy);ctx.stroke();}
+
+    // debuff全场tick
+    debuffTimer+=dt;
+    if(currentDebuff?.id==='poison'&&debuffTimer>=3000){
+      debuffTimer=0;
+      const allBalls=[...arenaTeamBalls,...enemyBalls];
+      if(currentDebuff.onTick)currentDebuff.onTick(allBalls);
+    }
+
+    const pb=arenaTeamBalls[arenaActiveIdx];
+
+    if(!arenaState.done){
+      // 更新当前操控球
+      if(pb&&pb.hp>0)updatePlayerManual(pb,enemyBalls,W,H,dt);
+      // 更新其他队伍球（静止等待）
+      arenaTeamBalls.forEach((b,i)=>{
+        if(i!==arenaActiveIdx&&b&&b.hp>0){
+          // 非操控球缩到角落待机
+          const targetX=40+i*70,targetY=H-40;
+          b.x+=(targetX-b.x)*0.05;b.y+=(targetY-b.y)*0.05;
+          b.vx=0;b.vy=0;
+        }
+      });
+      // 更新敌人
+      enemyBalls.forEach(eb=>{
+        if(eb&&eb.hp>0){
+          // debuff对敌人也生效
+          if(currentDebuff?.onUpdate)currentDebuff.onUpdate(eb);
+          updateBattleBall(eb,arenaTeamBalls.filter(b=>b&&b.hp>0),W,H);
+        }
+      });
+    }
+
+    // 绘制所有球
+    arenaTeamBalls.forEach((b,i)=>{
+      if(!b||b.hp<=0)return;
+      drawBattleBall(ctx,b);
+      // 当前操控球高亮
+      if(i===arenaActiveIdx){
+        ctx.beginPath();ctx.arc(b.x,b.y,b.r+5,0,Math.PI*2);
+        ctx.strokeStyle='#00ff8866';ctx.lineWidth=3;ctx.stroke();
+      }
+    });
+    enemyBalls.forEach(eb=>{if(eb)drawBattleBall(ctx,eb);});
+    updateParticles();drawParticles(ctx);
+
+    // HP条
+    if(pb&&pb.hp>=0){
+      const pPct=Math.max(0,pb.hp/pb.maxHp)*100;
+      document.getElementById('playerHpFill').style.width=pPct+'%';
+      // 显示当前球+队伍信息
+      const teamInfo=arenaTeamBalls.map((b,i)=>b?`${i===arenaActiveIdx?'▶':' '}${Math.ceil(Math.max(0,b.hp))}`:'✕').join(' ');
+      document.getElementById('playerHpLabel').textContent=`我方：${teamInfo}`;
+    }
+    const tEHp=enemyBalls.reduce((s,e)=>s+(e?Math.max(0,e.hp):0),0);
+    const tEMax=enemyBalls.reduce((s,e)=>s+(e?e.maxHp:0),0);
+    document.getElementById('enemyHpFill').style.width=(tEMax>0?tEHp/tEMax*100:0)+'%';
+    document.getElementById('enemyHpLabel').textContent=
+      enemyBalls.length>1
+        ?`敵方：${enemyBalls.map(e=>e?Math.ceil(Math.max(0,e.hp)):0).join('+')}`
+        :`敵方：${enemyBalls[0]?Math.ceil(Math.max(0,enemyBalls[0].hp)):0}`;
+
+    // CD圆环
+    if(pb){
+      drawCdRing('cdCanvasAtk',  pb._atkCd,   pb._atkCdMax);
+      drawCdRing('cdCanvasSkill',pb._skillCd, pb._skillCdMax);
+      drawCdRing('cdCanvasSwitch',switchCd,   SWITCH_CD_MAX);
+      updateMobileCdText(pb);
+    }
+
+    // 更新队伍栏
+    buildTeamBar();
+
+    // 胜负判断
+    if(!arenaState.done){
+      const allPlayerDead=arenaTeamBalls.every(b=>!b||b.hp<=0);
+      const allEnemyDead=enemyBalls.every(e=>!e||e.hp<=0);
+      if(allPlayerDead||allEnemyDead){
+        arenaState.done=true;
+        const won=allEnemyDead;
+        const res=document.getElementById('arenaResult');
+        res.style.display='block';
+        if(won){
+          res.innerHTML='🏆 勝利！';res.style.color='#ffcc00';
+          const cs=save.arenaStage||1;
+          const modeMult=MODE_MULT[save.gameMode||'normal']||MODE_MULT.normal;
+          save.arenaStage=cs+1;
+          save.coins+=modeMult.rewardCoins;
+          save.qualityFruits=(save.qualityFruits||0)+modeMult.rewardFruits;
+          save.totalWins=(save.totalWins||0)+1;
+          // 世界事件额外奖励
+          if(worldEventActive){
+            save.qualityFruits+=2;save.coins+=30;
+            showNotif('⚡ 入侵獎勵！額外+2果+30幣','#ffcc00');
+          }
+          // 第10关全局强化
+          if(cs===10){
+            save.ballBoost.dmgMul=+((save.ballBoost.dmgMul+0.3).toFixed(2));
+            save.ballBoost.hpBonus=+((save.ballBoost.hpBonus+30).toFixed(0));
+            showNotif('🎉 第10關！傷害+30% 生命+30','#ffcc00');
+          }
+          // 解锁困难/地狱
+          if(save.totalWins>=15&&!save.unlockedHard){
+            save.unlockedHard=true;showNotif('🔓 解鎖困難模式！','#ff4400');
+          }
+          if(save.totalWins>=30&&!save.unlockedHell){
+            save.unlockedHell=true;showNotif('💀 解鎖地獄模式！','#aa00ff');
+          }
+          writeSave(save);updateHUD();
+          if(cs===15)setTimeout(()=>triggerVictory(),1800);
+          else       setTimeout(()=>_doEnterArena(),2800);
+        }else{
+          res.innerHTML='💀 全滅...<br><span style="font-size:16px;color:#aaa">隊伍全滅</span>';
+          res.style.color='#ff4444';
+        }
+      }
+    }
+    arenaAnimId=requestAnimationFrame(tick);
+  }
+  arenaAnimId=requestAnimationFrame(tick);
+}
+// ============================================================
+// EVENTS
+// ============================================================
+function setupEvents(){
+  // 开始
+  document.getElementById('startBtn').onclick=()=>showScreen('nameScreen');
+  document.getElementById('nameConfirmBtn').onclick=()=>{
+    const name=document.getElementById('nameInput').value.trim();
+    if(!name){showNotif('請輸入暱稱！','#ff4444');return;}
+    const existing=loadSave(name);
+    if(existing){
+      save=migrateSave(existing);writeSave(save);
+      showNotif('歡迎回來，'+name+'！','#00ff88');
+      enterWorld();
+    }else{
+      save=createSave(name);writeSave(save);
+      buildPickScreen();showScreen('pickScreen');
+    }
+  };
+  document.getElementById('nameInput').addEventListener('keydown',e=>{
+    if(e.key==='Enter')document.getElementById('nameConfirmBtn').click();
+  });
+
+  // 世界按钮
+  document.getElementById('btnBag').onclick=openBag;
+  document.getElementById('btnLottery').onclick=()=>showModal('lotteryModal');
+  document.getElementById('btnShop').onclick=()=>showModal('shopModal');
+  document.getElementById('btnArena').onclick=()=>{
+    if(arenaAnimId)cancelAnimationFrame(arenaAnimId);
+    enterArena();
+  };
+
+  // 背包
+  document.getElementById('bagClose').onclick=()=>hideModal('bagModal');
+  document.getElementById('bagConfirmBtn').onclick=()=>{
+    if(save.team&&save.team.length>0){
+      save.activeBall=save.team[0];writeSave(save);
+      showNotif(`✅ 出戰隊伍：${save.team.map(ballName).join('、')}`,'#00ff88');
+      hideModal('bagModal');
+    }else showNotif('請選擇至少1顆球球！','#ff4444');
+  };
+
+  // 抽奖
+  document.getElementById('lotteryClose').onclick=()=>hideModal('lotteryModal');
+  document.getElementById('lotteryBtn').onclick=doLottery;
+
+  // 商场
+  document.getElementById('shopClose').onclick=()=>hideModal('shopModal');
+  setupShop();
+
+  // 强化
+  document.getElementById('upgradeClose').onclick=()=>hideModal('upgradeModal');
+  document.getElementById('upgradeBallBtn').onclick=doUpgrade;
+
+  // 祝福
+  document.getElementById('blessingClose').onclick=()=>{hideModal('blessingModal');if(blessingAnimId)cancelAnimationFrame(blessingAnimId);};
+  document.getElementById('blessingCloseBtn').onclick=()=>{hideModal('blessingModal');if(blessingAnimId)cancelAnimationFrame(blessingAnimId);};
+
+  // 资质
+  setupQualityEvents();
+
+  // 竞技场返回
+  document.getElementById('arenaBackBtn').onclick=()=>{
+    if(arenaAnimId)cancelAnimationFrame(arenaAnimId);
+    document.getElementById('cdPanel').classList.remove('show');
+    document.getElementById('teamBar').classList.remove('show');
+    document.getElementById('mobileControls').style.display='none';
+    document.getElementById('keyHint').style.display='none';
+    document.getElementById('debuffBanner').style.display='none';
+    enterWorld();
+  };
+
+  // 胜利返回
+  document.getElementById('victoryBackBtn').onclick=()=>{
+    save.arenaStage=1;save.gameMode='normal';save._modeChosen=false;
+    writeSave(save);enterWorld();
+  };
+
+  // 模式选择
+  document.getElementById('modeClose').onclick=()=>hideModal('modeModal');
+  document.getElementById('modeNormal').onclick=()=>{
+    save.gameMode='normal';save._modeChosen=true;writeSave(save);
+    hideModal('modeModal');_doEnterArena();
+  };
+  document.getElementById('modeHard').onclick=()=>{
+    if(!save.unlockedHard){showNotif('尚未解鎖困難模式！','#ff4444');return;}
+    save.gameMode='hard';save._modeChosen=true;writeSave(save);
+    hideModal('modeModal');_doEnterArena();
+  };
+  document.getElementById('modeHell').onclick=()=>{
+    if(!save.unlockedHell){showNotif('尚未解鎖地獄模式！','#ff4444');return;}
+    save.gameMode='hell';save._modeChosen=true;writeSave(save);
+    hideModal('modeModal');_doEnterArena();
+  };
+
+  // 攻略手册
+  document.getElementById('btnGuide').onclick=()=>{
+    document.getElementById('guideTableWrap').innerHTML=`
+      <div style="color:#ffcc00;font-size:13px;font-weight:bold;margin-bottom:8px;">⚔️ 球球一覽</div>
+      <table class="guide-table">
+        <thead><tr><th>球球</th><th>屬性</th><th>攻擊</th><th>生命</th><th>技能說明</th></tr></thead>
+        <tbody>
+        ${Object.values(BALL_DEFS).map(d=>{
+          const ec=ELEMENT_COLOR[d.elem]||'#fff';
+          return `<tr>
+            <td><span class="guide-ball-dot" style="background:${d.color};box-shadow:0 0 5px ${d.color}"></span>${d.name}</td>
+            <td><span style="color:${ec}">[${d.elem}]</span></td>
+            <td>${d.dmg??d.burnDmg??d.dmgPerTick??'—'}</td>
+            <td>${d.maxHp??100}</td>
+            <td style="color:#aaa">${d.desc}</td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+      <div style="margin-top:14px;color:#ffcc00;font-size:13px;font-weight:bold;margin-bottom:8px;">🔥 屬性克制（+25%傷害）</div>
+      <table class="guide-table">
+        <thead><tr><th>攻擊屬性</th><th>克制屬性</th></tr></thead>
+        <tbody>
+        ${Object.entries(ELEMENT_COUNTER).map(([a,b])=>{
+          const ac=ELEMENT_COLOR[a]||'#fff',bc=ELEMENT_COLOR[b]||'#fff';
+          return `<tr><td style="color:${ac}">[${a}]</td><td style="color:${bc}">[${b}] +25%</td></tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+      <div style="margin-top:14px;color:#ffcc00;font-size:13px;font-weight:bold;margin-bottom:8px;">💰 經濟循環</div>
+      <table class="guide-table">
+        <thead><tr><th>來源</th><th>獲得</th></tr></thead>
+        <tbody>
+          <tr><td>⚔️ 普通勝利</td><td>+20幣 +1果</td></tr>
+          <tr><td>🔴 困難勝利</td><td>+40幣 +2果</td></tr>
+          <tr><td>💀 地獄勝利</td><td>+70幣 +3果</td></tr>
+          <tr><td>📦 寶箱</td><td>80~150幣 / 球球 / 資質果</td></tr>
+          <tr><td>🗿 雕像挑戰</td><td>+8幣 +1果（勝利）</td></tr>
+          <tr><td>🌟 隱藏點</td><td>+50幣 +2果</td></tr>
+          <tr><td>⚡ 球球入侵</td><td>額外+30幣 +2果</td></tr>
+          <tr><td>⬆️ 球球強化</td><td>每級+5%攻/技能 +5血（最高10級）</td></tr>
+          <tr><td>🍎 資質果</td><td>攻擊+20% / 生命+2（每次消耗1顆）</td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top:14px;color:#ffcc00;font-size:13px;font-weight:bold;margin-bottom:8px;">🎮 操作說明</div>
+      <table class="guide-table">
+        <thead><tr><th>操作</th><th>鍵盤</th><th>手機</th></tr></thead>
+        <tbody>
+          <tr><td>移動</td><td>WASD / 方向鍵</td><td>左側搖桿</td></tr>
+          <tr><td>攻擊（0.8s CD）</td><td>J</td><td>右下 ⚔️</td></tr>
+          <tr><td>技能</td><td>K</td><td>右下 💥</td></tr>
+          <tr><td>切換球球（3s CD）</td><td>Tab</td><td>右上 🔄</td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top:14px;color:#ffcc00;font-size:13px;font-weight:bold;margin-bottom:8px;">🗺️ 場地效果</div>
+      <table class="guide-table">
+        <thead><tr><th>效果</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td style="color:#88ddff">🧊 滑動場</td><td>球球摩擦力極低，速度持續累積</td></tr>
+          <tr><td style="color:#44ff44">☠️ 毒氣場</td><td>全場每3秒扣2血（含玩家）</td></tr>
+          <tr><td style="color:#ff8800">🌀 重力場</td><td>偶爾隨機翻轉移動方向</td></tr>
+          <tr><td style="color:#ffffff">✨ 無效果</td><td>正常場地</td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top:14px;color:#ffcc00;font-size:13px;font-weight:bold;margin-bottom:8px;">🔥 BOSS關卡</div>
+      <table class="guide-table">
+        <thead><tr><th>關卡</th><th>BOSS</th><th>技能</th></tr></thead>
+        <tbody>
+          <tr><td>第5關</td><td style="color:#ff2200">熔岩巨獸</td><td>熔岩爆炸·範圍30傷</td></tr>
+          <tr><td>第10關</td><td style="color:#440088">暗影領主</td><td>暗影全場·暈眩2秒</td></tr>
+          <tr><td>第15關</td><td style="color:#ffffff">天地神球</td><td>終極大招·全場40傷</td></tr>
+        </tbody>
+      </table>`;
+    showModal('guideModal');
+  };
+  document.getElementById('guideClose').onclick=()=>hideModal('guideModal');
+
+  // 键盘
+  window.addEventListener('keydown',e=>{
+    worldKeys[e.key]=true;
+    const inArena=document.getElementById('arenaScreen').classList.contains('active');
+    if(inArena){
+      if(['ArrowUp','w','W'].includes(e.key)){aKeys.up=true;e.preventDefault();}
+      if(['ArrowDown','s','S'].includes(e.key)){aKeys.down=true;e.preventDefault();}
+      if(['ArrowLeft','a','A'].includes(e.key)){aKeys.left=true;e.preventDefault();}
+      if(['ArrowRight','d','D'].includes(e.key)){aKeys.right=true;e.preventDefault();}
+      if(['j','J'].includes(e.key)){atkPressed=true;e.preventDefault();}
+      if(['k','K'].includes(e.key)){skillPressed=true;e.preventDefault();}
+      if(e.key==='Tab'){switchPressed=true;e.preventDefault();}
+    }
+  });
+  window.addEventListener('keyup',e=>{
+    worldKeys[e.key]=false;
+    if(['ArrowUp','w','W'].includes(e.key))   aKeys.up=false;
+    if(['ArrowDown','s','S'].includes(e.key)) aKeys.down=false;
+    if(['ArrowLeft','a','A'].includes(e.key)) aKeys.left=false;
+    if(['ArrowRight','d','D'].includes(e.key))aKeys.right=false;
+    if(['j','J'].includes(e.key))atkPressed=false;
+    if(['k','K'].includes(e.key))skillPressed=false;
+    if(e.key==='Tab')switchPressed=false;
+  });
+
+  window.addEventListener('resize',()=>{
+    if(document.getElementById('worldScreen').classList.contains('active')){
+      initWorldCanvas();spawnWorldItems();
+    }
+    if(document.getElementById('arenaScreen').classList.contains('active'))_doEnterArena();
+  });
+}
+
+// ============================================================
+// INIT
+// ============================================================
+setupEvents();
+setupShop();
+</script>
+</body>
+</html>
+

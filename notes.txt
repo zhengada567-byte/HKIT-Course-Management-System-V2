@@ -1,0 +1,96 @@
+17. 交给 AI 编程工具的最终执行指令
+你可以把下面这段直接发给 Cursor / Windsurf：
+
+Copy
+请基于现有 React + TypeScript + Supabase 系统新增 Make Study Plan 功能。
+
+第一阶段请实现：
+1. 创建数据库表：
+   - study_plan_students
+   - study_plan_modules
+   - programme_stream_quotas
+   - degree_hd_affiliations
+   - study_plan_settings
+   - study_plan_actual_student_numbers
+2. 新增页面：
+   src/pages/programme-leader/make-study-plan/MakeStudyPlanPage.tsx
+3. 新增文件：
+   src/pages/programme-leader/make-study-plan/types.ts
+   src/pages/programme-leader/make-study-plan/helpers.ts
+   src/pages/programme-leader/make-study-plan/studyPlanRules.ts
+4. 新增组件：
+   components/StudentListTab.tsx
+   components/StudentProfileEditor.tsx
+   components/ModulePlanTable.tsx
+   components/StudyPlanSummaryPanel.tsx
+   components/ReportsTab.tsx
+   components/StudyPlanSettingsTab.tsx
+5. 新增 service：
+   src/services/studyPlanService.ts
+6. 修改 Sidebar：
+   Admin 和 Programme Leader 显示 Make Study Plan。
+   President 不显示。
+7. 修改 route：
+   新增 /make-study-plan。
+   只允许 Admin 和 Programme Leader 访问。
+8. 保存 Study Plan 后：
+   - 保存 study_plan_students
+   - 保存 study_plan_modules
+   - 自动计算 intake_term, graduate_term, student_status
+   - 重新计算 study_plan_actual_student_numbers
+   - 同步 actual_student_number 到 timetable_student_numbers
+9. 自动生成规则：
+   - HD FT：A/C term 最多 4 个 module，B term 默认 0，HDEE/HDHC 例外
+   - HD PT：A/B/C term 最多 3 个 module，优先 night/Saturday delivery
+   - Degree FT：A/C term 最多 3 个 module，B term 0
+   - Degree 默认 intake level Year 3
+   - Term 格式 T2026A/T2026B/T2026C
+10. Module table 支持：
+   - planned
+   - exempted
+   - failed
+   - failed 高亮黄色
+   - locked module 不被自动生成覆盖
+
+请使用项目现有的 supabase client import 路径、现有 UI 组件风格、现有 role 命名方式，不要破坏现有 Make Timetable 功能。
+18. 开发后测试顺序
+按这个顺序测，最快定位问题：
+
+Supabase 执行 SQL；
+重启 dev server；
+Admin 登录；
+Sidebar 应看到 Make Study Plan；
+President 登录，不应看到；
+进入 /make-study-plan；
+Add Student；
+填：
+Student ID
+Student Name
+Programme Code
+Stream
+Study Mode
+Start Term
+点击 Load Programme Modules；
+模块应自动出现；
+设置几个 exempted；
+点击 Generate Study Plan；
+检查 term 是否生成；
+点击 Save Study Plan；
+检查 Supabase：
+Copy
+select * from public.study_plan_students;
+select * from public.study_plan_modules;
+select * from public.study_plan_actual_student_numbers;
+select * from public.timetable_student_numbers;
+19. 当前版本暂未完全实现的功能
+上面代码已经能跑通核心闭环，但以下功能建议作为下一阶段继续加：
+
+功能	当前状态
+Initial Study Plan Excel Upload	未实现，下一阶段加
+Failed Modules Upload Excel	未实现，下一阶段加
+Programme / Stream Quota 输入页面	未实现，下一阶段加
+Degree Bridging 自动加载 affiliated HD modules	规则 helper 已预留，页面加载逻辑下一阶段加
+PL 只能看自己 programme	需要结合你现有 PL-programme mapping 表
+更复杂的 delivery mode 优先级排序	当前已判断 PT night/Saturday，但未做排序加权
+Reports 多条件筛选	当前是基础 group report
+建议先把这版跑通。它已经覆盖系统主干：学生 → 模块 → 自动生成 study term → 保存 → 统计 actual student number → 同步 Make Timetable。
