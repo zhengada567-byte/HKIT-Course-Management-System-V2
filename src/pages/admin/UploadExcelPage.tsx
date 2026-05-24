@@ -11,6 +11,7 @@ import {
   normalizeTeachingStatus,
   parseTeacherName,
   upsertModuleDefaultAssignments,
+  type ModuleDefaultAssignmentInput,
 } from "../../services/moduleDefaultAssignmentService";
 import { upsertModuleEnrollments } from "../../services/moduleEnrollmentService";
 import { upsertModule } from "../../services/moduleService";
@@ -130,7 +131,7 @@ async function uploadModuleRows(params: {
   academicYear: string;
 }) {
   const enrollmentPayload = [];
-  const defaultAssignmentPayload = [];
+  const defaultAssignmentPayload: ModuleDefaultAssignmentInput[] = [];
   const teacherMap = new Map<
     string,
     {

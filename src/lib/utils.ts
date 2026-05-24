@@ -190,5 +190,8 @@ export function formatDateTime(value?: string | null) {
 }
 
 export function sumNumbers(values: Array<number | null | undefined>) {
-  return values.reduce((sum, value) => sum + Number(value ?? 0), 0);
+  return values.reduce<number>(
+    (sum, value) => sum + Number(value ?? 0),
+    0
+  );
 }

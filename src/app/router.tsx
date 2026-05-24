@@ -5,7 +5,7 @@ import { ProtectedRoute } from "../components/layout/ProtectedRoute";
 
 import { LoginPage } from "../pages/LoginPage";
 import { DashboardPage } from "../pages/DashboardPage";
-import { CourseSearchPage } from "../pages/CourseSearchPage.tsx";
+import { CourseSearchPage } from "../pages/CourseSearchPage";
 import { TeacherLoadingPage } from "../pages/TeacherLoadingPage";
 
 import { AcademicYearPage } from "../pages/admin/AcademicYearPage";

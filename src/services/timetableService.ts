@@ -6,7 +6,7 @@ import type {
   TimetableModuleRow,
   TimetablePlanningModuleRow,
 } from "../types";
-import type { ModuleDefaultAssignmentRow } from "./moduleDefaultAssignmentService";
+import type { ModuleDefaultAssignmentRow } from "../types";
 import type { ModuleEnrollmentRow } from "./moduleEnrollmentService";
 
 export interface GeneratePlanningModulesParams {

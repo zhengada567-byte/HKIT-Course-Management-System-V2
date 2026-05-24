@@ -909,6 +909,9 @@ async function lookupHdModuleMetadataByCode(
     sourceModuleId: matchedRow.id ?? undefined,
     planStage: "bridging",
     status: "planned",
+    isExempted: false,
+    isFailed: false,
+    isLocked: false,
   };
 }
 
@@ -1469,6 +1472,8 @@ export async function saveStudyPlan(
     throw new Error("Failed to save student profile.");
   }
 
+  const savedStudentId = savedStudent.id;
+
   const studentWithType = await attachProgrammeTypeToStudent({
     ...savedStudent,
     programmeType: studentInput.programmeType ?? savedStudent.programmeType,
@@ -1511,7 +1516,7 @@ export async function saveStudyPlan(
     toModuleRow(
       module,
       studentWithType,
-      savedStudent.id
+      savedStudentId
     )
   );
 

@@ -13,7 +13,7 @@ export default function StudyPlanSummaryPanel({ student, modules }: Props) {
   const warnings: string[] = [];
 
   for (const [term, count] of Object.entries(summary.modulesPerTerm)) {
-    const max = getMaxModulesPerTerm(student, term);
+    const max = getMaxModulesPerTerm(student);
 
     if (count > max) {
       warnings.push(`${term}: ${count} modules exceeds max ${max}.`);

@@ -1,6 +1,8 @@
 import { supabase } from "../lib/supabase";
 import type { ModuleEnrollmentRow } from "../types";
 
+export type { ModuleEnrollmentRow };
+
 export interface ModuleEnrollmentInput {
   academic_year: string;
   module_code: string;
