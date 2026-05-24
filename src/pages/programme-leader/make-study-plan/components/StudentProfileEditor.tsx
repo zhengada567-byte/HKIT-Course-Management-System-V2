@@ -7,6 +7,7 @@ import {
   loadProgrammeModules,
   loadBridgingModuleOptionsForDegree,
   saveStudyPlan,
+  sortModulesForStudyPlan,
   formatStudyPlanSaveError,
   type ProgrammeOption,
 } from "../../../../services/studyPlanService";
@@ -330,7 +331,10 @@ useEffect(() => {
             (module) => module.planStage === "bridging"
           );
 
-          return [...existingBridgingModules, ...loaded];
+          return sortModulesForStudyPlan([
+            ...existingBridgingModules,
+            ...loaded,
+          ]);
         });
       } else {
         setModules(loaded);
@@ -433,7 +437,7 @@ useEffect(() => {
         (module) => module.planStage !== "bridging"
       );
 
-      return [...selectedModules, ...nonBridgingModules];
+      return sortModulesForStudyPlan([...selectedModules, ...nonBridgingModules]);
     });
 
     alert(`Confirmed ${selectedModules.length} bridging module(s).`);
@@ -486,7 +490,10 @@ useEffect(() => {
     });
 
     const generated = isDegree
-      ? [...existingBridgingModules, ...generatedProgrammeModules]
+      ? sortModulesForStudyPlan([
+          ...existingBridgingModules,
+          ...generatedProgrammeModules,
+        ])
       : generatedProgrammeModules;
 
     setModules(generated);

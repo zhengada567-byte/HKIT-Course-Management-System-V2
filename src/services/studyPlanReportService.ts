@@ -29,6 +29,7 @@ export interface StudentHeadcountReportRow {
 export interface ModuleEnrollmentReportParams {
   includeBridging?: boolean;
   programmeCode?: string;
+  studyTerm?: string;
 }
 
 export interface ModuleEnrollmentReportRow {
@@ -154,6 +155,37 @@ export async function getStudentHeadcountReport(
   return rows;
 }
 
+export async function listModuleEnrollmentStudyTerms(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("study_plan_modules")
+    .select("study_term")
+    .eq("status", "planned")
+    .not("study_term", "is", null);
+
+  if (error) throw error;
+
+  const terms = new Set<string>();
+
+  for (const row of data ?? []) {
+    const studyTerm = String(row.study_term ?? "").trim().toUpperCase();
+
+    if (studyTerm) {
+      terms.add(studyTerm);
+    }
+  }
+
+  return Array.from(terms).sort((a, b) => compareStudyTerm(a, b));
+}
+
+function comparePlanStageForReport(a: string, b: string): number {
+  if (a === b) return 0;
+
+  if (a === "bridging") return -1;
+  if (b === "bridging") return 1;
+
+  return a.localeCompare(b);
+}
+
 export async function getModuleEnrollmentReport(
   params: ModuleEnrollmentReportParams = {}
 ): Promise<ModuleEnrollmentReportRow[]> {
@@ -173,6 +205,13 @@ export async function getModuleEnrollmentReport(
     query = query.eq(
       "programme_code",
       String(params.programmeCode).trim()
+    );
+  }
+
+  if (params.studyTerm) {
+    query = query.eq(
+      "study_term",
+      String(params.studyTerm).trim().toUpperCase()
     );
   }
 
@@ -227,19 +266,19 @@ export async function getModuleEnrollmentReport(
 
     if (codeDiff !== 0) return codeDiff;
 
+    const stageDiff = comparePlanStageForReport(a.planStage, b.planStage);
+
+    if (stageDiff !== 0) return stageDiff;
+
     const streamDiff = a.programmeStream.localeCompare(b.programmeStream);
 
     if (streamDiff !== 0) return streamDiff;
 
-    const stageDiff = a.planStage.localeCompare(b.planStage);
+    const termDiff = compareStudyTerm(a.studyTerm, b.studyTerm);
 
-    if (stageDiff !== 0) return stageDiff;
+    if (termDiff !== 0) return termDiff;
 
-    const moduleDiff = a.moduleCode.localeCompare(b.moduleCode);
-
-    if (moduleDiff !== 0) return moduleDiff;
-
-    return compareStudyTerm(a.studyTerm, b.studyTerm);
+    return a.moduleCode.localeCompare(b.moduleCode);
   });
 
   return rows;
@@ -329,11 +368,12 @@ export async function downloadModuleEnrollmentReportCsv(
   ]);
 
   const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const suffix = params.programmeCode
-    ? params.programmeCode
-    : params.includeBridging
-      ? "all_with_bridging"
-      : "programme_only";
+  const suffixParts = [
+    params.programmeCode || "all_programmes",
+    params.studyTerm || "all_terms",
+    params.includeBridging ? "with_bridging" : "programme_only",
+  ];
+  const suffix = suffixParts.join("_");
 
   const fileName = `study_plan_module_enrollment_${suffix}_${dateStamp}.csv`;
 

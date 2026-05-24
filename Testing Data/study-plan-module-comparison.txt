@@ -1,0 +1,431 @@
+Study Plan Module Comparison Report
+Generated: 2026-05-24T04:51:45.432Z
+Catalog source: Supabase (146 rows)
+Study plan files: 12
+
+========================================================================
+HDBA (HD)  |  file: HDBA.xlsx
+Students: 24  |  Unique module codes in Excel: 30
+Programme catalog size: 16 module codes
+
+Exact match in HDBA: 13  |  Alias match (_suffix): 7
+In other programme: 0  |  Missing completely: 10
+
+MISSING (not in system catalog at all):
+  - BS408  (1 cell uses)
+  - BS411  (21 cell uses)
+  - BS413  (19 cell uses)
+  - BS415  (3 cell uses)
+  - BS416  (2 cell uses)
+  - BS417  (2 cell uses)
+  - GS402  (23 cell uses)
+  - GS417  (1 cell uses)
+  - HD406  (2 cell uses)
+  - HD407  (10 cell uses)
+
+ALIAS ONLY (Excel code has suffix; base exists in this programme):
+  - HD401_D -> HD401  (2 uses)
+  - HD402_N -> HD402  (6 uses)
+  - HD403_D -> HD403  (5 uses)
+  - HD403_N -> HD403  (2 uses)
+  - HD404_N -> HD404  (3 uses)
+  - HD405_D -> HD405  (2 uses)
+  - HD405_N -> HD405  (8 uses)
+
+NOTE: HD upload can still save these students; missing modules will use module code as module name.
+
+========================================================================
+HDC (HD)  |  file: HDC.xlsx
+Students: 139  |  Unique module codes in Excel: 48
+Programme catalog size: 26 module codes
+
+Exact match in HDC: 26  |  Alias match (_suffix): 11
+In other programme: 4  |  Missing completely: 7
+
+MISSING (not in system catalog at all):
+  - CS409  (1 cell uses)
+  - CS418  (2 cell uses)
+  - CS422 (ASGN)  (3 cell uses)
+  - CS423 (ASGN)  (1 cell uses)
+  - GS403  (1 cell uses)
+  - HD406  (7 cell uses)
+  - HD407  (54 cell uses)
+
+ALIAS ONLY (Excel code has suffix; base exists in this programme):
+  - CS402_N -> CS402  (28 uses)
+  - CS403_N -> CS403  (16 uses)
+  - CS404_N -> CS404  (20 uses)
+  - CS416_N -> CS416  (19 uses)
+  - HD401_D -> HD401  (21 uses)
+  - HD402_N -> HD402  (15 uses)
+  - HD404_N -> HD404  (1 uses)
+  - HD405_A -> HD405  (2 uses)
+  - HD405_D -> HD405  (24 uses)
+  - HD405_N -> HD405  (38 uses)
+  - HD408_N -> HD408  (26 uses)
+
+IN OTHER PROGRAMME (exists in system, but not under this programme):
+  - HD403  (7 uses)
+  - HD403_HDC_HDC -> HD403  (1 uses)
+  - HD403_N -> HD403  (1 uses)
+  - HD403_N_HDC -> HD403  (1 uses)
+
+NOTE: HD upload can still save these students; missing modules will use module code as module name.
+
+========================================================================
+HDCI (HD)  |  file: HDCI.xlsx
+Students: 192  |  Unique module codes in Excel: 35
+Programme catalog size: 18 module codes
+
+Exact match in HDCI: 9  |  Alias match (_suffix): 8
+In other programme: 3  |  Missing completely: 15
+
+MISSING (not in system catalog at all):
+  - CI401  (27 cell uses)
+  - CI401_N  (64 cell uses)
+  - CI404  (190 cell uses)
+  - CI404_S  (1 cell uses)
+  - CI406  (192 cell uses)
+  - CI407  (192 cell uses)
+  - CI408  (191 cell uses)
+  - CI408_S  (1 cell uses)
+  - CI409  (126 cell uses)
+  - CS411  (85 cell uses)
+  - CS411_D  (1 cell uses)
+  - GS402  (63 cell uses)
+  - GS409  (176 cell uses)
+  - HD406  (19 cell uses)
+  - HD407  (24 cell uses)
+
+ALIAS ONLY (Excel code has suffix; base exists in this programme):
+  - HD401_D -> HD401  (32 uses)
+  - HD402_N -> HD402  (58 uses)
+  - HD403_B -> HD403  (26 uses)
+  - HD403_N -> HD403  (57 uses)
+  - HD404_D -> HD404  (62 uses)
+  - HD404_N -> HD404  (2 uses)
+  - HD405_D -> HD405  (42 uses)
+  - HD405_N -> HD405  (69 uses)
+
+IN OTHER PROGRAMME (exists in system, but not under this programme):
+  - CS403  (101 uses)
+  - CS417  (189 uses)
+  - CS403_CCI -> CS403  (44 uses)
+
+NOTE: HD upload can still save these students; missing modules will use module code as module name.
+
+========================================================================
+HDHC (HD)  |  file: HDHC.xlsx
+Students: 75  |  Unique module codes in Excel: 31
+Programme catalog size: 17 module codes
+
+Exact match in HDHC: 3  |  Alias match (_suffix): 5
+In other programme: 0  |  Missing completely: 23
+
+MISSING (not in system catalog at all):
+  - HC401  (22 cell uses)
+  - HC401_A  (26 cell uses)
+  - HC401_B  (27 cell uses)
+  - HC402  (22 cell uses)
+  - HC402_A  (26 cell uses)
+  - HC402_B  (27 cell uses)
+  - HC403  (21 cell uses)
+  - HC403_A  (26 cell uses)
+  - HC403_B  (28 cell uses)
+  - HC404  (24 cell uses)
+  - HC404_A  (24 cell uses)
+  - HC404_B  (27 cell uses)
+  - HC405  (24 cell uses)
+  - HC405_A  (24 cell uses)
+  - HC405_B  (27 cell uses)
+  - HC406  (75 cell uses)
+  - HC407  (75 cell uses)
+  - HC408  (75 cell uses)
+  - HC409  (75 cell uses)
+  - HC410  (75 cell uses)
+  - HC411  (75 cell uses)
+  - HD406  (74 cell uses)
+  - HD407  (74 cell uses)
+
+ALIAS ONLY (Excel code has suffix; base exists in this programme):
+  - HD403_D -> HD403  (52 uses)
+  - HD403_N -> HD403  (3 uses)
+  - HD404_D -> HD404  (2 uses)
+  - HD404_N -> HD404  (11 uses)
+  - HD405_N -> HD405  (1 uses)
+
+NOTE: HD upload can still save these students; missing modules will use module code as module name.
+
+========================================================================
+UWLBS (Degree)  |  file: UWLBS.xlsx
+Students: 16  |  Unique module codes in Excel: 13
+Programme catalog size: 6 module codes
+
+Exact match in UWLBS: 3  |  Alias match (_suffix): 0
+In other programme: 5  |  Missing completely: 5
+
+MISSING (not in system catalog at all):
+  - BA60075E  (5 cell uses)
+  - BA60076E  (5 cell uses)
+  - BS413  (1 cell uses)
+  - GS417  (11 cell uses)
+  - MS60043E  (5 cell uses)
+
+IN OTHER PROGRAMME (exists in system, but not under this programme):
+  - BS401  (1 uses)
+  - BS403  (3 uses)
+  - BS414  (1 uses)
+  - HD403_D -> HD403  (1 uses)
+  - HD405_N -> HD405  (1 uses)
+
+NOTE: Degree upload will FAIL students using missing modules unless catalog/articulation is updated or upload rules are relaxed.
+
+========================================================================
+UWLC (Degree)  |  file: UWLC.xlsx
+Students: 1  |  Unique module codes in Excel: 5
+Programme catalog size: 6 module codes
+
+Exact match in UWLC: 0  |  Alias match (_suffix): 0
+In other programme: 5  |  Missing completely: 0
+
+IN OTHER PROGRAMME (exists in system, but not under this programme):
+  - CS401  (1 uses)
+  - CS405  (1 uses)
+  - CS408  (1 uses)
+  - CS414  (1 uses)
+  - CS421  (1 uses)
+
+========================================================================
+UWLCFI (Degree)  |  file: UWLCFI.xlsx
+Students: 152  |  Unique module codes in Excel: 25
+Programme catalog size: 8 module codes
+
+Exact match in UWLCFI: 0  |  Alias match (_suffix): 0
+In other programme: 0  |  Missing completely: 25
+
+MISSING (not in system catalog at all):
+  - CM4HK59O  (152 cell uses)
+  - CM4HK68O  (152 cell uses)
+  - CM4HK69O  (152 cell uses)
+  - CM4HK71O  (152 cell uses)
+  - CM4HK72O  (152 cell uses)
+  - CM4HK73O  (152 cell uses)
+  - CM5HK66O  (152 cell uses)
+  - CM5HK71O  (152 cell uses)
+  - CM5HK77O  (152 cell uses)
+  - CM5HK78O  (152 cell uses)
+  - CM5HK79O  (152 cell uses)
+  - CM5HK81O  (152 cell uses)
+  - CM6HK72O_1  (74 cell uses)
+  - CM6HK72O_2  (78 cell uses)
+  - CM6HK75O  (20 cell uses)
+  - CM6HK75O_1  (56 cell uses)
+  - CM6HK75O_2  (76 cell uses)
+  - CM6HK78O  (60 cell uses)
+  - CM6HK78O_1  (92 cell uses)
+  - CM6HK78O_2  (152 cell uses)
+  - CM6HK79O_1  (83 cell uses)
+  - CM6HK79O_2  (69 cell uses)
+  - CM6HK80O  (20 cell uses)
+  - CM6HK80O_1  (56 cell uses)
+  - CM6HK80O_2  (76 cell uses)
+
+NOTE: Degree upload will FAIL students using missing modules unless catalog/articulation is updated or upload rules are relaxed.
+
+========================================================================
+UWLCS (Degree)  |  file: UWLCS.xlsx
+Students: 19  |  Unique module codes in Excel: 10
+Programme catalog size: 6 module codes
+
+Exact match in UWLCS: 0  |  Alias match (_suffix): 0
+In other programme: 10  |  Missing completely: 0
+
+IN OTHER PROGRAMME (exists in system, but not under this programme):
+  - CS401  (19 uses)
+  - CS403  (1 uses)
+  - CS404  (2 uses)
+  - CS405  (8 uses)
+  - CS406  (16 uses)
+  - CS407  (19 uses)
+  - CS408  (17 uses)
+  - CS416  (1 uses)
+  - CS417  (1 uses)
+  - GS407  (3 uses)
+
+========================================================================
+WUAFM (Degree)  |  file: WUAFM.xlsx
+Students: 10  |  Unique module codes in Excel: 20
+Programme catalog size: 7 module codes
+
+Exact match in WUAFM: 4  |  Alias match (_suffix): 0
+In other programme: 7  |  Missing completely: 9
+
+MISSING (not in system catalog at all):
+  - AF401  (10 cell uses)
+  - AF402  (10 cell uses)
+  - BS407  (1 cell uses)
+  - BS408  (5 cell uses)
+  - BS410  (1 cell uses)
+  - BUS692  (20 cell uses)
+  - GS402  (4 cell uses)
+  - HD406  (5 cell uses)
+  - HD407  (6 cell uses)
+
+IN OTHER PROGRAMME (exists in system, but not under this programme):
+  - BS401  (7 uses)
+  - BS402  (6 uses)
+  - BS406  (5 uses)
+  - BS414  (4 uses)
+  - HD403  (6 uses)
+  - HD404  (6 uses)
+  - HD405  (4 uses)
+
+NOTE: Degree upload will FAIL students using missing modules unless catalog/articulation is updated or upload rules are relaxed.
+
+========================================================================
+WUBM (Degree)  |  file: WUBM.xlsx
+Students: 22  |  Unique module codes in Excel: 20
+Programme catalog size: 6 module codes
+
+Exact match in WUBM: 4  |  Alias match (_suffix): 0
+In other programme: 11  |  Missing completely: 5
+
+MISSING (not in system catalog at all):
+  - BS413  (5 cell uses)
+  - BS415  (1 cell uses)
+  - BUS692  (28 cell uses)
+  - GE441  (2 cell uses)
+  - GS402  (2 cell uses)
+
+IN OTHER PROGRAMME (exists in system, but not under this programme):
+  - BS402  (8 uses)
+  - BS404  (1 uses)
+  - BS406  (1 uses)
+  - BS412  (3 uses)
+  - BS414  (6 uses)
+  - GS401  (1 uses)
+  - GS413  (2 uses)
+  - HD403  (1 uses)
+  - HD404  (4 uses)
+  - HD405  (1 uses)
+  - HD404_N -> HD404  (1 uses)
+
+NOTE: Degree upload will FAIL students using missing modules unless catalog/articulation is updated or upload rules are relaxed.
+
+========================================================================
+WUCS (Degree)  |  file: WUCS.xlsx
+Students: 7  |  Unique module codes in Excel: 10
+Programme catalog size: 6 module codes
+
+Exact match in WUCS: 0  |  Alias match (_suffix): 0
+In other programme: 9  |  Missing completely: 1
+
+MISSING (not in system catalog at all):
+  - CS422 (ASGN)  (1 cell uses)
+
+IN OTHER PROGRAMME (exists in system, but not under this programme):
+  - CS405  (2 uses)
+  - CS422  (3 uses)
+  - CS423  (5 uses)
+  - CS424  (5 uses)
+  - CS425  (4 uses)
+  - CS427  (7 uses)
+  - GS407  (1 uses)
+  - HD403_HDC  (1 uses)
+  - HD408  (2 uses)
+
+NOTE: Degree upload will FAIL students using missing modules unless catalog/articulation is updated or upload rules are relaxed.
+
+========================================================================
+~$HDC (Degree)  |  file: ~$HDC.xlsx
+Students: 0  |  Unique module codes in Excel: 0
+Programme catalog size: 0 module codes
+
+Exact match in ~$HDC: 0  |  Alias match (_suffix): 0
+In other programme: 0  |  Missing completely: 0
+
+========================================================================
+GLOBAL SUMMARY - Missing module codes across all study plan files
+
+  AF401  ->  used in: WUAFM
+  AF402  ->  used in: WUAFM
+  BA60075E  ->  used in: UWLBS
+  BA60076E  ->  used in: UWLBS
+  BS407  ->  used in: WUAFM
+  BS408  ->  used in: HDBA, WUAFM
+  BS410  ->  used in: WUAFM
+  BS411  ->  used in: HDBA
+  BS413  ->  used in: HDBA, UWLBS, WUBM
+  BS415  ->  used in: HDBA, WUBM
+  BS416  ->  used in: HDBA
+  BS417  ->  used in: HDBA
+  BUS692  ->  used in: WUAFM, WUBM
+  CI401  ->  used in: HDCI
+  CI401_N  ->  used in: HDCI
+  CI404  ->  used in: HDCI
+  CI404_S  ->  used in: HDCI
+  CI406  ->  used in: HDCI
+  CI407  ->  used in: HDCI
+  CI408  ->  used in: HDCI
+  CI408_S  ->  used in: HDCI
+  CI409  ->  used in: HDCI
+  CM4HK59O  ->  used in: UWLCFI
+  CM4HK68O  ->  used in: UWLCFI
+  CM4HK69O  ->  used in: UWLCFI
+  CM4HK71O  ->  used in: UWLCFI
+  CM4HK72O  ->  used in: UWLCFI
+  CM4HK73O  ->  used in: UWLCFI
+  CM5HK66O  ->  used in: UWLCFI
+  CM5HK71O  ->  used in: UWLCFI
+  CM5HK77O  ->  used in: UWLCFI
+  CM5HK78O  ->  used in: UWLCFI
+  CM5HK79O  ->  used in: UWLCFI
+  CM5HK81O  ->  used in: UWLCFI
+  CM6HK72O_1  ->  used in: UWLCFI
+  CM6HK72O_2  ->  used in: UWLCFI
+  CM6HK75O  ->  used in: UWLCFI
+  CM6HK75O_1  ->  used in: UWLCFI
+  CM6HK75O_2  ->  used in: UWLCFI
+  CM6HK78O  ->  used in: UWLCFI
+  CM6HK78O_1  ->  used in: UWLCFI
+  CM6HK78O_2  ->  used in: UWLCFI
+  CM6HK79O_1  ->  used in: UWLCFI
+  CM6HK79O_2  ->  used in: UWLCFI
+  CM6HK80O  ->  used in: UWLCFI
+  CM6HK80O_1  ->  used in: UWLCFI
+  CM6HK80O_2  ->  used in: UWLCFI
+  CS409  ->  used in: HDC
+  CS411  ->  used in: HDCI
+  CS411_D  ->  used in: HDCI
+  CS418  ->  used in: HDC
+  CS422 (ASGN)  ->  used in: HDC, WUCS
+  CS423 (ASGN)  ->  used in: HDC
+  GE441  ->  used in: WUBM
+  GS402  ->  used in: HDBA, HDCI, WUAFM, WUBM
+  GS403  ->  used in: HDC
+  GS409  ->  used in: HDCI
+  GS417  ->  used in: HDBA, UWLBS
+  HC401  ->  used in: HDHC
+  HC401_A  ->  used in: HDHC
+  HC401_B  ->  used in: HDHC
+  HC402  ->  used in: HDHC
+  HC402_A  ->  used in: HDHC
+  HC402_B  ->  used in: HDHC
+  HC403  ->  used in: HDHC
+  HC403_A  ->  used in: HDHC
+  HC403_B  ->  used in: HDHC
+  HC404  ->  used in: HDHC
+  HC404_A  ->  used in: HDHC
+  HC404_B  ->  used in: HDHC
+  HC405  ->  used in: HDHC
+  HC405_A  ->  used in: HDHC
+  HC405_B  ->  used in: HDHC
+  HC406  ->  used in: HDHC
+  HC407  ->  used in: HDHC
+  HC408  ->  used in: HDHC
+  HC409  ->  used in: HDHC
+  HC410  ->  used in: HDHC
+  HC411  ->  used in: HDHC
+  HD406  ->  used in: HDBA, HDC, HDCI, HDHC, WUAFM
+  HD407  ->  used in: HDBA, HDC, HDCI, HDHC, WUAFM
+  MS60043E  ->  used in: UWLBS

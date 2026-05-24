@@ -7,6 +7,12 @@ import type {
 
 
 import {
+  inferPlanStageFromModuleCode,
+  isDegreeStyleModuleCode,
+  isHdStyleModuleCode,
+} from "../lib/studyPlanModuleCode";
+
+import {
   generateStudyPlanForStudent,
   getDegreeStartTermAfterBridging,
 } from "../pages/programme-leader/make-study-plan/studyPlanRules";
@@ -166,7 +172,44 @@ function normalizeAlias(value: unknown): string {
  * whitespace and converting to uppercase.
  */
 function normalizeModuleCode(value: unknown): string {
-  return cleanText(value).toUpperCase();
+  return canonicalizeModuleCodeForUpload(value);
+}
+
+/**
+ * Normalize Excel module codes before upload.
+ * - HD406 -> HD401, HD407 -> HD402
+ * - HD403_HDC -> HD403, HD402_N -> HD402
+ * - CS422 (ASGN) -> CS422
+ */
+export function canonicalizeModuleCodeForUpload(value: unknown): string {
+  let code = cleanText(value)
+    .toUpperCase()
+    .replace(/\s*\([^)]*\)/g, "");
+
+  const explicitAliases: Record<string, string> = {
+    HD406: "HD401",
+    HD407: "HD402",
+  };
+
+  if (explicitAliases[code]) {
+    return explicitAliases[code];
+  }
+
+  const underscoreIndex = code.indexOf("_");
+
+  if (underscoreIndex > 0) {
+    const base = code.slice(0, underscoreIndex);
+
+    if (explicitAliases[base]) {
+      return explicitAliases[base];
+    }
+
+    if (/^[A-Z]{2,4}\d{3}[A-Z]?$/.test(base)) {
+      return base;
+    }
+  }
+
+  return code;
 }
 
 function isValidModuleCode(value: unknown): boolean {
@@ -293,6 +336,48 @@ function findFirstModuleCodeColumn(headers: string[]): number {
   });
 }
 
+export interface InitialStudyPlanUploadOptions {
+  /** When true, Degree uploads accept any module code (same as HD). */
+  relaxed?: boolean;
+  /** When true, defer timetable sync until all students are saved. */
+  deferPostSync?: boolean;
+}
+
+function parseWorkbookRows(arrayBuffer: ArrayBuffer): ParsedExcelRow[] {
+  const workbook = XLSX.read(arrayBuffer, {
+    type: "array",
+  });
+
+  const firstSheetName = workbook.SheetNames[0];
+
+  if (!firstSheetName) {
+    throw new Error("Excel file does not contain any worksheet.");
+  }
+
+  const worksheet = workbook.Sheets[firstSheetName];
+
+  const rawRows = XLSX.utils.sheet_to_json<ExcelCell[]>(worksheet, {
+    header: 1,
+    defval: "",
+    blankrows: false,
+  });
+
+  if (rawRows.length === 0) {
+    return [];
+  }
+
+  const headers = rawRows[0].map((cell) => cleanText(cell));
+
+  return rawRows
+    .slice(1)
+    .map((values, index) => ({
+      headers,
+      values,
+      rowNumber: index + 2,
+    }))
+    .filter((row) => row.values.some((cell) => cleanText(cell).length > 0));
+}
+
 function parseWorkbook(file: File): Promise<ParsedExcelRow[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -303,45 +388,7 @@ function parseWorkbook(file: File): Promise<ParsedExcelRow[]> {
 
     reader.onload = () => {
       try {
-        const arrayBuffer = reader.result as ArrayBuffer;
-
-        const workbook = XLSX.read(arrayBuffer, {
-          type: "array",
-        });
-
-        const firstSheetName = workbook.SheetNames[0];
-
-        if (!firstSheetName) {
-          throw new Error("Excel file does not contain any worksheet.");
-        }
-
-        const worksheet = workbook.Sheets[firstSheetName];
-
-        const rawRows = XLSX.utils.sheet_to_json<ExcelCell[]>(worksheet, {
-          header: 1,
-          defval: "",
-          blankrows: false,
-        });
-
-        if (rawRows.length === 0) {
-          resolve([]);
-          return;
-        }
-
-        const headers = rawRows[0].map((cell) => cleanText(cell));
-
-        const rows: ParsedExcelRow[] = rawRows
-          .slice(1)
-          .map((values, index) => ({
-            headers,
-            values,
-            rowNumber: index + 2,
-          }))
-          .filter((row) =>
-            row.values.some((cell) => cleanText(cell).length > 0)
-          );
-
-        resolve(rows);
+        resolve(parseWorkbookRows(reader.result as ArrayBuffer));
       } catch (error) {
         reject(error);
       }
@@ -351,8 +398,35 @@ function parseWorkbook(file: File): Promise<ParsedExcelRow[]> {
   });
 }
 
+export function parseStudyPlanWorkbookBuffer(
+  arrayBuffer: ArrayBuffer
+): ParsedExcelRow[] {
+  return parseWorkbookRows(arrayBuffer);
+}
+
 const DEGREE_UPLOAD_INTAKE_LEVEL = "Year 3";
 const DEGREE_UPLOAD_STUDY_MODE = "FT" as const;
+
+function normalizeStudyModeForUpload(
+  value: string,
+  options?: { isDegreeUpload?: boolean }
+) {
+  if (options?.isDegreeUpload) {
+    return DEGREE_UPLOAD_STUDY_MODE;
+  }
+
+  const text = cleanText(value).toUpperCase();
+
+  if (text === "FT" || text === "PT") {
+    return text;
+  }
+
+  if (text.includes("PT")) {
+    return "PT";
+  }
+
+  return "FT";
+}
 
 function buildStudentFromRow(
   row: ParsedExcelRow,
@@ -397,14 +471,7 @@ function buildStudentFromRow(
     });
   }
 
-  if (!studyMode && !isDegreeUpload) {
-    errors.push({
-      row: row.rowNumber,
-      message: "Missing required field: study mode",
-    });
-  }
-
-  if (!studentId || !studentName || (!studyMode && !isDegreeUpload)) {
+  if (!studentId || !studentName) {
     return null;
   }
 
@@ -412,8 +479,8 @@ function buildStudentFromRow(
     studentId,
     studentName,
     programmeCode,
-    programmeStream,
-    studyMode: isDegreeUpload ? DEGREE_UPLOAD_STUDY_MODE : studyMode,
+    programmeStream: isDegreeUpload ? "nil" : programmeStream,
+    studyMode: normalizeStudyModeForUpload(studyMode, { isDegreeUpload }),
     intakeLevel: isDegreeUpload
       ? DEGREE_UPLOAD_INTAKE_LEVEL
       : optionalText(intakeLevel),
@@ -427,12 +494,13 @@ function buildStudentFromRow(
 function createStudyPlanModule(params: {
   student: StudyPlanStudent;
   moduleCode: string;
+  planStage?: StudyPlanModule["planStage"];
   parsed: {
     status?: StudyPlanModule["status"];
     studyTerm?: string;
   };
 }): StudyPlanModule {
-  const { student, moduleCode, parsed } = params;
+  const { student, moduleCode, parsed, planStage = "programme" } = params;
 
   return {
     studentId: student.studentId,
@@ -454,7 +522,7 @@ function createStudyPlanModule(params: {
     deliveryMode: undefined,
     moduleSequence: undefined,
 
-    planStage: "programme",
+    planStage,
     status: parsed.status ?? "planned",
     studyTerm: parsed.studyTerm,
 
@@ -734,9 +802,30 @@ function buildModulesFromRow(
   return buildModulesFromHeaderColumns(row, student, warnings);
 }
 
+function classifyDegreeModulesByCodeStructure(
+  modules: StudyPlanModule[]
+): StudyPlanModule[] {
+  return modules.map((module) => {
+    const inferred = inferPlanStageFromModuleCode(module.moduleCode);
+
+    if (!inferred || module.planStage === inferred) {
+      return module;
+    }
+
+    return {
+      ...module,
+      planStage: inferred,
+    };
+  });
+}
+
 function buildGroupedPlans(
   rows: ParsedExcelRow[],
-  context: InitialStudyPlanUploadContext
+  context: InitialStudyPlanUploadContext,
+  options?: {
+    isDegreeUpload?: boolean;
+    classifyDegreeModules?: boolean;
+  }
 ) {
   const errors: InitialStudyPlanUploadError[] = [];
   const warnings: InitialStudyPlanUploadWarning[] = [];
@@ -745,6 +834,7 @@ function buildGroupedPlans(
   let skippedModuleCells = 0;
 
   const programmeCode = cleanText(context.programmeCode).toUpperCase();
+  const isDegreeUpload = options?.isDegreeUpload ?? false;
 
   if (!programmeCode) {
     errors.push({
@@ -760,15 +850,22 @@ function buildGroupedPlans(
   }
 
   rows.forEach((row) => {
-    const student = buildStudentFromRow(row, programmeCode, errors);
+    const student = buildStudentFromRow(row, programmeCode, errors, {
+      isDegreeUpload,
+    });
 
     if (!student) return;
 
     const result = buildModulesFromRow(row, student, warnings);
+    let modules = result.modules;
+
+    if (options?.classifyDegreeModules) {
+      modules = classifyDegreeModulesByCodeStructure(modules);
+    }
 
     skippedModuleCells += result.skippedModuleCells;
 
-    if (result.modules.length === 0) {
+    if (modules.length === 0) {
       warnings.push({
         row: row.rowNumber,
         studentId: student.studentId,
@@ -779,7 +876,7 @@ function buildGroupedPlans(
 
     grouped.set(student.studentId, {
       student,
-      modules: result.modules,
+      modules,
       rowNumber: row.rowNumber,
     });
   });
@@ -879,12 +976,45 @@ function buildCatalogByModuleCode(options: StudyPlanModule[]) {
   return map;
 }
 
+function applyPlanStageFromModuleCode(
+  module: StudyPlanModule,
+  catalogMatch?: StudyPlanModule
+): StudyPlanModule {
+  const inferred = inferPlanStageFromModuleCode(module.moduleCode);
+
+  if (!inferred) {
+    return module;
+  }
+
+  if (catalogMatch) {
+    return {
+      ...module,
+      ...catalogMatch,
+      id: undefined,
+      studentId: module.studentId,
+      studentProfileId: module.studentProfileId,
+      planStage: inferred,
+      status: module.status,
+      studyTerm: module.studyTerm,
+      isExempted: module.isExempted,
+      isFailed: module.isFailed,
+      isLocked: module.isLocked,
+    };
+  }
+
+  return {
+    ...module,
+    planStage: inferred,
+  };
+}
+
 function buildDegreeModulesFromModulePairs(
   row: ParsedExcelRow,
   student: StudyPlanStudent,
   bridgingOptions: StudyPlanModule[],
   degreeProgrammeModules: StudyPlanModule[],
-  warnings: InitialStudyPlanUploadWarning[]
+  warnings: InitialStudyPlanUploadWarning[],
+  options?: { relaxed?: boolean }
 ): {
   bridgingModules: StudyPlanModule[];
   programmeModulesFromImport: StudyPlanModule[];
@@ -946,6 +1076,50 @@ function buildDegreeModulesFromModulePairs(
       continue;
     }
 
+    if (options?.relaxed) {
+      const inferred = inferPlanStageFromModuleCode(moduleCode);
+
+      if (inferred === "bridging" || isHdStyleModuleCode(moduleCode)) {
+        bridgingModules.push(
+          applyPlanStageFromModuleCode(
+            createStudyPlanModule({
+              student,
+              moduleCode,
+              planStage: "bridging",
+              parsed,
+            }),
+            bridgingCatalogByCode.get(moduleCode)
+          )
+        );
+        continue;
+      }
+
+      if (inferred === "programme" || isDegreeStyleModuleCode(moduleCode)) {
+        programmeModulesFromImport.push(
+          applyPlanStageFromModuleCode(
+            createStudyPlanModule({
+              student,
+              moduleCode,
+              planStage: "programme",
+              parsed,
+            }),
+            degreeCatalogByCode.get(moduleCode)
+          )
+        );
+        continue;
+      }
+
+      programmeModulesFromImport.push(
+        createStudyPlanModule({
+          student,
+          moduleCode,
+          planStage: "programme",
+          parsed,
+        })
+      );
+      continue;
+    }
+
     throw new Error(
       `Student ${student.studentId}: Module ${moduleCode} is not part of this degree programme or its articulated bridging modules.`
     );
@@ -959,7 +1133,8 @@ function buildDegreeModulesFromModulePairs(
 
 async function buildGroupedDegreePlans(
   rows: ParsedExcelRow[],
-  context: InitialStudyPlanUploadContext
+  context: InitialStudyPlanUploadContext,
+  options?: { relaxed?: boolean }
 ) {
   const errors: InitialStudyPlanUploadError[] = [];
   const warnings: InitialStudyPlanUploadWarning[] = [];
@@ -986,6 +1161,13 @@ async function buildGroupedDegreePlans(
     rows.length > 0 ? detectDegreeUploadFormat(rows[0]) : null;
 
   if (!uploadFormat) {
+    if (options?.relaxed) {
+      return buildGroupedPlans(rows, context, {
+        isDegreeUpload: true,
+        classifyDegreeModules: true,
+      });
+    }
+
     errors.push({
       message:
         "Degree programme upload requires either bridging_module_1_code / bridging_module_1_study_term columns, or repeated Module code / Study term column pairs.",
@@ -1109,7 +1291,8 @@ async function buildGroupedDegreePlans(
           studentWithType,
           bridgingOptions,
           programmeModules,
-          warnings
+          warnings,
+          { relaxed: options?.relaxed }
         );
 
         bridgingModules = classified.bridgingModules;
@@ -1206,16 +1389,28 @@ async function buildGroupedDegreePlans(
 
 export async function uploadInitialStudyPlanExcel(
   file: File,
-  context: InitialStudyPlanUploadContext
+  context: InitialStudyPlanUploadContext,
+  options?: InitialStudyPlanUploadOptions
 ): Promise<InitialStudyPlanUploadResult> {
   const rows = await parseWorkbook(file);
 
+  return uploadInitialStudyPlanRows(rows, context, options);
+}
+
+export async function uploadInitialStudyPlanRows(
+  rows: ParsedExcelRow[],
+  context: InitialStudyPlanUploadContext,
+  options?: InitialStudyPlanUploadOptions
+): Promise<InitialStudyPlanUploadResult> {
   const programmeCode = cleanText(context.programmeCode).toUpperCase();
 
   const isDegree = await isDegreeProgrammeByCode(programmeCode);
+  const useRelaxedUpload = Boolean(options?.relaxed);
 
   const { grouped, errors, warnings, skippedModuleCells } = isDegree
-    ? await buildGroupedDegreePlans(rows, context)
+    ? await buildGroupedDegreePlans(rows, context, {
+        relaxed: useRelaxedUpload,
+      })
     : buildGroupedPlans(rows, context);
 
   if (errors.length > 0) {
@@ -1235,7 +1430,9 @@ export async function uploadInitialStudyPlanExcel(
 
   for (const [studentId, plan] of grouped.entries()) {
     try {
-      await saveStudyPlan(plan.student, plan.modules);
+      await saveStudyPlan(plan.student, plan.modules, {
+        skipPostSync: options?.deferPostSync,
+      });
       successStudents += 1;
     } catch (error: unknown) {
       failedStudents += 1;
@@ -1249,6 +1446,10 @@ export async function uploadInitialStudyPlanExcel(
         ),
       });
     }
+  }
+
+  if (options?.deferPostSync && successStudents > 0) {
+    // Caller runs syncStudyPlanPostSave() after batch completes.
   }
 
   return {

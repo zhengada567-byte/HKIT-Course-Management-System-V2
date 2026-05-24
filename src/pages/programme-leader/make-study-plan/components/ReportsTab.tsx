@@ -5,6 +5,7 @@ import {
   downloadStudentHeadcountReportCsv,
   getModuleEnrollmentReport,
   getStudentHeadcountReport,
+  listModuleEnrollmentStudyTerms,
   type ModuleEnrollmentReportRow,
   type StudentHeadcountGroupBy,
   type StudentHeadcountReportRow,
@@ -26,6 +27,8 @@ export default function ReportsTab() {
 
   const [includeBridging, setIncludeBridging] = useState(false);
   const [moduleProgrammeCode, setModuleProgrammeCode] = useState("");
+  const [moduleStudyTerm, setModuleStudyTerm] = useState("");
+  const [moduleStudyTerms, setModuleStudyTerms] = useState<string[]>([]);
   const [moduleRows, setModuleRows] = useState<ModuleEnrollmentReportRow[]>([]);
 
   const totalStudentCount = useMemo(() => {
@@ -64,6 +67,7 @@ export default function ReportsTab() {
       const data = await getModuleEnrollmentReport({
         includeBridging,
         programmeCode: moduleProgrammeCode || undefined,
+        studyTerm: moduleStudyTerm || undefined,
       });
 
       setModuleRows(data);
@@ -108,6 +112,7 @@ export default function ReportsTab() {
       const result = await downloadModuleEnrollmentReportCsv({
         includeBridging,
         programmeCode: moduleProgrammeCode || undefined,
+        studyTerm: moduleStudyTerm || undefined,
       });
 
       alert(`Exported ${result.rowCount} row(s) to ${result.fileName}.`);
@@ -122,8 +127,25 @@ export default function ReportsTab() {
   }
 
   useEffect(() => {
+    if (activeTab !== "modules") {
+      return;
+    }
+
+    void listModuleEnrollmentStudyTerms()
+      .then(setModuleStudyTerms)
+      .catch(() => setModuleStudyTerms([]));
+  }, [activeTab]);
+
+  useEffect(() => {
     void loadReports();
-  }, [activeTab, studentGroupBy, includeIntakeTerm, includeBridging, moduleProgrammeCode]);
+  }, [
+    activeTab,
+    studentGroupBy,
+    includeIntakeTerm,
+    includeBridging,
+    moduleProgrammeCode,
+    moduleStudyTerm,
+  ]);
 
   return (
     <div className="space-y-4">
@@ -296,7 +318,7 @@ export default function ReportsTab() {
       {activeTab === "modules" && (
         <div className="space-y-4">
           <div className="rounded-md border bg-white p-4 space-y-3">
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <div>
                 <label
                   htmlFor="module-report-programme-code"
@@ -317,6 +339,29 @@ export default function ReportsTab() {
                   {moduleProgrammeCodes.map((code) => (
                     <option key={code} value={code}>
                       {code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="module-report-study-term"
+                  className="mb-1 block text-sm font-medium"
+                >
+                  Study Term Filter
+                </label>
+                <select
+                  id="module-report-study-term"
+                  value={moduleStudyTerm}
+                  onChange={(event) => setModuleStudyTerm(event.target.value)}
+                  disabled={loading}
+                  className="w-full rounded border px-3 py-2 text-sm"
+                >
+                  <option value="">All study terms</option>
+                  {moduleStudyTerms.map((term) => (
+                    <option key={term} value={term}>
+                      {term}
                     </option>
                   ))}
                 </select>
