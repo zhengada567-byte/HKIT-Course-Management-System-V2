@@ -15,6 +15,8 @@ export const zhHant = {
   passwordManagement: "密碼管理",
   makeTimetable: "製作時間表",
   approvedLoading: "核准教學量",
+  selectUser: "選擇用戶",
+  passwordRequired: "請輸入密碼",
   programmeLeader: "課程主任",
   admin: "管理員",
   president: "校長",

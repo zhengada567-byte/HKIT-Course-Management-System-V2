@@ -3,6 +3,17 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../contexts/AuthContext";
 import { useLanguage } from "../contexts/LanguageContext";
+import type { UserRole } from "../types";
+
+const ROLE_OPTIONS: {
+  role: UserRole;
+  username: string;
+  labelKey: "programmeLeader" | "admin" | "president";
+}[] = [
+  { role: "programme_leader", username: "pl", labelKey: "programmeLeader" },
+  { role: "admin", username: "admin", labelKey: "admin" },
+  { role: "president", username: "president", labelKey: "president" },
+];
 
 export function LoginPage() {
   const { isAuthenticated, login } = useAuth();
@@ -10,8 +21,8 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [username, setUsername] = useState("pl");
-  const [password, setPassword] = useState("pl");
+  const [selectedRole, setSelectedRole] = useState<UserRole>("programme_leader");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -23,14 +34,24 @@ export function LoginPage() {
     return <Navigate to="/dashboard" replace />;
   }
 
+  const selectedUsername =
+    ROLE_OPTIONS.find((option) => option.role === selectedRole)?.username ??
+    "pl";
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
 
     setError("");
+
+    if (!password.trim()) {
+      setError(t.passwordRequired);
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      const ok = await login(username, password);
+      const ok = await login(selectedUsername, password);
 
       if (!ok) {
         setError(t.invalidLogin);
@@ -48,9 +69,7 @@ export function LoginPage() {
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-6 text-center">
           <h1 className="text-xl font-bold text-slate-900">{t.systemTitle}</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            {t.login}
-          </p>
+          <p className="mt-1 text-sm text-slate-500">{t.login}</p>
         </div>
 
         <div className="mb-4 flex justify-center">
@@ -68,13 +87,27 @@ export function LoginPage() {
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
-            <label className="form-label">{t.username}</label>
-            <input
-              className="form-input"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              autoComplete="username"
-            />
+            <label className="form-label">{t.selectUser}</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {ROLE_OPTIONS.map((option) => {
+                const selected = selectedRole === option.role;
+
+                return (
+                  <button
+                    key={option.role}
+                    type="button"
+                    className={`rounded-lg border px-3 py-3 text-sm font-medium transition ${
+                      selected
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                    onClick={() => setSelectedRole(option.role)}
+                  >
+                    {t[option.labelKey]}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div>
@@ -102,13 +135,6 @@ export function LoginPage() {
             {submitting ? t.loading : t.login}
           </button>
         </form>
-
-        <div className="mt-5 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-          <p>Default users for testing:</p>
-          <p>pl / pl</p>
-          <p>admin / admin</p>
-          <p>president / president</p>
-        </div>
       </div>
     </div>
   );

@@ -15,6 +15,8 @@ export const en = {
   passwordManagement: "Password Management",
   makeTimetable: "Make Timetable",
   approvedLoading: "Approved Loading",
+  selectUser: "Select user",
+  passwordRequired: "Please enter your password",
   programmeLeader: "Programme Leader",
   admin: "Admin",
   president: "President",
