@@ -20,6 +20,44 @@ export function getPreviousAcademicYear(academicYear: string) {
   return `${startYear - 1}/${startYear}`;
 }
 
+/** Alternate academic-year labels used across study plan vs timetable. */
+export function getAcademicYearVariants(academicYear: string): string[] {
+  const startYear = academicYearToStartYear(academicYear);
+
+  if (!Number.isFinite(startYear)) {
+    return [academicYear];
+  }
+
+  const shortEnd = String(startYear + 1).slice(-2);
+  const shortStart = String(startYear).slice(-2);
+
+  return Array.from(
+    new Set(
+      [
+        academicYear,
+        `${startYear}/${startYear + 1}`,
+        `${startYear}/${shortEnd}`,
+        `${startYear - 1}/${shortStart}`,
+        `${startYear - 1}/${shortEnd}`,
+      ].filter(Boolean)
+    )
+  );
+}
+
+export function academicYearsMatch(
+  left: string | null | undefined,
+  right: string | null | undefined
+) {
+  const a = String(left ?? "").trim();
+  const b = String(right ?? "").trim();
+
+  if (!a || !b) return false;
+  if (a === b) return true;
+
+  const variantsForA = new Set(getAcademicYearVariants(a));
+  return variantsForA.has(b);
+}
+
 export function buildTeacherName(
   title?: string | null,
   familyName?: string | null,

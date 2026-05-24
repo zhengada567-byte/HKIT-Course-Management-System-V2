@@ -22,6 +22,13 @@ alter table public.teaching_assignments enable row level security;
 alter table public.teacher_actual_loading enable row level security;
 alter table public.approved_loading enable row level security;
 alter table public.export_logs enable row level security;
+alter table public.study_plan_students enable row level security;
+alter table public.study_plan_modules enable row level security;
+alter table public.programme_stream_quotas enable row level security;
+alter table public.degree_hd_affiliations enable row level security;
+alter table public.study_plan_settings enable row level security;
+alter table public.study_plan_actual_student_numbers enable row level security;
+alter table public.teacher_loading_runs enable row level security;
 
 /*
   Drop existing policies first, so this file can run repeatedly.
@@ -49,6 +56,13 @@ drop policy if exists "Allow anon all teaching_assignments" on public.teaching_a
 drop policy if exists "Allow anon all teacher_actual_loading" on public.teacher_actual_loading;
 drop policy if exists "Allow anon all approved_loading" on public.approved_loading;
 drop policy if exists "Allow anon all export_logs" on public.export_logs;
+drop policy if exists "Allow anon all study_plan_students" on public.study_plan_students;
+drop policy if exists "Allow anon all study_plan_modules" on public.study_plan_modules;
+drop policy if exists "Allow anon all programme_stream_quotas" on public.programme_stream_quotas;
+drop policy if exists "Allow anon all degree_hd_affiliations" on public.degree_hd_affiliations;
+drop policy if exists "Allow anon all study_plan_settings" on public.study_plan_settings;
+drop policy if exists "Allow anon all study_plan_actual_student_numbers" on public.study_plan_actual_student_numbers;
+drop policy if exists "Allow anon all teacher_loading_runs" on public.teacher_loading_runs;
 
 /*
   app_users:
@@ -195,6 +209,55 @@ to anon
 using (true)
 with check (true);
 
+create policy "Allow anon all study_plan_students"
+on public.study_plan_students
+for all
+to anon
+using (true)
+with check (true);
+
+create policy "Allow anon all study_plan_modules"
+on public.study_plan_modules
+for all
+to anon
+using (true)
+with check (true);
+
+create policy "Allow anon all programme_stream_quotas"
+on public.programme_stream_quotas
+for all
+to anon
+using (true)
+with check (true);
+
+create policy "Allow anon all degree_hd_affiliations"
+on public.degree_hd_affiliations
+for all
+to anon
+using (true)
+with check (true);
+
+create policy "Allow anon all study_plan_settings"
+on public.study_plan_settings
+for all
+to anon
+using (true)
+with check (true);
+
+create policy "Allow anon all study_plan_actual_student_numbers"
+on public.study_plan_actual_student_numbers
+for all
+to anon
+using (true)
+with check (true);
+
+create policy "Allow anon all teacher_loading_runs"
+on public.teacher_loading_runs
+for all
+to anon
+using (true)
+with check (true);
+
 /*
   Table grants.
 */
@@ -215,6 +278,13 @@ grant select, insert, update, delete on public.teaching_assignments to anon;
 grant select, insert, update, delete on public.teacher_actual_loading to anon;
 grant select, insert, update, delete on public.approved_loading to anon;
 grant select, insert on public.export_logs to anon;
+grant select, insert, update, delete on public.study_plan_students to anon;
+grant select, insert, update, delete on public.study_plan_modules to anon;
+grant select, insert, update, delete on public.programme_stream_quotas to anon;
+grant select, insert, update, delete on public.degree_hd_affiliations to anon;
+grant select, insert, update, delete on public.study_plan_settings to anon;
+grant select, insert, update, delete on public.study_plan_actual_student_numbers to anon;
+grant select, insert, update, delete on public.teacher_loading_runs to anon;
 
 /*
   app_users should be accessed through RPC only.

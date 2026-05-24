@@ -35,3 +35,496 @@ created_by,uuid,YES,null
 created_at,timestamp with time zone,NO,now()
 updated_at,timestamp with time zone,NO,now()
 module_term,text,NO,null
+
+tables_and_columns
+"app_settings                             | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+app_settings                             | setting_key                    | text                      | nullable=NO  | default=
+app_settings                             | setting_value                  | text                      | nullable=YES | default=
+app_settings                             | updated_by                     | uuid                      | nullable=YES | default=
+app_settings                             | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+app_settings                             | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+app_user_profiles                        | id                             | uuid                      | nullable=YES | default=
+app_user_profiles                        | username                       | text                      | nullable=YES | default=
+app_user_profiles                        | role                           | text                      | nullable=YES | default=
+app_user_profiles                        | created_at                     | timestamp with time zone  | nullable=YES | default=
+app_user_profiles                        | updated_at                     | timestamp with time zone  | nullable=YES | default=
+app_users                                | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+app_users                                | username                       | text                      | nullable=NO  | default=
+app_users                                | password_hash                  | text                      | nullable=YES | default=
+app_users                                | role                           | text                      | nullable=NO  | default=
+app_users                                | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+app_users                                | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+approved_loadings                        | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+approved_loadings                        | teacher_title                  | text                      | nullable=YES | default=
+approved_loadings                        | teacher_family_name            | text                      | nullable=NO  | default=
+approved_loadings                        | teacher_other_name             | text                      | nullable=YES | default=
+approved_loadings                        | teacher_name                   | text                      | nullable=NO  | default=
+approved_loadings                        | academic_year                  | text                      | nullable=NO  | default=
+approved_loadings                        | sep_term_approved_max_loading  | numeric                   | nullable=YES | default=0
+approved_loadings                        | feb_term_approved_max_loading  | numeric                   | nullable=YES | default=0
+approved_loadings                        | jun_term_approved_max_loading  | numeric                   | nullable=YES | default=0
+approved_loadings                        | confirmed                      | boolean                   | nullable=NO  | default=false
+approved_loadings                        | confirmed_at                   | timestamp with time zone  | nullable=YES | default=
+approved_loadings                        | updated_by                     | uuid                      | nullable=YES | default=
+approved_loadings                        | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+approved_loadings                        | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+combine_group_modules                    | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+combine_group_modules                    | combine_group_id               | uuid                      | nullable=NO  | default=
+combine_group_modules                    | planning_module_id             | uuid                      | nullable=NO  | default=
+combine_group_modules                    | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+combine_groups                           | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+combine_groups                           | academic_year                  | text                      | nullable=NO  | default=
+combine_groups                           | combined_code                  | text                      | nullable=NO  | default=
+combine_groups                           | combine_type                   | text                      | nullable=NO  | default=
+combine_groups                           | module_term                    | text                      | nullable=NO  | default=
+combine_groups                           | total_expected_student_number  | integer                   | nullable=YES | default=
+combine_groups                           | total_actual_student_number    | integer                   | nullable=YES | default=
+combine_groups                           | actual_student_number_status   | text                      | nullable=YES | default=
+combine_groups                           | status                         | text                      | nullable=NO  | default='pending'::text
+combine_groups                           | created_by                     | uuid                      | nullable=YES | default=
+combine_groups                           | confirmed_at                   | timestamp with time zone  | nullable=YES | default=
+combine_groups                           | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+combine_groups                           | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+degree_hd_affiliations                   | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+degree_hd_affiliations                   | hd_programme_code              | text                      | nullable=NO  | default=
+degree_hd_affiliations                   | hd_programme_stream            | text                      | nullable=NO  | default=''::text
+degree_hd_affiliations                   | degree_programme_code          | text                      | nullable=NO  | default=
+degree_hd_affiliations                   | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+degree_hd_affiliations                   | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+export_logs                              | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+export_logs                              | export_type                    | text                      | nullable=NO  | default=
+export_logs                              | academic_year                  | text                      | nullable=NO  | default=
+export_logs                              | exported_by                    | uuid                      | nullable=YES | default=
+export_logs                              | exported_at                    | timestamp with time zone  | nullable=NO  | default=now()
+export_logs                              | metadata                       | jsonb                     | nullable=NO  | default='{}'::jsonb
+module_adjustments                       | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+module_adjustments                       | module_id                      | uuid                      | nullable=NO  | default=
+module_adjustments                       | academic_year                  | text                      | nullable=NO  | default=
+module_adjustments                       | adjusted_module_year           | text                      | nullable=YES | default=
+module_adjustments                       | adjusted_module_term           | text                      | nullable=YES | default=
+module_adjustments                       | updated_by                     | uuid                      | nullable=YES | default=
+module_adjustments                       | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+module_adjustments                       | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+module_default_assignments               | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+module_default_assignments               | academic_year                  | text                      | nullable=NO  | default=
+module_default_assignments               | module_code                    | text                      | nullable=NO  | default=
+module_default_assignments               | module_term                    | text                      | nullable=NO  | default=
+module_default_assignments               | programme_code                 | text                      | nullable=YES | default=
+module_default_assignments               | stream_code                    | text                      | nullable=YES | default=
+module_default_assignments               | teacher_name                   | text                      | nullable=YES | default=
+module_default_assignments               | teacher_title                  | text                      | nullable=YES | default=
+module_default_assignments               | teacher_family_name            | text                      | nullable=YES | default=
+module_default_assignments               | teacher_other_name             | text                      | nullable=YES | default=
+module_default_assignments               | teaching_status                | text                      | nullable=YES | default=
+module_default_assignments               | mode                           | text                      | nullable=NO  | default='Night'::text
+module_default_assignments               | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+module_default_assignments               | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+module_enrollment                        | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+module_enrollment                        | academic_year                  | text                      | nullable=NO  | default=
+module_enrollment                        | module_code                    | text                      | nullable=NO  | default=
+module_enrollment                        | module_term                    | text                      | nullable=NO  | default=
+module_enrollment                        | programme_code                 | text                      | nullable=YES | default=
+module_enrollment                        | stream_code                    | text                      | nullable=YES | default=
+module_enrollment                        | expected_student_number        | integer                   | nullable=NO  | default=0
+module_enrollment                        | actual_student_number          | integer                   | nullable=YES | default=
+module_enrollment                        | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+module_enrollment                        | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+modules                                  | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+modules                                  | module_code                    | text                      | nullable=NO  | default=
+modules                                  | module_name                    | text                      | nullable=YES | default=
+modules                                  | module_year                    | text                      | nullable=YES | default=
+modules                                  | module_term                    | text                      | nullable=NO  | default=
+modules                                  | programme_code                 | text                      | nullable=NO  | default=
+modules                                  | stream_code                    | text                      | nullable=NO  | default='nil'::text
+modules                                  | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+modules                                  | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+programme_stream_quotas                  | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+programme_stream_quotas                  | academic_year                  | text                      | nullable=NO  | default=
+programme_stream_quotas                  | programme_code                 | text                      | nullable=NO  | default=
+programme_stream_quotas                  | programme_stream               | text                      | nullable=NO  | default=''::text
+programme_stream_quotas                  | programme_quota                | integer                   | nullable=YES | default=
+programme_stream_quotas                  | stream_quota                   | integer                   | nullable=YES | default=
+programme_stream_quotas                  | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+programme_stream_quotas                  | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+programmes                               | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+programmes                               | programme_type                 | text                      | nullable=NO  | default=
+programmes                               | programme_code                 | text                      | nullable=NO  | default=
+programmes                               | programme_name                 | text                      | nullable=YES | default=
+programmes                               | programme_stream               | text                      | nullable=NO  | default='nil'::text
+programmes                               | programme_leader               | text                      | nullable=YES | default=
+programmes                               | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+programmes                               | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+programmes                               | stream_abbr                    | text                      | nullable=YES | default=
+programmes                               | articulation                   | text                      | nullable=YES | default=
+study_plan_actual_student_numbers        | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+study_plan_actual_student_numbers        | academic_year                  | text                      | nullable=NO  | default=
+study_plan_actual_student_numbers        | study_term                     | text                      | nullable=NO  | default=
+study_plan_actual_student_numbers        | module_code                    | text                      | nullable=NO  | default=
+study_plan_actual_student_numbers        | module_name                    | text                      | nullable=YES | default=
+study_plan_actual_student_numbers        | programme_code                 | text                      | nullable=NO  | default=
+study_plan_actual_student_numbers        | programme_stream               | text                      | nullable=NO  | default=''::text
+study_plan_actual_student_numbers        | study_mode                     | text                      | nullable=NO  | default=''::text
+study_plan_actual_student_numbers        | actual_student_number          | integer                   | nullable=NO  | default=0
+study_plan_actual_student_numbers        | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+study_plan_actual_student_numbers        | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+study_plan_modules                       | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+study_plan_modules                       | student_id                     | text                      | nullable=NO  | default=
+study_plan_modules                       | student_profile_id             | uuid                      | nullable=NO  | default=
+study_plan_modules                       | programme_code                 | text                      | nullable=NO  | default=
+study_plan_modules                       | programme_stream               | text                      | nullable=NO  | default=''::text
+study_plan_modules                       | module_code                    | text                      | nullable=NO  | default=
+study_plan_modules                       | module_name                    | text                      | nullable=NO  | default=
+study_plan_modules                       | module_year                    | text                      | nullable=YES | default=
+study_plan_modules                       | module_term_pattern            | text                      | nullable=YES | default=
+study_plan_modules                       | delivery_mode                  | text                      | nullable=YES | default=
+study_plan_modules                       | module_sequence                | integer                   | nullable=YES | default=
+study_plan_modules                       | plan_stage                     | text                      | nullable=NO  | default='programme'::text
+study_plan_modules                       | status                         | text                      | nullable=NO  | default='planned'::text
+study_plan_modules                       | study_term                     | text                      | nullable=YES | default=
+study_plan_modules                       | is_exempted                    | boolean                   | nullable=NO  | default=false
+study_plan_modules                       | is_failed                      | boolean                   | nullable=NO  | default=false
+study_plan_modules                       | is_locked                      | boolean                   | nullable=NO  | default=false
+study_plan_modules                       | remark                         | text                      | nullable=YES | default=
+study_plan_modules                       | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+study_plan_modules                       | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+study_plan_modules                       | module_term                    | text                      | nullable=YES | default=
+study_plan_settings                      | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+study_plan_settings                      | setting_key                    | text                      | nullable=NO  | default=
+study_plan_settings                      | setting_value                  | text                      | nullable=NO  | default=
+study_plan_settings                      | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+study_plan_students                      | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+study_plan_students                      | student_id                     | text                      | nullable=NO  | default=
+study_plan_students                      | student_name                   | text                      | nullable=NO  | default=
+study_plan_students                      | intake_year                    | text                      | nullable=YES | default=
+study_plan_students                      | intake_level                   | text                      | nullable=YES | default=
+study_plan_students                      | study_mode                     | text                      | nullable=NO  | default=
+study_plan_students                      | programme_code                 | text                      | nullable=NO  | default=
+study_plan_students                      | programme_stream               | text                      | nullable=NO  | default=''::text
+study_plan_students                      | student_status                 | text                      | nullable=NO  | default='potential'::text
+study_plan_students                      | intake_term                    | text                      | nullable=YES | default=
+study_plan_students                      | graduate_term                  | text                      | nullable=YES | default=
+study_plan_students                      | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+study_plan_students                      | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+teacher_actual_loading                   | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+teacher_actual_loading                   | teacher_name                   | text                      | nullable=NO  | default=
+teacher_actual_loading                   | academic_year                  | text                      | nullable=NO  | default=
+teacher_actual_loading                   | module_term                    | text                      | nullable=NO  | default=
+teacher_actual_loading                   | teaching_status                | text                      | nullable=NO  | default=
+teacher_actual_loading                   | teacher_employment_type        | text                      | nullable=YES | default=
+teacher_actual_loading                   | actual_loading                 | numeric                   | nullable=NO  | default=0
+teacher_actual_loading                   | hd_module_count                | integer                   | nullable=NO  | default=0
+teacher_actual_loading                   | degree_module_count            | integer                   | nullable=NO  | default=0
+teacher_actual_loading                   | source_confirmed_version       | integer                   | nullable=YES | default=
+teacher_actual_loading                   | confirmed_by                   | uuid                      | nullable=YES | default=
+teacher_actual_loading                   | confirmed_at                   | timestamp with time zone  | nullable=YES | default=
+teacher_actual_loading                   | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+teacher_loading_runs                     | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+teacher_loading_runs                     | academic_year                  | text                      | nullable=NO  | default=
+teacher_loading_runs                     | status                         | text                      | nullable=NO  | default='completed'::text
+teacher_loading_runs                     | generated_at                   | timestamp with time zone  | nullable=NO  | default=now()
+teacher_loading_runs                     | generated_by                   | uuid                      | nullable=YES | default=
+teacher_loading_runs                     | notes                          | text                      | nullable=YES | default=
+teachers                                 | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+teachers                                 | title                          | text                      | nullable=YES | default=
+teachers                                 | family_name                    | text                      | nullable=NO  | default=
+teachers                                 | other_name                     | text                      | nullable=YES | default=
+teachers                                 | teacher_name                   | text                      | nullable=NO  | default=
+teachers                                 | employment_type                | text                      | nullable=YES | default=
+teachers                                 | academic_year                  | text                      | nullable=NO  | default=
+teachers                                 | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+teachers                                 | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+teaching_assignments                     | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+teaching_assignments                     | timetable_module_id            | uuid                      | nullable=NO  | default=
+teaching_assignments                     | academic_year                  | text                      | nullable=NO  | default=
+teaching_assignments                     | teacher_name                   | text                      | nullable=NO  | default=
+teaching_assignments                     | teacher_title                  | text                      | nullable=YES | default=
+teaching_assignments                     | teacher_family_name            | text                      | nullable=YES | default=
+teaching_assignments                     | teacher_other_name             | text                      | nullable=YES | default=
+teaching_assignments                     | teacher_employment_type        | text                      | nullable=YES | default=
+teaching_assignments                     | teaching_status                | text                      | nullable=NO  | default=
+teaching_assignments                     | programme_type                 | text                      | nullable=YES | default=
+teaching_assignments                     | combined_code                  | text                      | nullable=YES | default=
+teaching_assignments                     | combine_type                   | text                      | nullable=NO  | default='none'::text
+teaching_assignments                     | module_instance_code           | text                      | nullable=NO  | default=
+teaching_assignments                     | module_term                    | text                      | nullable=NO  | default=
+teaching_assignments                     | assignment_version             | integer                   | nullable=NO  | default=1
+teaching_assignments                     | confirmed                      | boolean                   | nullable=NO  | default=false
+teaching_assignments                     | confirmed_at                   | timestamp with time zone  | nullable=YES | default=
+teaching_assignments                     | updated_by                     | uuid                      | nullable=YES | default=
+teaching_assignments                     | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+teaching_assignments                     | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+teaching_assignments                     | confirmed_by                   | uuid                      | nullable=YES | default=
+timetable_modules                        | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+timetable_modules                        | academic_year                  | text                      | nullable=NO  | default=
+timetable_modules                        | planning_module_id             | uuid                      | nullable=YES | default=
+timetable_modules                        | combine_group_id               | uuid                      | nullable=YES | default=
+timetable_modules                        | programme_code                 | text                      | nullable=NO  | default=
+timetable_modules                        | stream_code                    | text                      | nullable=NO  | default='nil'::text
+timetable_modules                        | base_module_code               | text                      | nullable=YES | default=
+timetable_modules                        | combined_code                  | text                      | nullable=YES | default=
+timetable_modules                        | combine_type                   | text                      | nullable=NO  | default='none'::text
+timetable_modules                        | module_instance_code           | text                      | nullable=NO  | default=
+timetable_modules                        | module_name                    | text                      | nullable=YES | default=
+timetable_modules                        | module_year                    | text                      | nullable=YES | default=
+timetable_modules                        | module_term                    | text                      | nullable=NO  | default=
+timetable_modules                        | mode                           | text                      | nullable=YES | default=
+timetable_modules                        | expected_student_number        | integer                   | nullable=YES | default=
+timetable_modules                        | actual_student_number          | integer                   | nullable=YES | default=
+timetable_modules                        | split_group_size               | integer                   | nullable=YES | default=
+timetable_modules                        | split_confirmed                | boolean                   | nullable=NO  | default=false
+timetable_modules                        | assignment_confirmed           | boolean                   | nullable=NO  | default=false
+timetable_modules                        | confirmed_version              | integer                   | nullable=NO  | default=0
+timetable_modules                        | created_by                     | uuid                      | nullable=YES | default=
+timetable_modules                        | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+timetable_modules                        | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+timetable_planning_modules               | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+timetable_planning_modules               | academic_year                  | text                      | nullable=NO  | default=
+timetable_planning_modules               | module_id                      | uuid                      | nullable=NO  | default=
+timetable_planning_modules               | programme_code                 | text                      | nullable=NO  | default=
+timetable_planning_modules               | stream_code                    | text                      | nullable=NO  | default='nil'::text
+timetable_planning_modules               | module_code                    | text                      | nullable=NO  | default=
+timetable_planning_modules               | module_name                    | text                      | nullable=YES | default=
+timetable_planning_modules               | module_year                    | text                      | nullable=YES | default=
+timetable_planning_modules               | module_term                    | text                      | nullable=NO  | default=
+timetable_planning_modules               | natural_combine_code           | text                      | nullable=YES | default=
+timetable_planning_modules               | manual_combine_group_id        | uuid                      | nullable=YES | default=
+timetable_planning_modules               | split_status                   | text                      | nullable=NO  | default='not_started'::text
+timetable_planning_modules               | assignment_status              | text                      | nullable=NO  | default='not_started'::text
+timetable_planning_modules               | created_by                     | uuid                      | nullable=YES | default=
+timetable_planning_modules               | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+timetable_planning_modules               | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+timetable_planning_modules               | programme_stream               | text                      | nullable=YES | default=
+timetable_student_numbers                | id                             | uuid                      | nullable=NO  | default=gen_random_uuid()
+timetable_student_numbers                | academic_year                  | text                      | nullable=NO  | default=
+timetable_student_numbers                | module_code                    | text                      | nullable=NO  | default=
+timetable_student_numbers                | programme_code                 | text                      | nullable=NO  | default=
+timetable_student_numbers                | expected_student_number        | integer                   | nullable=NO  | default=0
+timetable_student_numbers                | actual_student_number          | integer                   | nullable=YES | default=
+timetable_student_numbers                | created_by                     | uuid                      | nullable=YES | default=
+timetable_student_numbers                | created_at                     | timestamp with time zone  | nullable=NO  | default=now()
+timetable_student_numbers                | updated_at                     | timestamp with time zone  | nullable=NO  | default=now()
+timetable_student_numbers                | module_term                    | text                      | nullable=NO  | default=
+timetable_student_numbers                | programme_stream               | text                      | nullable=NO  | default='nil'::text
+timetable_student_numbers                | study_term                     | text                      | nullable=NO  | default="
+
+constraints
+"app_settings                   | FOREIGN KEY  | app_settings_updated_by_fkey             | FOREIGN KEY (updated_by) REFERENCES app_users(id) ON DELETE SET NULL
+app_settings                   | PRIMARY KEY  | app_settings_pkey                        | PRIMARY KEY (id)
+app_settings                   | UNIQUE       | app_settings_setting_key_key             | UNIQUE (setting_key)
+app_users                      | CHECK        | app_users_role_check                     | CHECK (role = ANY (ARRAY['programme_leader'::text, 'admin'::text, 'president'::text]))
+app_users                      | PRIMARY KEY  | app_users_pkey                           | PRIMARY KEY (id)
+app_users                      | UNIQUE       | app_users_username_key                   | UNIQUE (username)
+approved_loadings              | FOREIGN KEY  | approved_loading_updated_by_fkey         | FOREIGN KEY (updated_by) REFERENCES app_users(id) ON DELETE SET NULL
+approved_loadings              | PRIMARY KEY  | approved_loading_pkey                    | PRIMARY KEY (id)
+approved_loadings              | UNIQUE       | approved_loading_teacher_name_academic_year_key | UNIQUE (teacher_name, academic_year)
+combine_group_modules          | FOREIGN KEY  | combine_group_modules_combine_group_id_fkey | FOREIGN KEY (combine_group_id) REFERENCES combine_groups(id) ON DELETE CASCADE
+combine_group_modules          | FOREIGN KEY  | combine_group_modules_planning_module_id_fkey | FOREIGN KEY (planning_module_id) REFERENCES timetable_planning_modules(id) ON DELETE CASCADE
+combine_group_modules          | PRIMARY KEY  | combine_group_modules_pkey               | PRIMARY KEY (id)
+combine_group_modules          | UNIQUE       | combine_group_modules_combine_group_id_planning_module_id_key | UNIQUE (combine_group_id, planning_module_id)
+combine_groups                 | CHECK        | combine_groups_actual_student_number_status_check | CHECK ((actual_student_number_status = ANY (ARRAY['complete'::text, 'incomplete'::text])) OR actual_student_number_status IS NULL)
+combine_groups                 | CHECK        | combine_groups_combine_type_check        | CHECK (combine_type = ANY (ARRAY['natural_same_module_code'::text, 'manual'::text]))
+combine_groups                 | CHECK        | combine_groups_module_term_check         | CHECK (module_term = ANY (ARRAY['Sep'::text, 'Feb'::text, 'Jun'::text]))
+combine_groups                 | CHECK        | combine_groups_status_check              | CHECK (status = ANY (ARRAY['pending'::text, 'accepted'::text, 'rejected'::text, 'confirmed'::text, 'auto_confirmed'::text]))
+combine_groups                 | CHECK        | combine_groups_total_actual_student_number_check | CHECK (total_actual_student_number >= 0 OR total_actual_student_number IS NULL)
+combine_groups                 | CHECK        | combine_groups_total_expected_student_number_check | CHECK (total_expected_student_number >= 0 OR total_expected_student_number IS NULL)
+combine_groups                 | FOREIGN KEY  | combine_groups_created_by_fkey           | FOREIGN KEY (created_by) REFERENCES app_users(id) ON DELETE SET NULL
+combine_groups                 | PRIMARY KEY  | combine_groups_pkey                      | PRIMARY KEY (id)
+combine_groups                 | UNIQUE       | combine_groups_academic_year_combined_code_key | UNIQUE (academic_year, combined_code)
+degree_hd_affiliations         | PRIMARY KEY  | degree_hd_affiliations_pkey              | PRIMARY KEY (id)
+degree_hd_affiliations         | UNIQUE       | degree_hd_affiliations_unique            | UNIQUE (hd_programme_code, hd_programme_stream, degree_programme_code)
+export_logs                    | CHECK        | export_logs_export_type_check            | CHECK (export_type = ANY (ARRAY['timetable_excel'::text, 'approved_loading_pdf'::text]))
+export_logs                    | FOREIGN KEY  | export_logs_exported_by_fkey             | FOREIGN KEY (exported_by) REFERENCES app_users(id) ON DELETE SET NULL
+export_logs                    | PRIMARY KEY  | export_logs_pkey                         | PRIMARY KEY (id)
+module_adjustments             | CHECK        | module_adjustments_adjusted_module_term_check | CHECK ((adjusted_module_term = ANY (ARRAY['Sep'::text, 'Feb'::text, 'Jun'::text])) OR adjusted_module_term IS NULL)
+module_adjustments             | FOREIGN KEY  | module_adjustments_module_id_fkey        | FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE
+module_adjustments             | FOREIGN KEY  | module_adjustments_updated_by_fkey       | FOREIGN KEY (updated_by) REFERENCES app_users(id) ON DELETE SET NULL
+module_adjustments             | PRIMARY KEY  | module_adjustments_pkey                  | PRIMARY KEY (id)
+module_adjustments             | UNIQUE       | module_adjustments_module_id_academic_year_key | UNIQUE (module_id, academic_year)
+module_default_assignments     | PRIMARY KEY  | module_default_assignments_pkey          | PRIMARY KEY (id)
+module_default_assignments     | UNIQUE       | module_default_assignments_identity_key  | UNIQUE (academic_year, module_code, programme_code, stream_code)
+module_enrollment              | PRIMARY KEY  | module_enrollment_pkey                   | PRIMARY KEY (id)
+module_enrollment              | UNIQUE       | module_enrollment_identity_key           | UNIQUE (academic_year, module_code, programme_code, stream_code)
+modules                        | CHECK        | modules_module_term_check                | CHECK (module_term = ANY (ARRAY['Sep'::text, 'Feb'::text, 'Jun'::text]))
+modules                        | PRIMARY KEY  | modules_pkey                             | PRIMARY KEY (id)
+modules                        | UNIQUE       | modules_code_programme_stream_key        | UNIQUE (module_code, programme_code, stream_code)
+programme_stream_quotas        | PRIMARY KEY  | programme_stream_quotas_pkey             | PRIMARY KEY (id)
+programme_stream_quotas        | UNIQUE       | programme_stream_quotas_unique           | UNIQUE (academic_year, programme_code, programme_stream)
+programmes                     | PRIMARY KEY  | programmes_pkey                          | PRIMARY KEY (id)
+programmes                     | UNIQUE       | programmes_programme_code_programme_stream_key | UNIQUE (programme_code, programme_stream)
+study_plan_actual_student_numbers | PRIMARY KEY  | study_plan_actual_student_numbers_pkey   | PRIMARY KEY (id)
+study_plan_actual_student_numbers | UNIQUE       | study_plan_actual_student_numbers_unique | UNIQUE (academic_year, study_term, module_code, programme_code, programme_stream, study_mode)
+study_plan_modules             | CHECK        | study_plan_modules_plan_stage_check      | CHECK (plan_stage = ANY (ARRAY['programme'::text, 'bridging'::text]))
+study_plan_modules             | CHECK        | study_plan_modules_status_check          | CHECK (status = ANY (ARRAY['planned'::text, 'exempted'::text, 'failed'::text]))
+study_plan_modules             | FOREIGN KEY  | study_plan_modules_student_profile_id_fkey | FOREIGN KEY (student_profile_id) REFERENCES study_plan_students(id) ON DELETE CASCADE
+study_plan_modules             | PRIMARY KEY  | study_plan_modules_pkey                  | PRIMARY KEY (id)
+study_plan_modules             | UNIQUE       | study_plan_modules_unique                | UNIQUE (student_profile_id, module_code, programme_code, programme_stream, plan_stage)
+study_plan_settings            | PRIMARY KEY  | study_plan_settings_pkey                 | PRIMARY KEY (id)
+study_plan_settings            | UNIQUE       | study_plan_settings_setting_key_key      | UNIQUE (setting_key)
+study_plan_students            | CHECK        | study_plan_students_student_status_check | CHECK (student_status = ANY (ARRAY['potential'::text, 'in_progress'::text, 'graduated'::text]))
+study_plan_students            | CHECK        | study_plan_students_study_mode_check     | CHECK (study_mode = ANY (ARRAY['FT'::text, 'PT'::text]))
+study_plan_students            | PRIMARY KEY  | study_plan_students_pkey                 | PRIMARY KEY (id)
+study_plan_students            | UNIQUE       | study_plan_students_student_id_key       | UNIQUE (student_id)
+teacher_actual_loading         | CHECK        | teacher_actual_loading_module_term_check | CHECK (module_term = ANY (ARRAY['Sep'::text, 'Feb'::text, 'Jun'::text]))
+teacher_actual_loading         | CHECK        | teacher_actual_loading_teacher_employment_type_check | CHECK ((teacher_employment_type = ANY (ARRAY['FT'::text, 'PT'::text])) OR teacher_employment_type IS NULL OR teacher_employment_type = ''::text)
+teacher_actual_loading         | CHECK        | teacher_actual_loading_teaching_status_check | CHECK (teaching_status = ANY (ARRAY['FT'::text, 'PT'::text]))
+teacher_actual_loading         | FOREIGN KEY  | teacher_actual_loading_confirmed_by_fkey | FOREIGN KEY (confirmed_by) REFERENCES app_users(id) ON DELETE SET NULL
+teacher_actual_loading         | PRIMARY KEY  | teacher_actual_loading_pkey              | PRIMARY KEY (id)
+teacher_loading_runs           | PRIMARY KEY  | teacher_loading_runs_pkey                | PRIMARY KEY (id)
+teachers                       | CHECK        | teachers_employment_type_check           | CHECK ((employment_type = ANY (ARRAY['FT'::text, 'PT'::text])) OR employment_type IS NULL OR employment_type = ''::text)
+teachers                       | PRIMARY KEY  | teachers_pkey                            | PRIMARY KEY (id)
+teachers                       | UNIQUE       | teachers_teacher_name_academic_year_key  | UNIQUE (teacher_name, academic_year)
+teaching_assignments           | CHECK        | teaching_assignments_combine_type_check  | CHECK (combine_type = ANY (ARRAY['natural_same_module_code'::text, 'manual'::text, 'none'::text]))
+teaching_assignments           | CHECK        | teaching_assignments_module_term_check   | CHECK (module_term = ANY (ARRAY['Sep'::text, 'Feb'::text, 'Jun'::text]))
+teaching_assignments           | CHECK        | teaching_assignments_teacher_employment_type_check | CHECK ((teacher_employment_type = ANY (ARRAY['FT'::text, 'PT'::text])) OR teacher_employment_type IS NULL OR teacher_employment_type = ''::text)
+teaching_assignments           | CHECK        | teaching_assignments_teaching_status_check | CHECK (teaching_status = ANY (ARRAY['FT'::text, 'PT'::text]))
+teaching_assignments           | FOREIGN KEY  | teaching_assignments_timetable_module_id_fkey | FOREIGN KEY (timetable_module_id) REFERENCES timetable_modules(id) ON DELETE CASCADE
+teaching_assignments           | FOREIGN KEY  | teaching_assignments_updated_by_fkey     | FOREIGN KEY (updated_by) REFERENCES app_users(id) ON DELETE SET NULL
+teaching_assignments           | PRIMARY KEY  | teaching_assignments_pkey                | PRIMARY KEY (id)
+teaching_assignments           | UNIQUE       | teaching_assignments_module_version_unique | UNIQUE (timetable_module_id, assignment_version)
+timetable_modules              | CHECK        | timetable_modules_actual_student_number_check | CHECK (actual_student_number >= 0 OR actual_student_number IS NULL)
+timetable_modules              | CHECK        | timetable_modules_combine_type_check     | CHECK (combine_type = ANY (ARRAY['natural_same_module_code'::text, 'manual'::text, 'none'::text]))
+timetable_modules              | CHECK        | timetable_modules_expected_student_number_check | CHECK (expected_student_number >= 0 OR expected_student_number IS NULL)
+timetable_modules              | CHECK        | timetable_modules_mode_check             | CHECK ((mode = ANY (ARRAY['Day'::text, 'Night'::text, 'Saturday'::text])) OR mode IS NULL)
+timetable_modules              | CHECK        | timetable_modules_module_term_check      | CHECK (module_term = ANY (ARRAY['Sep'::text, 'Feb'::text, 'Jun'::text]))
+timetable_modules              | CHECK        | timetable_modules_split_group_size_check | CHECK (split_group_size > 0 OR split_group_size IS NULL)
+timetable_modules              | FOREIGN KEY  | timetable_modules_combine_group_id_fkey  | FOREIGN KEY (combine_group_id) REFERENCES combine_groups(id) ON DELETE SET NULL
+timetable_modules              | FOREIGN KEY  | timetable_modules_created_by_fkey        | FOREIGN KEY (created_by) REFERENCES app_users(id) ON DELETE SET NULL
+timetable_modules              | FOREIGN KEY  | timetable_modules_planning_module_id_fkey | FOREIGN KEY (planning_module_id) REFERENCES timetable_planning_modules(id) ON DELETE SET NULL
+timetable_modules              | PRIMARY KEY  | timetable_modules_pkey                   | PRIMARY KEY (id)
+timetable_modules              | UNIQUE       | timetable_modules_academic_year_module_instance_code_key | UNIQUE (academic_year, module_instance_code)
+timetable_planning_modules     | CHECK        | timetable_planning_modules_assignment_status_check | CHECK (assignment_status = ANY (ARRAY['not_started'::text, 'assigned'::text, 'confirmed'::text]))
+timetable_planning_modules     | CHECK        | timetable_planning_modules_module_term_check | CHECK (module_term = ANY (ARRAY['Sep'::text, 'Feb'::text, 'Jun'::text]))
+timetable_planning_modules     | CHECK        | timetable_planning_modules_split_status_check | CHECK (split_status = ANY (ARRAY['not_started'::text, 'no_split'::text, 'split'::text]))
+timetable_planning_modules     | FOREIGN KEY  | timetable_planning_modules_created_by_fkey | FOREIGN KEY (created_by) REFERENCES app_users(id) ON DELETE SET NULL
+timetable_planning_modules     | FOREIGN KEY  | timetable_planning_modules_module_id_fkey | FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE
+timetable_planning_modules     | PRIMARY KEY  | timetable_planning_modules_pkey          | PRIMARY KEY (id)
+timetable_planning_modules     | UNIQUE       | timetable_planning_modules_academic_year_module_id_key | UNIQUE (academic_year, module_id)
+timetable_student_numbers      | CHECK        | timetable_student_numbers_actual_student_number_check | CHECK (actual_student_number >= 0 OR actual_student_number IS NULL)
+timetable_student_numbers      | CHECK        | timetable_student_numbers_expected_student_number_check | CHECK (expected_student_number >= 0)
+timetable_student_numbers      | FOREIGN KEY  | timetable_student_numbers_created_by_fkey | FOREIGN KEY (created_by) REFERENCES app_users(id) ON DELETE SET NULL
+timetable_student_numbers      | PRIMARY KEY  | timetable_student_numbers_pkey           | PRIMARY KEY (id)
+timetable_student_numbers      | UNIQUE       | timetable_student_numbers_identity_key   | UNIQUE (academic_year, module_code, programme_code, programme_stream, study_term)"
+
+indexes
+"app_settings                   | app_settings_pkey                        | CREATE UNIQUE INDEX app_settings_pkey ON public.app_settings USING btree (id)
+app_settings                   | app_settings_setting_key_key             | CREATE UNIQUE INDEX app_settings_setting_key_key ON public.app_settings USING btree (setting_key)
+app_users                      | app_users_pkey                           | CREATE UNIQUE INDEX app_users_pkey ON public.app_users USING btree (id)
+app_users                      | app_users_username_key                   | CREATE UNIQUE INDEX app_users_username_key ON public.app_users USING btree (username)
+approved_loadings              | approved_loading_pkey                    | CREATE UNIQUE INDEX approved_loading_pkey ON public.approved_loadings USING btree (id)
+approved_loadings              | approved_loading_teacher_name_academic_year_key | CREATE UNIQUE INDEX approved_loading_teacher_name_academic_year_key ON public.approved_loadings USING btree (teacher_name, academic_year)
+approved_loadings              | idx_approved_loading_academic_year       | CREATE INDEX idx_approved_loading_academic_year ON public.approved_loadings USING btree (academic_year)
+combine_group_modules          | combine_group_modules_combine_group_id_planning_module_id_key | CREATE UNIQUE INDEX combine_group_modules_combine_group_id_planning_module_id_key ON public.combine_group_modules USING btree (combine_group_id, planning_module_id)
+combine_group_modules          | combine_group_modules_pkey               | CREATE UNIQUE INDEX combine_group_modules_pkey ON public.combine_group_modules USING btree (id)
+combine_group_modules          | idx_combine_group_modules_group          | CREATE INDEX idx_combine_group_modules_group ON public.combine_group_modules USING btree (combine_group_id)
+combine_group_modules          | idx_combine_group_modules_planning       | CREATE INDEX idx_combine_group_modules_planning ON public.combine_group_modules USING btree (planning_module_id)
+combine_groups                 | combine_groups_academic_year_combined_code_key | CREATE UNIQUE INDEX combine_groups_academic_year_combined_code_key ON public.combine_groups USING btree (academic_year, combined_code)
+combine_groups                 | combine_groups_pkey                      | CREATE UNIQUE INDEX combine_groups_pkey ON public.combine_groups USING btree (id)
+combine_groups                 | idx_combine_groups_academic_year         | CREATE INDEX idx_combine_groups_academic_year ON public.combine_groups USING btree (academic_year)
+combine_groups                 | idx_combine_groups_code                  | CREATE INDEX idx_combine_groups_code ON public.combine_groups USING btree (academic_year, combined_code)
+degree_hd_affiliations         | degree_hd_affiliations_pkey              | CREATE UNIQUE INDEX degree_hd_affiliations_pkey ON public.degree_hd_affiliations USING btree (id)
+degree_hd_affiliations         | degree_hd_affiliations_unique            | CREATE UNIQUE INDEX degree_hd_affiliations_unique ON public.degree_hd_affiliations USING btree (hd_programme_code, hd_programme_stream, degree_programme_code)
+export_logs                    | export_logs_pkey                         | CREATE UNIQUE INDEX export_logs_pkey ON public.export_logs USING btree (id)
+module_adjustments             | idx_module_adjustments_academic_year     | CREATE INDEX idx_module_adjustments_academic_year ON public.module_adjustments USING btree (academic_year)
+module_adjustments             | module_adjustments_module_id_academic_year_key | CREATE UNIQUE INDEX module_adjustments_module_id_academic_year_key ON public.module_adjustments USING btree (module_id, academic_year)
+module_adjustments             | module_adjustments_pkey                  | CREATE UNIQUE INDEX module_adjustments_pkey ON public.module_adjustments USING btree (id)
+module_default_assignments     | module_default_assignments_identity_key  | CREATE UNIQUE INDEX module_default_assignments_identity_key ON public.module_default_assignments USING btree (academic_year, module_code, programme_code, stream_code)
+module_default_assignments     | module_default_assignments_pkey          | CREATE UNIQUE INDEX module_default_assignments_pkey ON public.module_default_assignments USING btree (id)
+module_enrollment              | module_enrollment_identity_key           | CREATE UNIQUE INDEX module_enrollment_identity_key ON public.module_enrollment USING btree (academic_year, module_code, programme_code, stream_code)
+module_enrollment              | module_enrollment_pkey                   | CREATE UNIQUE INDEX module_enrollment_pkey ON public.module_enrollment USING btree (id)
+modules                        | idx_modules_code_term                    | CREATE INDEX idx_modules_code_term ON public.modules USING btree (module_code, module_term)
+modules                        | idx_modules_programme_stream             | CREATE INDEX idx_modules_programme_stream ON public.modules USING btree (programme_code, stream_code)
+modules                        | modules_code_programme_stream_key        | CREATE UNIQUE INDEX modules_code_programme_stream_key ON public.modules USING btree (module_code, programme_code, stream_code)
+modules                        | modules_pkey                             | CREATE UNIQUE INDEX modules_pkey ON public.modules USING btree (id)
+programme_stream_quotas        | programme_stream_quotas_pkey             | CREATE UNIQUE INDEX programme_stream_quotas_pkey ON public.programme_stream_quotas USING btree (id)
+programme_stream_quotas        | programme_stream_quotas_unique           | CREATE UNIQUE INDEX programme_stream_quotas_unique ON public.programme_stream_quotas USING btree (academic_year, programme_code, programme_stream)
+programmes                     | idx_programmes_code_stream               | CREATE INDEX idx_programmes_code_stream ON public.programmes USING btree (programme_code, programme_stream)
+programmes                     | programmes_pkey                          | CREATE UNIQUE INDEX programmes_pkey ON public.programmes USING btree (id)
+programmes                     | programmes_programme_code_programme_stream_key | CREATE UNIQUE INDEX programmes_programme_code_programme_stream_key ON public.programmes USING btree (programme_code, programme_stream)
+study_plan_actual_student_numbers | study_plan_actual_student_numbers_pkey   | CREATE UNIQUE INDEX study_plan_actual_student_numbers_pkey ON public.study_plan_actual_student_numbers USING btree (id)
+study_plan_actual_student_numbers | study_plan_actual_student_numbers_unique | CREATE UNIQUE INDEX study_plan_actual_student_numbers_unique ON public.study_plan_actual_student_numbers USING btree (academic_year, study_term, module_code, programme_code, programme_stream, study_mode)
+study_plan_modules             | study_plan_modules_pkey                  | CREATE UNIQUE INDEX study_plan_modules_pkey ON public.study_plan_modules USING btree (id)
+study_plan_modules             | study_plan_modules_unique                | CREATE UNIQUE INDEX study_plan_modules_unique ON public.study_plan_modules USING btree (student_profile_id, module_code, programme_code, programme_stream, plan_stage)
+study_plan_settings            | study_plan_settings_pkey                 | CREATE UNIQUE INDEX study_plan_settings_pkey ON public.study_plan_settings USING btree (id)
+study_plan_settings            | study_plan_settings_setting_key_key      | CREATE UNIQUE INDEX study_plan_settings_setting_key_key ON public.study_plan_settings USING btree (setting_key)
+study_plan_students            | study_plan_students_pkey                 | CREATE UNIQUE INDEX study_plan_students_pkey ON public.study_plan_students USING btree (id)
+study_plan_students            | study_plan_students_student_id_key       | CREATE UNIQUE INDEX study_plan_students_student_id_key ON public.study_plan_students USING btree (student_id)
+teacher_actual_loading         | idx_teacher_actual_loading_academic_year | CREATE INDEX idx_teacher_actual_loading_academic_year ON public.teacher_actual_loading USING btree (academic_year)
+teacher_actual_loading         | teacher_actual_loading_pkey              | CREATE UNIQUE INDEX teacher_actual_loading_pkey ON public.teacher_actual_loading USING btree (id)
+teacher_actual_loading         | teacher_actual_loading_unique_group_idx  | CREATE UNIQUE INDEX teacher_actual_loading_unique_group_idx ON public.teacher_actual_loading USING btree (academic_year, teacher_name, teaching_status, COALESCE(teacher_employment_type, ''::text))
+teacher_loading_runs           | teacher_loading_runs_academic_year_idx   | CREATE INDEX teacher_loading_runs_academic_year_idx ON public.teacher_loading_runs USING btree (academic_year)
+teacher_loading_runs           | teacher_loading_runs_pkey                | CREATE UNIQUE INDEX teacher_loading_runs_pkey ON public.teacher_loading_runs USING btree (id)
+teacher_loading_runs           | teacher_loading_runs_status_idx          | CREATE INDEX teacher_loading_runs_status_idx ON public.teacher_loading_runs USING btree (status)
+teachers                       | idx_teachers_academic_year               | CREATE INDEX idx_teachers_academic_year ON public.teachers USING btree (academic_year)
+teachers                       | teachers_pkey                            | CREATE UNIQUE INDEX teachers_pkey ON public.teachers USING btree (id)
+teachers                       | teachers_teacher_name_academic_year_key  | CREATE UNIQUE INDEX teachers_teacher_name_academic_year_key ON public.teachers USING btree (teacher_name, academic_year)
+teaching_assignments           | idx_teaching_assignments_academic_year   | CREATE INDEX idx_teaching_assignments_academic_year ON public.teaching_assignments USING btree (academic_year)
+teaching_assignments           | idx_teaching_assignments_confirmed_version | CREATE INDEX idx_teaching_assignments_confirmed_version ON public.teaching_assignments USING btree (academic_year, confirmed, assignment_version)
+teaching_assignments           | idx_teaching_assignments_module          | CREATE INDEX idx_teaching_assignments_module ON public.teaching_assignments USING btree (timetable_module_id)
+teaching_assignments           | idx_teaching_assignments_teacher         | CREATE INDEX idx_teaching_assignments_teacher ON public.teaching_assignments USING btree (teacher_name)
+teaching_assignments           | teaching_assignments_module_version_unique | CREATE UNIQUE INDEX teaching_assignments_module_version_unique ON public.teaching_assignments USING btree (timetable_module_id, assignment_version)
+teaching_assignments           | teaching_assignments_pkey                | CREATE UNIQUE INDEX teaching_assignments_pkey ON public.teaching_assignments USING btree (id)
+timetable_modules              | idx_timetable_modules_academic_year      | CREATE INDEX idx_timetable_modules_academic_year ON public.timetable_modules USING btree (academic_year)
+timetable_modules              | idx_timetable_modules_term               | CREATE INDEX idx_timetable_modules_term ON public.timetable_modules USING btree (module_term)
+timetable_modules              | timetable_modules_academic_year_module_instance_code_key | CREATE UNIQUE INDEX timetable_modules_academic_year_module_instance_code_key ON public.timetable_modules USING btree (academic_year, module_instance_code)
+timetable_modules              | timetable_modules_pkey                   | CREATE UNIQUE INDEX timetable_modules_pkey ON public.timetable_modules USING btree (id)
+timetable_planning_modules     | idx_timetable_planning_academic_year     | CREATE INDEX idx_timetable_planning_academic_year ON public.timetable_planning_modules USING btree (academic_year)
+timetable_planning_modules     | idx_timetable_planning_module_code_term  | CREATE INDEX idx_timetable_planning_module_code_term ON public.timetable_planning_modules USING btree (module_code, module_term)
+timetable_planning_modules     | timetable_planning_modules_academic_year_module_id_key | CREATE UNIQUE INDEX timetable_planning_modules_academic_year_module_id_key ON public.timetable_planning_modules USING btree (academic_year, module_id)
+timetable_planning_modules     | timetable_planning_modules_pkey          | CREATE UNIQUE INDEX timetable_planning_modules_pkey ON public.timetable_planning_modules USING btree (id)
+timetable_student_numbers      | idx_student_numbers_academic_year        | CREATE INDEX idx_student_numbers_academic_year ON public.timetable_student_numbers USING btree (academic_year)
+timetable_student_numbers      | idx_timetable_student_numbers_key        | CREATE INDEX idx_timetable_student_numbers_key ON public.timetable_student_numbers USING btree (academic_year, module_code, programme_code)
+timetable_student_numbers      | timetable_student_numbers_identity_key   | CREATE UNIQUE INDEX timetable_student_numbers_identity_key ON public.timetable_student_numbers USING btree (academic_year, module_code, programme_code, programme_stream, study_term)
+timetable_student_numbers      | timetable_student_numbers_pkey           | CREATE UNIQUE INDEX timetable_student_numbers_pkey ON public.timetable_student_numbers USING btree (id)"
+
+app_settings                   | Allow anon read app_settings        | roles=anon | cmd=SELECT | using=true | check=
+app_settings                   | Allow anon upsert app_settings      | roles=anon | cmd=ALL    | using=true | check=true
+app_users                      | Deny direct app_users delete        | roles=anon | cmd=DELETE | using=false | check=
+app_users                      | Deny direct app_users insert        | roles=anon | cmd=INSERT | using= | check=false
+app_users                      | Deny direct app_users select        | roles=anon | cmd=SELECT | using=false | check=
+app_users                      | Deny direct app_users update        | roles=anon | cmd=UPDATE | using=false | check=false
+approved_loadings              | Allow anon all approved_loading     | roles=anon | cmd=ALL    | using=true | check=true
+combine_group_modules          | Allow anon all combine_group_modules | roles=anon | cmd=ALL    | using=true | check=true
+combine_groups                 | Allow anon all combine_groups       | roles=anon | cmd=ALL    | using=true | check=true
+degree_hd_affiliations         | Authenticated full access degree_hd_affiliations | roles=authenticated | cmd=ALL    | using=true | check=true
+export_logs                    | Allow anon all export_logs          | roles=anon | cmd=ALL    | using=true | check=true
+module_adjustments             | Allow anon all module_adjustments   | roles=anon | cmd=ALL    | using=true | check=true
+module_default_assignments     | Allow all module_default_assignments access | roles=anon,authenticated | cmd=ALL    | using=true | check=true
+module_enrollment              | Allow all module_enrollment access  | roles=anon,authenticated | cmd=ALL    | using=true | check=true
+modules                        | Allow anon all modules              | roles=anon | cmd=ALL    | using=true | check=true
+modules                        | Allow anon read modules             | roles=anon | cmd=SELECT | using=true | check=
+programme_stream_quotas        | Authenticated full access programme_stream_quotas | roles=authenticated | cmd=ALL    | using=true | check=true
+programmes                     | Allow anon all programmes           | roles=anon | cmd=ALL    | using=true | check=true
+programmes                     | Allow anon read programmes          | roles=anon | cmd=SELECT | using=true | check=
+study_plan_actual_student_numbers | Allow anon all study_plan_actual_student_numbers | roles=anon | cmd=ALL    | using=true | check=true
+study_plan_actual_student_numbers | Authenticated full access study_plan_actual_student_numbers | roles=authenticated | cmd=ALL    | using=true | check=true
+study_plan_modules             | Allow anon all study_plan_modules   | roles=anon | cmd=ALL    | using=true | check=true
+study_plan_modules             | Authenticated full access study_plan_modules | roles=authenticated | cmd=ALL    | using=true | check=true
+study_plan_settings            | Allow anon all study_plan_settings  | roles=anon | cmd=ALL    | using=true | check=true
+study_plan_settings            | Allow anon read study plan settings | roles=anon | cmd=SELECT | using=true | check=
+study_plan_settings            | Authenticated full access study_plan_settings | roles=authenticated | cmd=ALL    | using=true | check=true
+study_plan_students            | Allow anon all study_plan_students  | roles=anon | cmd=ALL    | using=true | check=true
+study_plan_students            | Authenticated full access study_plan_students | roles=authenticated | cmd=ALL    | using=true | check=true
+teacher_actual_loading         | Allow anon all teacher_actual_loading | roles=anon | cmd=ALL    | using=true | check=true
+teacher_loading_runs           | Anyone can read teacher loading runs | roles=anon,authenticated | cmd=SELECT | using=true | check=
+teachers                       | Allow anon all teachers             | roles=anon | cmd=ALL    | using=true | check=true
+teaching_assignments           | Allow anon all teaching_assignments | roles=anon | cmd=ALL    | using=true | check=true
+timetable_modules              | Allow anon all timetable_modules    | roles=anon | cmd=ALL    | using=true | check=true
+timetable_planning_modules     | Allow anon all timetable_planning_modules | roles=anon | cmd=ALL    | using=true | check=true
+timetable_student_numbers      | Allow anon all timetable_student_numbers | roles=anon | cmd=ALL    | using=true | check=true
+
+select string_agg(
+  format('%-30s | grantee=%-15s | %s', table_name, grantee, privilege_type),
+  E'\n'
+  order by table_name, grantee, privilege_type
+) as grants
+from information_schema.role_table_grants
+where table_schema = 'public';
+
+select string_agg(
+  format(
+    '%-35s(%s) -> %s',
+    p.proname,
+    pg_get_function_identity_arguments(p.oid),
+    pg_get_function_result(p.oid)
+  ),
+  E'\n'

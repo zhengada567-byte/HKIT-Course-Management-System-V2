@@ -35,6 +35,7 @@ import {
   validateStudentNumbersComplete,
   type StudentNumberInputRow,
 } from "../../services/studentNumberService";
+import { syncStudyPlanStudentNumbersToTimetable } from "../../services/timetableStudentNumberSyncService";
 import { normalizeStream, offeredTermToStudyTerm } from "../../lib/utils";
 import { listTeachers } from "../../services/teacherService";
 import {
@@ -55,7 +56,6 @@ import type {
   TimetablePlanningModuleRow,
 } from "../../types";
 
-import { PlanningStep } from "./make-timetable/components/PlanningStep";
 import { SplitAction } from "./make-timetable/components/SplitAction";
 import { StepTabs } from "./make-timetable/components/StepTabs";
 import { StudentNumberStep } from "./make-timetable/components/StudentNumberStep";
@@ -100,7 +100,7 @@ export function MakeTimetablePage() {
   const { academicYear } = useAcademicYear();
   const { t } = useLanguage();
 
-  const [step, setStep] = useState<Step>("planning");
+  const [step, setStep] = useState<Step>("student_numbers");
   const [programmes, setProgrammes] = useState<ProgrammeRow[]>([]);
   const [programmeCode, setProgrammeCode] = useState("");
   const [streamCode, setStreamCode] = useState("");
@@ -133,6 +133,7 @@ export function MakeTimetablePage() {
   const [assignments, setAssignments] = useState<TeachingAssignmentRow[]>([]);
 
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState("");
 
   const programmeCodes = useMemo(
@@ -228,6 +229,49 @@ export function MakeTimetablePage() {
     setTimetableModules(modules);
     setTeachers(teacherRows);
     setAssignments(filteredAssignments);
+  }
+
+  async function handleSyncFromStudyPlan() {
+    if (!user) {
+      setMessage("Please login before syncing student numbers.");
+      return;
+    }
+
+    if (!programmeCode) {
+      setMessage("Please select a programme before syncing from study plan.");
+      return;
+    }
+
+    setSyncing(true);
+    setMessage("Syncing student numbers from study plan...");
+
+    try {
+      const result = await syncStudyPlanStudentNumbersToTimetable({
+        academicYear,
+        programmeCode: programmeCode || undefined,
+        streamCode: streamCode || undefined,
+        createdBy: user.id,
+      });
+
+      await refreshPlanning();
+      await refreshStudentRows();
+
+      if (result.syncedCount === 0) {
+        setMessage(
+          "No planning modules found for this programme. Check that modules exist for the selected academic year."
+        );
+        return;
+      }
+
+      setMessage(
+        `Synced ${result.syncedCount} module row(s) from study plan (${result.zeroActualCount} with actual = 0).`
+      );
+    } catch (error) {
+      console.error("[MakeTimetablePage] Sync student numbers failed:", error);
+      setMessage(error instanceof Error ? error.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
   }
 
   async function handleSaveStudentNumbers() {
@@ -842,6 +886,17 @@ export function MakeTimetablePage() {
 
         if (cancelled) return;
 
+        if (programmeCode) {
+          await syncStudyPlanStudentNumbersToTimetable({
+            academicYear,
+            programmeCode: programmeCode || undefined,
+            streamCode: streamCode || undefined,
+            createdBy: user.id,
+          });
+        }
+
+        if (cancelled) return;
+
         const data = await listPlanningModulesWithStudentNumbers({
           academicYear,
           programmeCode: programmeCode || undefined,
@@ -899,7 +954,7 @@ export function MakeTimetablePage() {
     <div className="page-container">
       <PageHeader
         title={t.makeTimetable}
-        description="Workflow: planning → student numbers → manual combine → split → assignment."
+        description="Workflow: sync student numbers → manual combine → split → assignment."
         actions={
           <button type="button" className="btn btn-primary" onClick={handleExportExcel}>
             {t.downloadTimetableExcel}
@@ -930,7 +985,7 @@ export function MakeTimetablePage() {
               onChange={(event) => {
                 setProgrammeCode(event.target.value);
                 setStreamCode("");
-                setStep("planning");
+                setStep("student_numbers");
               }}
             >
               <option value="">All Programmes</option>
@@ -949,7 +1004,7 @@ export function MakeTimetablePage() {
               value={streamCode}
               onChange={(event) => {
                 setStreamCode(event.target.value);
-                setStep("planning");
+                setStep("student_numbers");
               }}
             >
               <option value="">All Streams</option>
@@ -963,7 +1018,7 @@ export function MakeTimetablePage() {
 
           <div className="flex items-end">
             <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              Modules are loaded automatically.
+              Select a programme to sync student numbers from study plan.
             </div>
           </div>
         </div>
@@ -975,15 +1030,15 @@ export function MakeTimetablePage() {
         <LoadingState />
       ) : (
         <>
-          {step === "planning" && (
-            <PlanningStep planningModules={planningModules} />
-          )}
-
           {step === "student_numbers" && (
             <StudentNumberStep
               rows={studentRows}
               updateRow={updateStudentRow}
+              onSync={handleSyncFromStudyPlan}
               onSave={handleSaveStudentNumbers}
+              syncDisabled={!programmeCode}
+              syncing={syncing}
+              programmeSelected={Boolean(programmeCode)}
             />
           )}
 

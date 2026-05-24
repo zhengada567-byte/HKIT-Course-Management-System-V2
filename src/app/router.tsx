@@ -17,6 +17,7 @@ import { AdminPasswordManagementPage } from "../pages/admin/AdminPasswordManagem
 
 import { MakeTimetablePage } from "../pages/programme-leader/MakeTimetablePage";
 import MakeStudyPlanPage from "../pages/programme-leader/make-study-plan/MakeStudyPlanPage";
+import { AssignmentConfirmationMonitorPage } from "../pages/admin/AssignmentConfirmationMonitorPage";
 
 import { ApprovedLoadingPage } from "../pages/president/ApprovedLoadingPage";
 import { PresidentPasswordPage } from "../pages/president/PresidentPasswordPage";
@@ -49,6 +50,14 @@ export const routes: RouteObject[] = [
       {
         path: "teacher-loading",
         element: <TeacherLoadingPage />,
+      },
+      {
+        path: "admin/assignment-confirmation-monitor",
+        element: (
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AssignmentConfirmationMonitorPage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: "admin/academic-year",

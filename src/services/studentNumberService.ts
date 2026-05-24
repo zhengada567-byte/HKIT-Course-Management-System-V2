@@ -193,7 +193,7 @@ export function buildStudentNumberInputRows(
         actual_student_number:
           existing?.actual_student_number ??
           enrollment?.actual_student_number ??
-          null,
+          0,
       });
     }
 
@@ -365,14 +365,27 @@ export async function bulkUpsertStudentNumbers(params: {
 }
 
 export function validateStudentNumbersComplete(rows: StudentNumberInputRow[]) {
-  const missing = rows.filter(
+  const missingExpected = rows.filter(
     (row) => row.expected_student_number === null
   );
 
-  if (missing.length > 0) {
+  if (missingExpected.length > 0) {
     return {
       valid: false,
-      message: `Expected student number is missing for: ${missing
+      message: `Expected student number is missing for: ${missingExpected
+        .map((row) => `${displayModule(row)}/${row.programme_code}`)
+        .join(", ")}`,
+    };
+  }
+
+  const missingActual = rows.filter(
+    (row) => row.actual_student_number === null
+  );
+
+  if (missingActual.length > 0) {
+    return {
+      valid: false,
+      message: `Actual student number is missing for: ${missingActual
         .map((row) => `${displayModule(row)}/${row.programme_code}`)
         .join(", ")}`,
     };

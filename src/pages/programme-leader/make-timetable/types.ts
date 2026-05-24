@@ -4,7 +4,6 @@ import type {
 } from "../../../types";
 
 export type Step =
-  | "planning"
   | "student_numbers"
   | "combine"
   | "split"

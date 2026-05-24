@@ -8,11 +8,10 @@ export function StepTabs({
   setStep: (step: Step) => void;
 }) {
   const steps: Array<{ key: Step; label: string }> = [
-    { key: "planning", label: "1. Planning" },
-    { key: "student_numbers", label: "2. Student Numbers" },
-    { key: "combine", label: "3. Combine" },
-    { key: "split", label: "4. Split" },
-    { key: "assignment", label: "5. Assignment" },
+    { key: "student_numbers", label: "1. 同步學生人數" },
+    { key: "combine", label: "2. 合班" },
+    { key: "split", label: "3. 分班" },
+    { key: "assignment", label: "4. 分配教師" },
   ];
 
   return (

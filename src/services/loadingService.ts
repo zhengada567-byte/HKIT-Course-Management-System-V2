@@ -478,7 +478,20 @@ export async function hasCompletedTeacherLoadingRun(
     .eq("status", "completed")
     .limit(1);
 
-  if (error) throw error;
+  if (error) {
+    const code = String((error as { code?: string }).code ?? "");
+    const message = String(error.message ?? "");
+
+    if (
+      code === "42P01" ||
+      code === "PGRST205" ||
+      message.includes("teacher_loading_runs")
+    ) {
+      return false;
+    }
+
+    throw error;
+  }
 
   return Boolean(data && data.length > 0);
 }
