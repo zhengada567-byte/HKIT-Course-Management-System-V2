@@ -7,12 +7,21 @@ import {
   type ReactNode,
 } from "react";
 
-import { getCurrentAcademicYear } from "../services/academicYearService";
+import {
+  offeredTermFromStudyTerm,
+} from "../pages/programme-leader/make-study-plan/helpers";
+import {
+  getCurrentAcademicYear,
+  getCurrentStudyTerm,
+} from "../services/academicYearService";
 import { getPreviousAcademicYear } from "../lib/utils";
+import type { ModuleTerm } from "../types/common";
 
 interface AcademicYearContextValue {
   academicYear: string;
   previousAcademicYear: string;
+  currentStudyTerm: string;
+  currentOfferedTerm: ModuleTerm;
   loading: boolean;
   refreshAcademicYear: () => Promise<void>;
   setLocalAcademicYear: (academicYear: string) => void;
@@ -24,14 +33,20 @@ const AcademicYearContext = createContext<AcademicYearContextValue | undefined>(
 
 export function AcademicYearProvider({ children }: { children: ReactNode }) {
   const [academicYear, setAcademicYear] = useState("2026/2027");
+  const [currentStudyTerm, setCurrentStudyTerm] = useState("T2026A");
   const [loading, setLoading] = useState(true);
 
   async function refreshAcademicYear() {
     setLoading(true);
 
     try {
-      const year = await getCurrentAcademicYear();
+      const [year, studyTerm] = await Promise.all([
+        getCurrentAcademicYear(),
+        getCurrentStudyTerm(),
+      ]);
+
       setAcademicYear(year);
+      setCurrentStudyTerm(studyTerm);
     } finally {
       setLoading(false);
     }
@@ -49,11 +64,13 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
     () => ({
       academicYear,
       previousAcademicYear: getPreviousAcademicYear(academicYear),
+      currentStudyTerm,
+      currentOfferedTerm: offeredTermFromStudyTerm(currentStudyTerm),
       loading,
       refreshAcademicYear,
       setLocalAcademicYear,
     }),
-    [academicYear, loading]
+    [academicYear, currentStudyTerm, loading]
   );
 
   return (

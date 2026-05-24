@@ -7,7 +7,7 @@ import { useAcademicYear } from "../../contexts/AcademicYearContext";
 export function TopBar() {
   const { user, logout } = useAuth();
   const { language, setLanguage, t } = useLanguage();
-  const { academicYear } = useAcademicYear();
+  const { academicYear, currentStudyTerm, currentOfferedTerm } = useAcademicYear();
 
   return (
     <header className="sticky top-0 z-20 border-b border-slate-200 bg-white">
@@ -22,7 +22,8 @@ export function TopBar() {
               {t.systemTitle}
             </h1>
             <p className="text-xs text-slate-500">
-              {t.academicYear}: {academicYear}
+              {t.academicYear}: {academicYear} · {t.currentTerm}:{" "}
+              {currentOfferedTerm} ({currentStudyTerm})
             </p>
           </div>
         </div>

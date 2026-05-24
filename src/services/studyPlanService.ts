@@ -20,6 +20,13 @@ import {
 } from "../pages/programme-leader/make-study-plan/helpers";
 
 import {
+  getCurrentAcademicYear,
+  getCurrentStudyTerm,
+  setCurrentStudyTermValue,
+  setCurrentAcademicYearValue,
+} from "./academicYearService";
+
+import {
   generateStudyPlanForStudent,
   getDegreeStartTermAfterBridging,
 } from "../pages/programme-leader/make-study-plan/studyPlanRules";
@@ -1580,26 +1587,21 @@ export async function loadProgrammeModules(
 }
 
 export async function getStudyPlanSettings(): Promise<StudyPlanSettings> {
-  const { data, error } = await supabase
-    .from("study_plan_settings")
-    .select("*")
-    .in("setting_key", ["current_academic_year", "current_study_term"]);
-
-  if (error) throw error;
-
-  const map = new Map<string, string>();
-
-  for (const row of data ?? []) {
-    map.set(row.setting_key, row.setting_value);
-  }
+  const [currentAcademicYear, currentStudyTerm] = await Promise.all([
+    getCurrentAcademicYear(),
+    getCurrentStudyTerm(),
+  ]);
 
   return {
-    currentAcademicYear: map.get("current_academic_year") ?? "2025/26",
-    currentStudyTerm: map.get("current_study_term") ?? "T2026A",
+    currentAcademicYear,
+    currentStudyTerm,
   };
 }
 
-export async function updateStudyPlanSettings(settings: StudyPlanSettings) {
+export async function updateStudyPlanSettings(
+  settings: StudyPlanSettings,
+  updatedBy?: string
+) {
   const rows = [
     {
       setting_key: "current_academic_year",
@@ -1620,6 +1622,69 @@ export async function updateStudyPlanSettings(settings: StudyPlanSettings) {
     });
 
   if (error) throw error;
+
+  if (updatedBy) {
+    await setCurrentAcademicYearValue({
+      academicYear: settings.currentAcademicYear,
+      updatedBy,
+    });
+
+    await setCurrentStudyTermValue({
+      studyTerm: settings.currentStudyTerm,
+      updatedBy,
+    });
+  }
+}
+
+export async function recalculateAllStudentStatuses(
+  currentStudyTerm?: string
+) {
+  const term = currentStudyTerm ?? (await getCurrentStudyTerm());
+
+  const { data: students, error: studentError } = await supabase
+    .from("study_plan_students")
+    .select("id");
+
+  if (studentError) throw studentError;
+
+  const { data: moduleRows, error: moduleError } = await supabase
+    .from("study_plan_modules")
+    .select("student_profile_id, plan_stage, status, study_term");
+
+  if (moduleError) throw moduleError;
+
+  const modulesByStudent = new Map<string, StudyPlanModule[]>();
+
+  for (const row of moduleRows ?? []) {
+    const profileId = String(row.student_profile_id ?? "").trim();
+
+    if (!profileId) continue;
+
+    const existing = modulesByStudent.get(profileId) ?? [];
+
+    existing.push({
+      planStage: row.plan_stage,
+      status: row.status,
+      studyTerm: row.study_term,
+    } as StudyPlanModule);
+
+    modulesByStudent.set(profileId, existing);
+  }
+
+  const updates = (students ?? []).map((student) => {
+    const modules = modulesByStudent.get(student.id) ?? [];
+    const studentStatus = calculateStudentStatus(modules, term);
+
+    return supabase
+      .from("study_plan_students")
+      .update({
+        student_status: studentStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", student.id);
+  });
+
+  await Promise.all(updates);
 }
 
 export async function recalculateActualStudentNumbers() {

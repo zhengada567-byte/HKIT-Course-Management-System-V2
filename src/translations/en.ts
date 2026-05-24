@@ -69,6 +69,30 @@ export const en = {
   previousAcademicYear: "Previous Academic Year",
   setAcademicYear: "Set Academic Year",
   startYear: "Start Year",
+  currentTerm: "Current Term",
+  termYear: "Term Year",
+  studyTermPreview: "Study Term Code",
+  academicYearPreview: "Academic Year Preview",
+  academicYearAndTermSettings: "Academic Year and Term Settings",
+  academicYearAndTermSettingsDescription:
+    "Set the current academic year and current term. The current term is used to calculate student status in study plans. Default term follows today's date: Feb (Feb–May), Jun (Jun–Aug), Sep (Sep–Jan).",
+  currentTermCalendarHint:
+    "Feb: Feb–May, Jun: Jun–Aug, Sep: Sep–Jan. Default follows today's date.",
+  resetToDateDefault: "Use date default",
+  resetToDateDefaultApplied: "Applied date-based default term.",
+  academicYearTermSaved: "Saved.",
+  academicYearTermSavedWithStatusRecalc:
+    "Saved. All student statuses have been recalculated.",
+  dateBasedSettings: "Date-based default",
+  dateBasedSettingsDescription:
+    "Inferred from today's date using the calendar term rules below.",
+  manualSettings: "Manual settings",
+  manualSettingsDescription:
+    "These values are saved to the system and used across the application, including student status in study plans.",
+  todayDate: "Today's date",
+  savedSettings: "Currently saved",
+  editSettings: "Edit settings",
+  applyDateDefaultToForm: "Apply date default",
   export: "Export",
   confirmed: "Confirmed",
   pending: "Pending",

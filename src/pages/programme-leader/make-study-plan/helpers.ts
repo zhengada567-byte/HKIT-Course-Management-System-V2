@@ -2,6 +2,8 @@ import type {
   StudentStatus,
   StudyPlanModule,
 } from "./types";
+import type { ModuleTerm } from "../../../types/common";
+import { formatAcademicYear } from "../../../lib/utils";
 
 export function normalizeStream(stream?: string | null): string {
   return (stream ?? "").trim();
@@ -108,6 +110,78 @@ export function studyTermToAcademicYear(studyTerm: string): string {
   }
 
   return `${parsed.year - 1}/${String(parsed.year).slice(-2)}`;
+}
+
+/**
+ * Map study term code to catalog offered term (Feb / Jun / Sep).
+ */
+export function offeredTermFromStudyTerm(studyTerm: string): ModuleTerm {
+  const parsed = parseStudyTerm(studyTerm);
+
+  if (!parsed) return "Feb";
+
+  if (parsed.letter === "A") return "Feb";
+  if (parsed.letter === "B") return "Jun";
+
+  return "Sep";
+}
+
+export function buildStudyTermFromYear(
+  year: number,
+  offeredTerm: ModuleTerm
+): string {
+  const letter =
+    offeredTerm === "Feb" ? "A" : offeredTerm === "Jun" ? "B" : "C";
+
+  return `T${year}${letter}`;
+}
+
+/**
+ * Calendar default for the current offered term:
+ * - Feb: February to May
+ * - Jun: June to August
+ * - Sep: September to January
+ */
+export function inferCurrentOfferedTermFromDate(date = new Date()): ModuleTerm {
+  const month = date.getMonth() + 1;
+
+  if (month >= 2 && month <= 5) return "Feb";
+  if (month >= 6 && month <= 8) return "Jun";
+
+  return "Sep";
+}
+
+function inferStudyTermYearFromDate(
+  date: Date,
+  offeredTerm: ModuleTerm
+): number {
+  const month = date.getMonth() + 1;
+  const year = date.getFullYear();
+
+  if (offeredTerm === "Sep" && month === 1) {
+    return year - 1;
+  }
+
+  return year;
+}
+
+export function inferCurrentStudyTermFromDate(date = new Date()): string {
+  const offeredTerm = inferCurrentOfferedTermFromDate(date);
+  const year = inferStudyTermYearFromDate(date, offeredTerm);
+
+  return buildStudyTermFromYear(year, offeredTerm);
+}
+
+export function inferCurrentAcademicYearFromDate(date = new Date()): string {
+  const studyTerm = inferCurrentStudyTermFromDate(date);
+  const shortYear = studyTermToAcademicYear(studyTerm);
+  const startYear = Number(shortYear.split("/")[0]);
+
+  if (Number.isInteger(startYear) && startYear >= 2000) {
+    return formatAcademicYear(startYear);
+  }
+
+  return formatAcademicYear(date.getFullYear());
 }
 
 /**

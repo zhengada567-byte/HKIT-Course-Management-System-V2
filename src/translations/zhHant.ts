@@ -69,6 +69,30 @@ export const zhHant = {
   previousAcademicYear: "上一學年",
   setAcademicYear: "設定學年",
   startYear: "開始年份",
+  currentTerm: "目前學期",
+  termYear: "學期年份",
+  studyTermPreview: "Study Term 編碼",
+  academicYearPreview: "學年預覽",
+  academicYearAndTermSettings: "學年與學期設定",
+  academicYearAndTermSettingsDescription:
+    "設定目前學年與目前學期。目前學期用於計算學習計劃中的學生狀態。預設依今天日期：Feb（2–5月）、Jun（6–8月）、Sep（9–1月）。",
+  currentTermCalendarHint:
+    "Feb：2–5月，Jun：6–8月，Sep：9–1月。預設依今天日期。",
+  resetToDateDefault: "依今天日期設定",
+  resetToDateDefaultApplied: "已套用依日期推算的預設學期。",
+  academicYearTermSaved: "已儲存。",
+  academicYearTermSavedWithStatusRecalc:
+    "已儲存，並已重新計算所有學生狀態。",
+  dateBasedSettings: "依今天日期推算",
+  dateBasedSettingsDescription:
+    "根據今天日期及下方學期日曆規則自動推算，僅供參考。",
+  manualSettings: "手動設定",
+  manualSettingsDescription:
+    "以下設定會寫入系統，供全系統使用（包括學習計劃的學生狀態）。",
+  todayDate: "今天日期",
+  savedSettings: "目前系統設定",
+  editSettings: "修改設定",
+  applyDateDefaultToForm: "套用日期推算",
   export: "匯出",
   confirmed: "已確認",
   pending: "待處理",
