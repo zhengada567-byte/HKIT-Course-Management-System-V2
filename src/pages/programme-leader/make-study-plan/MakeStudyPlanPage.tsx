@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { StudyPlanModule, StudyPlanStudent } from "./types";
 
@@ -68,6 +68,12 @@ export default function MakeStudyPlanPage() {
   async function handleEditStudent(profileId: string) {
     await openEditorFromProfile(profileId, "list");
   }
+
+  const programmeCodes = useMemo(() => {
+    return Array.from(
+      new Set(students.map((student) => student.programmeCode).filter(Boolean))
+    );
+  }, [students]);
 
   async function handleSearchByStudentId(studentId: string) {
     setLoading(true);
@@ -229,7 +235,9 @@ export default function MakeStudyPlanPage() {
       <div className={activeTab === "search" ? "block" : "hidden"}>
         <StudyPlanSearchTab
           loading={loading}
-          onSearch={handleSearchByStudentId}
+          programmeCodes={programmeCodes}
+          onSearchByStudentId={handleSearchByStudentId}
+          onOpenStudent={(profileId) => openEditorFromProfile(profileId, "search")}
         />
       </div>
 

@@ -1,3 +1,5 @@
+import { saveAs } from "file-saver";
+
 import { supabase } from "../lib/supabase";
 
 import type {
@@ -1184,6 +1186,197 @@ export async function getStudyPlanStudentByStudentId(studentId: string) {
   }
 
   return getStudyPlanStudent(String(data.id));
+}
+
+export interface GraduatingStudentSearchParams {
+  studyTerm: string;
+  programmeCode: string;
+}
+
+export interface GraduatingStudentSearchRow {
+  profileId: string;
+  studentId: string;
+  studentName: string;
+  programmeCode: string;
+  programmeStream: string;
+  studyMode: string;
+  studentStatus?: string;
+  intakeTerm?: string;
+  calculatedGraduateTerm: string;
+}
+
+function normalizeStudyTermKey(term: string): string {
+  return String(term ?? "").trim().toUpperCase();
+}
+
+function chunkValues<T>(values: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+
+  return chunks;
+}
+
+function escapeGraduateSearchCsvCell(value: unknown): string {
+  const text = String(value ?? "");
+
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  return text;
+}
+
+function graduatingStudentsToCsv(
+  headers: string[],
+  rows: string[][]
+): string {
+  return [headers, ...rows]
+    .map((row) => row.map(escapeGraduateSearchCsvCell).join(","))
+    .join("\n");
+}
+
+export async function searchGraduatingStudents(
+  params: GraduatingStudentSearchParams
+): Promise<GraduatingStudentSearchRow[]> {
+  const studyTerm = normalizeStudyTermKey(params.studyTerm);
+  const programmeCode = String(params.programmeCode ?? "").trim();
+
+  if (!studyTerm || !programmeCode) {
+    return [];
+  }
+
+  const students = await listStudyPlanStudents({ programmeCode });
+  const profileIds = students
+    .map((student) => student.id)
+    .filter((value): value is string => Boolean(value));
+
+  if (profileIds.length === 0) {
+    return [];
+  }
+
+  const modulesByProfile = new Map<string, StudyPlanModule[]>();
+
+  for (const profileChunk of chunkValues(profileIds, 100)) {
+    const { data, error } = await supabase
+      .from("study_plan_modules")
+      .select("*")
+      .in("student_profile_id", profileChunk);
+
+    if (error) throw error;
+
+    for (const row of data ?? []) {
+      const profileId = String(row.student_profile_id ?? "").trim();
+
+      if (!profileId) {
+        continue;
+      }
+
+      const existing = modulesByProfile.get(profileId) ?? [];
+      existing.push(fromModuleRow(row));
+      modulesByProfile.set(profileId, existing);
+    }
+  }
+
+  const results: GraduatingStudentSearchRow[] = [];
+
+  for (const student of students) {
+    if (!student.id) {
+      continue;
+    }
+
+    const modules = modulesByProfile.get(student.id) ?? [];
+    const latestTerm = getLatestStudyTerm(modules);
+
+    if (!latestTerm || normalizeStudyTermKey(latestTerm) !== studyTerm) {
+      continue;
+    }
+
+    results.push({
+      profileId: student.id,
+      studentId: student.studentId,
+      studentName: student.studentName,
+      programmeCode: student.programmeCode,
+      programmeStream: cleanStream(student.programmeStream),
+      studyMode: student.studyMode,
+      studentStatus: student.studentStatus,
+      intakeTerm: student.intakeTerm,
+      calculatedGraduateTerm: normalizeStudyTermKey(latestTerm),
+    });
+  }
+
+  results.sort((a, b) => {
+    const streamDiff = a.programmeStream.localeCompare(b.programmeStream);
+
+    if (streamDiff !== 0) {
+      return streamDiff;
+    }
+
+    return a.studentId.localeCompare(b.studentId);
+  });
+
+  return results;
+}
+
+export async function downloadGraduatingStudentsCsv(
+  params: GraduatingStudentSearchParams
+): Promise<{ fileName: string; rowCount: number }> {
+  const rows = await searchGraduatingStudents(params);
+
+  if (rows.length === 0) {
+    throw new Error("沒有符合條件的畢業生，無法匯出。");
+  }
+
+  const headers = [
+    "Programme Code",
+    "Programme Stream",
+    "Student ID",
+    "Student Name",
+    "Study Mode",
+    "Student Status",
+    "Intake Term",
+    "Calculated Graduate Term",
+    "Selected Study Term",
+  ];
+
+  const csvRows = rows.map((row) => [
+    row.programmeCode,
+    row.programmeStream,
+    row.studentId,
+    row.studentName,
+    row.studyMode,
+    row.studentStatus ?? "",
+    row.intakeTerm ?? "",
+    row.calculatedGraduateTerm,
+    normalizeStudyTermKey(params.studyTerm),
+  ]);
+
+  const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const fileName = `study_plan_graduates_${programmeCodeKey(
+    params.programmeCode
+  )}_${normalizeStudyTermKey(params.studyTerm)}_${dateStamp}.csv`;
+
+  saveAs(
+    new Blob([graduatingStudentsToCsv(headers, csvRows)], {
+      type: "text/csv;charset=utf-8;",
+    }),
+    fileName
+  );
+
+  return {
+    fileName,
+    rowCount: rows.length,
+  };
+}
+
+function programmeCodeKey(programmeCode: string): string {
+  return String(programmeCode ?? "")
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
 }
 
 export interface StudyPlanExportFilters {
