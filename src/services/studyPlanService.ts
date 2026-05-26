@@ -37,6 +37,7 @@ import {
   setCurrentStudyTermValue,
   setCurrentAcademicYearValue,
 } from "./academicYearService";
+import { resolveExpectedStudentNumberOnSync } from "./studentNumberService";
 
 import {
   generateStudyPlanForStudent,
@@ -2577,6 +2578,8 @@ export async function syncActualStudentNumbersToTimetable() {
       continue;
     }
 
+    const previousActual = Number(row.actual_student_number ?? 0);
+
     rowsForUpsert.push({
       academic_year: academicYear,
       module_code: row.module_code,
@@ -2584,7 +2587,11 @@ export async function syncActualStudentNumbersToTimetable() {
       programme_code: row.programme_code,
       programme_stream: normalizeStream(row.programme_stream),
       study_term: studyTerm,
-      expected_student_number: Number(row.expected_student_number ?? 0),
+      expected_student_number: resolveExpectedStudentNumberOnSync({
+        existingExpected: row.expected_student_number,
+        existingActual: previousActual,
+        newActual: actual,
+      }),
       actual_student_number: actual,
       updated_at: new Date().toISOString(),
     });

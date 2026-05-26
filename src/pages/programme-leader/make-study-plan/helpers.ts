@@ -51,6 +51,43 @@ export function compareStudyTerm(
 }
 
 /**
+ * Programme / bridging completion terms immediately before a Degree Sep intake.
+ *
+ * Example: Sep intake anchor T2026C -> graduates on T2026A or T2026B.
+ *
+ * Note: This is NOT the same as offeredTermToStudyTerm(academicYear, "Feb"|"Jun"),
+ * which maps to intake start terms (e.g. T2027A / T2027B for 2026/27).
+ */
+export function getPreDegreeSepIntakeGraduateTerms(
+  sepIntakeAnchor: string
+): string[] {
+  const parsed = parseStudyTerm(sepIntakeAnchor);
+
+  if (!parsed || parsed.letter !== "C") {
+    return [];
+  }
+
+  return [`T${parsed.year}A`, `T${parsed.year}B`];
+}
+
+/**
+ * Programme / bridging completion term immediately before a Degree Feb intake.
+ *
+ * Example: Feb intake anchor T2027A -> graduates on T2026C.
+ */
+export function getPreDegreeFebIntakeGraduateTerm(
+  febIntakeAnchor: string
+): string | undefined {
+  const parsed = parseStudyTerm(febIntakeAnchor);
+
+  if (!parsed || parsed.letter !== "A") {
+    return undefined;
+  }
+
+  return `T${parsed.year - 1}C`;
+}
+
+/**
  * Full study term sequence:
  *
  * A -> B -> C -> next A

@@ -99,11 +99,11 @@ export function isQuotaEditableByProgrammeLeader(
   return Date.now() < getQuotaLockStartDate(academicYear).getTime();
 }
 
-/** Default quota planning year while operating in the current academic year. */
+/** Default quota planning year matches the app current academic year. */
 export function getDefaultQuotaPlanningAcademicYear(
   currentAcademicYear: string
 ): string {
-  return getNextAcademicYear(currentAcademicYear);
+  return normalizeAcademicYear(currentAcademicYear);
 }
 
 /** Alternate academic-year labels used across study plan vs timetable. */

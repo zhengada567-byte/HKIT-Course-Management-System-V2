@@ -21,7 +21,6 @@ import {
   listManualCombineGroups,
   type ManualCombineGroupWithDetails,
 } from "../../services/manualCombineService";
-import { isProgrammeQuotaConfirmed } from "../../services/programmeQuotaService";
 import { listProgrammes } from "../../services/programmeService";
 import {
   createCombinedTimetableModules,
@@ -143,8 +142,6 @@ export function MakeTimetablePage() {
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState("");
-  const [quotaConfirmed, setQuotaConfirmed] = useState(true);
-
   const programmeCodes = useMemo(
     () => [...new Set(programmes.map((p) => p.programme_code))],
     [programmes]
@@ -166,25 +163,6 @@ export function MakeTimetablePage() {
   useEffect(() => {
     void init();
   }, []);
-
-  useEffect(() => {
-    if (!programmeCode) {
-      setQuotaConfirmed(true);
-      return;
-    }
-
-    void isProgrammeQuotaConfirmed(academicYear, programmeCode)
-      .then(setQuotaConfirmed)
-      .catch(() => setQuotaConfirmed(false));
-  }, [academicYear, programmeCode]);
-
-  const quotaBlockedMessage = useMemo(() => {
-    if (!programmeCode || quotaConfirmed) {
-      return "";
-    }
-
-    return `${programmeCode} · ${academicYear} 的学年 Quota 尚未确认。请先到「学生学习计划 → 学年 Quota」确认后再进行 Step 1。`;
-  }, [academicYear, programmeCode, quotaConfirmed]);
 
   async function refreshPlanning() {
     const data = await listPlanningModulesWithStudentNumbers({
@@ -293,13 +271,6 @@ export function MakeTimetablePage() {
       return;
     }
 
-    if (!quotaConfirmed) {
-      const text = quotaBlockedMessage;
-      setMessage(text);
-      alert(text);
-      return;
-    }
-
     setSyncing(true);
     setMessage("Syncing student numbers from study plan...");
 
@@ -336,11 +307,6 @@ export function MakeTimetablePage() {
   async function handleSaveStudentNumbers() {
     if (!user) {
       setMessage("Please login before saving student numbers.");
-      return;
-    }
-
-    if (programmeCode && !quotaConfirmed) {
-      setMessage(quotaBlockedMessage);
       return;
     }
 
@@ -1125,9 +1091,6 @@ export function MakeTimetablePage() {
                 syncDisabled={!programmeCode || loading}
                 syncing={syncing}
                 programmeSelected={Boolean(programmeCode)}
-                quotaConfirmed={!programmeCode || quotaConfirmed}
-                expectedReadOnly={Boolean(programmeCode && quotaConfirmed)}
-                quotaBlockedMessage={quotaBlockedMessage}
               />
             </>
           )}

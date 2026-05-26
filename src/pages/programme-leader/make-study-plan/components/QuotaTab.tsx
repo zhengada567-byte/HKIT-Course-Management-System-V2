@@ -4,48 +4,18 @@ import { useAcademicYear } from "../../../../contexts/AcademicYearContext";
 import { useAuth } from "../../../../contexts/AuthContext";
 import {
   getDefaultQuotaPlanningAcademicYear,
-  getQuotaEditDeadlineLabel,
   getNextAcademicYear,
   getPreviousAcademicYear,
 } from "../../../../lib/utils";
 import {
-  adminUnlockProgrammeQuota,
-  confirmProgrammeQuota,
   ensureQuotaCopiedForAcademicYear,
   getProgrammeQuotaDetail,
   getQuotaStatusMessage,
   listQuotaProgrammesForUser,
-  saveProgrammeQuotaDraft,
+  saveProgrammeQuota,
   type ProgrammeQuotaListItem,
-  type ProgrammeQuotaStreamRow,
   type ProgrammeQuotaSummary,
 } from "../../../../services/programmeQuotaService";
-
-function displayStream(value: string) {
-  return value === "nil" ? "-" : value;
-}
-
-function distributeEvenly(programmeQuota: number, streams: ProgrammeQuotaStreamRow[]) {
-  if (streams.length === 0) {
-    return streams;
-  }
-
-  const base = Math.floor(programmeQuota / streams.length);
-  let remainder = programmeQuota - base * streams.length;
-
-  return streams.map((row) => {
-    const extra = remainder > 0 ? 1 : 0;
-
-    if (remainder > 0) {
-      remainder -= 1;
-    }
-
-    return {
-      ...row,
-      streamQuota: base + extra,
-    };
-  });
-}
 
 export default function QuotaTab() {
   const { user } = useAuth();
@@ -70,23 +40,11 @@ export default function QuotaTab() {
   );
   const [selectedProgrammeCode, setSelectedProgrammeCode] = useState("");
   const [detail, setDetail] = useState<ProgrammeQuotaSummary | null>(null);
-  const [programmeQuota, setProgrammeQuota] = useState(0);
-  const [streams, setStreams] = useState<ProgrammeQuotaStreamRow[]>([]);
+  const [ftQuota, setFtQuota] = useState(0);
+  const [ptQuota, setPtQuota] = useState(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState("");
-  const [adminUnlockUntil, setAdminUnlockUntil] = useState("");
-  const [unlocking, setUnlocking] = useState(false);
-
-  const streamTotal = useMemo(
-    () => streams.reduce((sum, row) => sum + (row.streamQuota || 0), 0),
-    [streams]
-  );
-
-  const streamBalance = programmeQuota - streamTotal;
-  const canEdit = detail?.editableByProgrammeLeader ?? false;
-  const isAdmin = user?.role === "admin";
 
   const refreshList = useCallback(async () => {
     if (!user) return;
@@ -113,8 +71,8 @@ export default function QuotaTab() {
         );
 
         setDetail(result);
-        setProgrammeQuota(result.programmeQuota);
-        setStreams(result.streams);
+        setFtQuota(result.ftQuota);
+        setPtQuota(result.ptQuota);
       } catch (error) {
         setDetail(null);
 
@@ -146,12 +104,6 @@ export default function QuotaTab() {
           await refreshList();
         } catch (copyError) {
           console.warn("[QuotaTab] Copy quota from previous year failed:", copyError);
-
-          setMessage(
-            copyError instanceof Error
-              ? `課程列表已載入，但自動複製上年 Quota 失敗：${copyError.message}`
-              : "課程列表已載入，但自動複製上年 Quota 失敗。"
-          );
         }
       } catch (error) {
         setMessage(
@@ -172,24 +124,24 @@ export default function QuotaTab() {
     void loadDetail(selectedProgrammeCode);
   }, [loadDetail, selectedProgrammeCode]);
 
-  async function handleSaveDraft() {
+  async function handleSave() {
     if (!user || !selectedProgrammeCode) return;
 
     setSaving(true);
     setMessage("");
 
     try {
-      await saveProgrammeQuotaDraft({
+      await saveProgrammeQuota({
         academicYear,
         programmeCode: selectedProgrammeCode,
-        programmeQuota,
-        streams,
+        ftQuota,
+        ptQuota,
         user,
       });
 
       await refreshList();
       await loadDetail(selectedProgrammeCode);
-      setMessage("已儲存草稿（尚未確認）。");
+      setMessage("已儲存 Quota。");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "儲存失敗。");
     } finally {
@@ -197,79 +149,28 @@ export default function QuotaTab() {
     }
   }
 
-  async function handleConfirm() {
-    if (!user || !selectedProgrammeCode) return;
-
-    setConfirming(true);
-    setMessage("");
-
-    try {
-      await confirmProgrammeQuota({
-        academicYear,
-        programmeCode: selectedProgrammeCode,
-        programmeQuota,
-        streams,
-        user,
-      });
-
-      await refreshList();
-      await loadDetail(selectedProgrammeCode);
-      setMessage("已確認 Quota，並已生成各科目 Expected 人數。");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "確認失敗。");
-    } finally {
-      setConfirming(false);
-    }
-  }
-
-  async function handleAdminUnlock() {
-    if (!user || !selectedProgrammeCode || !adminUnlockUntil) return;
-
-    setUnlocking(true);
-    setMessage("");
-
-    try {
-      await adminUnlockProgrammeQuota({
-        academicYear,
-        programmeCode: selectedProgrammeCode,
-        unlockUntil: new Date(adminUnlockUntil).toISOString(),
-        adminUser: user,
-      });
-
-      await refreshList();
-      await loadDetail(selectedProgrammeCode);
-      setMessage("已解鎖 Quota，PL 可重新編輯並確認。");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "解鎖失敗。");
-    } finally {
-      setUnlocking(false);
-    }
-  }
-
-  const pendingCount = programmeList.filter((row) => row.needsReview).length;
+  const overQuotaCount = programmeList.filter(
+    (row) => row.isOverFtQuota || row.isOverPtQuota
+  ).length;
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">学年 Quota</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          每学年為制作时间表设定一次预期人数；列出 programmes
-          表中的所有课程（共用 PL 账号，不按 programme leader 筛选）。通常于在学期间准备{" "}
-          <span className="font-medium text-foreground">
-            {defaultPlanningYear}
-          </span>{" "}
-          学年 Quota。
+          按课程设定 FT / PT 收生上限，并与 Study Plan 该学年实际人数比对（仅供参考）。
+          与制作时间表无关；模块 Expected 默认来自 Study Plan Actual，不由 Quota 写入。
         </p>
         <p className="text-xs text-muted-foreground mt-2">
           {getQuotaStatusMessage(academicYear)}
         </p>
       </div>
 
-      {pendingCount > 0 && (
+      {overQuotaCount > 0 && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {academicYear} 学年尚有{" "}
-          <span className="font-semibold">{pendingCount}</span>{" "}
-          个课程未确认 Quota。未确认的课程无法开始制作时间表 Step 1。
+          {academicYear} 学年有{" "}
+          <span className="font-semibold">{overQuotaCount}</span>{" "}
+          个课程的 FT 或 PT 实际人数超过 Quota，请核对收生安排。
         </div>
       )}
 
@@ -285,7 +186,7 @@ export default function QuotaTab() {
                 setSelectedProgrammeCode("");
                 setDetail(null);
               }}
-              disabled={loading || saving || confirming}
+              disabled={loading || saving}
             >
               {academicYearOptions.map((year) => (
                 <option key={year} value={year}>
@@ -295,10 +196,6 @@ export default function QuotaTab() {
               ))}
             </select>
           </div>
-
-          <p className="text-xs text-muted-foreground">
-            截止：{getQuotaEditDeadlineLabel(academicYear)}（之后锁定）
-          </p>
 
           <div className="space-y-2 max-h-[420px] overflow-y-auto">
             {programmeList.map((row) => (
@@ -314,8 +211,11 @@ export default function QuotaTab() {
               >
                 <div className="font-medium">{row.programmeCode}</div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  {row.isConfirmed ? "已确认" : "待确认"}
-                  {!row.editableByProgrammeLeader ? " · 已锁定" : ""}
+                  FT {row.actualFt}/{row.ftQuota || "—"} · PT {row.actualPt}/
+                  {row.ptQuota || "—"}
+                  {(row.isOverFtQuota || row.isOverPtQuota) && (
+                    <span className="text-amber-700"> · 超收</span>
+                  )}
                 </div>
               </button>
             ))}
@@ -341,179 +241,74 @@ export default function QuotaTab() {
 
           {selectedProgrammeCode && detail && !loading && (
             <>
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <h3 className="text-base font-semibold">{detail.programmeCode}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {detail.programmeName ?? "-"}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Leader: {detail.programmeLeader ?? "-"}
-                  </p>
-                </div>
-
-                <div className="text-sm">
-                  {detail.isConfirmed ? (
-                    <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-800">
-                      已确认
-                    </span>
-                  ) : (
-                    <span className="rounded bg-amber-100 px-2 py-1 text-amber-800">
-                      待确认
-                    </span>
-                  )}
-                  {!canEdit && (
-                    <span className="ml-2 rounded bg-slate-200 px-2 py-1 text-slate-700">
-                      已锁定
-                    </span>
-                  )}
-                </div>
+              <div>
+                <h3 className="text-base font-semibold">{detail.programmeCode}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {detail.programmeName ?? "-"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Leader: {detail.programmeLeader ?? "-"}
+                </p>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-sm font-medium">
-                    Programme Quota
-                  </label>
+                  <label className="mb-1 block text-sm font-medium">FT Quota</label>
                   <input
                     type="number"
                     min={0}
                     className="w-full rounded border px-3 py-2 text-sm"
-                    value={programmeQuota}
-                    disabled={!canEdit}
+                    value={ftQuota}
                     onChange={(event) =>
-                      setProgrammeQuota(Math.max(0, Number(event.target.value) || 0))
+                      setFtQuota(Math.max(0, Number(event.target.value) || 0))
                     }
                   />
-                </div>
-
-                <div className="rounded border bg-slate-50 px-3 py-2 text-sm">
-                  <p>
-                    Stream 总和：{" "}
-                    <span className="font-medium">{streamTotal}</span> /{" "}
-                    {programmeQuota}
-                  </p>
                   <p
-                    className={
-                      streamBalance === 0 ? "text-emerald-700" : "text-red-600"
-                    }
+                    className={`text-xs mt-1 ${
+                      detail.isOverFtQuota ? "text-red-600" : "text-muted-foreground"
+                    }`}
                   >
-                    差额：{streamBalance}
+                    Study Plan 实际 FT：{detail.actualFt}
+                    {detail.isOverFtQuota ? "（超过 Quota）" : ""}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium">PT Quota</label>
+                  <input
+                    type="number"
+                    min={0}
+                    className="w-full rounded border px-3 py-2 text-sm"
+                    value={ptQuota}
+                    onChange={(event) =>
+                      setPtQuota(Math.max(0, Number(event.target.value) || 0))
+                    }
+                  />
+                  <p
+                    className={`text-xs mt-1 ${
+                      detail.isOverPtQuota ? "text-red-600" : "text-muted-foreground"
+                    }`}
+                  >
+                    Study Plan 实际 PT：{detail.actualPt}
+                    {detail.isOverPtQuota ? "（超过 Quota）" : ""}
                   </p>
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="px-3 py-1.5 rounded border text-sm disabled:opacity-50"
-                  disabled={!canEdit}
-                  onClick={() => setStreams(distributeEvenly(programmeQuota, streams))}
-                >
-                  平均分配到各 Stream
-                </button>
-              </div>
+              <button
+                type="button"
+                className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+                disabled={saving}
+                onClick={() => void handleSave()}
+              >
+                {saving ? "储存中..." : "储存 Quota"}
+              </button>
 
-              <div className="rounded-md border overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted">
-                    <tr>
-                      <th className="p-2 text-left">Stream</th>
-                      <th className="p-2 text-left">Stream Quota</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {streams.map((row) => (
-                      <tr key={row.programmeStream} className="border-t">
-                        <td className="p-2">{displayStream(row.programmeStream)}</td>
-                        <td className="p-2">
-                          <input
-                            type="number"
-                            min={0}
-                            className="w-28 rounded border px-2 py-1"
-                            disabled={!canEdit}
-                            value={row.streamQuota}
-                            onChange={(event) => {
-                              const value = Math.max(
-                                0,
-                                Number(event.target.value) || 0
-                              );
-
-                              setStreams((current) =>
-                                current.map((item) =>
-                                  item.programmeStream === row.programmeStream
-                                    ? { ...item, streamQuota: value }
-                                    : item
-                                )
-                              );
-                            }}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="px-4 py-2 rounded-md border text-sm disabled:opacity-50"
-                  disabled={!canEdit || saving || streamBalance !== 0}
-                  onClick={() => void handleSaveDraft()}
-                >
-                  {saving ? "储存中..." : "储存草稿"}
-                </button>
-
-                <button
-                  type="button"
-                  className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
-                  disabled={
-                    !canEdit || confirming || streamBalance !== 0 || programmeQuota < 0
-                  }
-                  onClick={() => void handleConfirm()}
-                >
-                  {confirming ? "确认中..." : "确认本课程 Quota"}
-                </button>
-              </div>
-
-              {detail.confirmedAt && (
+              {detail.savedAt && (
                 <p className="text-xs text-muted-foreground">
-                  上次确认：{new Date(detail.confirmedAt).toLocaleString()}（
-                  {detail.confirmedBy ?? "-"}）
+                  上次储存：{new Date(detail.savedAt).toLocaleString()}
+                  {detail.savedBy ? `（${detail.savedBy}）` : ""}
                 </p>
-              )}
-
-              {isAdmin && (
-                <div className="rounded-md border border-dashed p-4 space-y-3">
-                  <p className="text-sm font-medium">Admin 解锁</p>
-                  <div className="flex flex-wrap items-end gap-2">
-                    <div>
-                      <label className="mb-1 block text-xs font-medium">
-                        解锁至
-                      </label>
-                      <input
-                        type="datetime-local"
-                        className="rounded border px-2 py-1 text-sm"
-                        value={adminUnlockUntil}
-                        onChange={(event) =>
-                          setAdminUnlockUntil(event.target.value)
-                        }
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      className="px-3 py-2 rounded bg-slate-800 text-white text-sm disabled:opacity-50"
-                      disabled={unlocking || !adminUnlockUntil}
-                      onClick={() => void handleAdminUnlock()}
-                    >
-                      {unlocking ? "解锁中..." : "解锁"}
-                    </button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    解锁后 PL 可重新编辑；确认前会清除确认状态。
-                  </p>
-                </div>
               )}
             </>
           )}
@@ -521,7 +316,7 @@ export default function QuotaTab() {
           {message && (
             <p
               className={`text-sm ${
-                message.includes("失败") || message.includes("必須")
+                message.includes("失败") || message.includes("失敗")
                   ? "text-red-600"
                   : "text-muted-foreground"
               }`}

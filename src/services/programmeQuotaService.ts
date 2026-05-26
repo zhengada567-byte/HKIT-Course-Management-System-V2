@@ -1,29 +1,18 @@
 import { supabase } from "../lib/supabase";
 import {
-  academicYearToStartYear,
+  getAcademicYearVariants,
   getPreviousAcademicYear,
-  isQuotaEditableByProgrammeLeader,
-  normalizeAcademicYear,
-  normalizeStream,
   offeredTermToStudyTerm,
+  normalizeAcademicYear,
 } from "../lib/utils";
 import type { AppUser } from "../types/auth";
 import type { ProgrammeRow } from "../types";
 import { listProgrammes } from "./programmeService";
-import {
-  bulkUpsertStudentNumbers,
-  listStudentNumbers,
-  type StudentNumberInputRow,
-} from "./studentNumberService";
-import { ensureTimetablePlanningModules } from "./timetableService";
+import { getProgrammeTypeByCode } from "./studyPlanService";
+import { compareStudyTerm, isHDProgrammeType } from "../pages/programme-leader/make-study-plan/helpers";
 
 function canonicalAcademicYear(academicYear: string) {
   return normalizeAcademicYear(academicYear);
-}
-
-export interface ProgrammeQuotaStreamRow {
-  programmeStream: string;
-  streamQuota: number;
 }
 
 export interface ProgrammeQuotaSummary {
@@ -31,35 +20,43 @@ export interface ProgrammeQuotaSummary {
   programmeCode: string;
   programmeName: string | null;
   programmeLeader: string | null;
-  programmeQuota: number;
-  streams: ProgrammeQuotaStreamRow[];
-  streamQuotaTotal: number;
-  confirmedAt: string | null;
-  confirmedBy: string | null;
-  adminUnlockedUntil: string | null;
-  editableByProgrammeLeader: boolean;
-  isConfirmed: boolean;
+  ftQuota: number;
+  ptQuota: number;
+  actualFt: number;
+  actualPt: number;
+  isOverFtQuota: boolean;
+  isOverPtQuota: boolean;
+  savedAt: string | null;
+  savedBy: string | null;
 }
 
 export interface ProgrammeQuotaListItem {
   programmeCode: string;
   programmeName: string | null;
   programmeLeader: string | null;
-  programmeQuota: number;
-  streamCount: number;
-  streamQuotaTotal: number;
-  confirmedAt: string | null;
-  editableByProgrammeLeader: boolean;
-  isConfirmed: boolean;
-  needsReview: boolean;
+  ftQuota: number;
+  ptQuota: number;
+  actualFt: number;
+  actualPt: number;
+  isOverFtQuota: boolean;
+  isOverPtQuota: boolean;
+  hasQuota: boolean;
+}
+
+export interface ProgrammeStudentCounts {
+  ft: number;
+  pt: number;
+  total: number;
 }
 
 function normalizeProgrammeCode(value: string) {
   return String(value ?? "").trim();
 }
 
-function sumStreamQuotas(streams: ProgrammeQuotaStreamRow[]) {
-  return streams.reduce((total, row) => total + (row.streamQuota || 0), 0);
+function normalizeStudyMode(value: string | null | undefined) {
+  const mode = String(value ?? "").trim().toUpperCase();
+
+  return mode === "PT" ? "PT" : "FT";
 }
 
 function groupProgrammesByCode(programmes: ProgrammeRow[]) {
@@ -69,7 +66,6 @@ function groupProgrammesByCode(programmes: ProgrammeRow[]) {
       programmeCode: string;
       programmeName: string | null;
       programmeLeader: string | null;
-      streams: string[];
     }
   >();
 
@@ -78,21 +74,13 @@ function groupProgrammesByCode(programmes: ProgrammeRow[]) {
 
     if (!code) continue;
 
-    const existing = map.get(code) ?? {
-      programmeCode: code,
-      programmeName: row.programme_name ?? null,
-      programmeLeader: row.programme_leader ?? null,
-      streams: [],
-    };
-
-    existing.streams.push(normalizeStream(row.programme_stream));
-    map.set(code, existing);
-  }
-
-  for (const entry of map.values()) {
-    entry.streams = Array.from(new Set(entry.streams)).sort((a, b) =>
-      a.localeCompare(b)
-    );
+    if (!map.has(code)) {
+      map.set(code, {
+        programmeCode: code,
+        programmeName: row.programme_name ?? null,
+        programmeLeader: row.programme_leader ?? null,
+      });
+    }
   }
 
   return map;
@@ -111,20 +99,145 @@ async function loadConfirmationRow(academicYear: string, programmeCode: string) 
   return data;
 }
 
-async function loadStreamQuotaRows(academicYear: string, programmeCode: string) {
+export async function getProgrammeStudentCountsByStudyMode(
+  academicYear: string,
+  programmeCode: string
+): Promise<ProgrammeStudentCounts> {
+  academicYear = canonicalAcademicYear(academicYear);
+  const code = normalizeProgrammeCode(programmeCode);
+
+  const programmeType = await getProgrammeTypeByCode(code);
+  if (isHDProgrammeType(programmeType)) {
+    return getHDProgrammeStudentCountsByStudyMode(academicYear, code);
+  }
+
+  const yearVariants = getAcademicYearVariants(academicYear);
+
   const { data, error } = await supabase
-    .from("programme_stream_quotas")
-    .select("programme_stream, stream_quota")
-    .eq("academic_year", academicYear)
-    .eq("programme_code", programmeCode)
-    .order("programme_stream");
+    .from("study_plan_students")
+    .select("study_mode, intake_year")
+    .eq("programme_code", code);
 
   if (error) throw error;
 
-  return (data ?? []).map((row) => ({
-    programmeStream: normalizeStream(row.programme_stream),
-    streamQuota: Number(row.stream_quota ?? 0),
-  }));
+  let ft = 0;
+  let pt = 0;
+
+  for (const row of data ?? []) {
+    const intakeYear = normalizeAcademicYear(String(row.intake_year ?? ""));
+
+    if (intakeYear && !yearVariants.includes(intakeYear)) {
+      continue;
+    }
+
+    if (normalizeStudyMode(row.study_mode) === "PT") {
+      pt += 1;
+    } else {
+      ft += 1;
+    }
+  }
+
+  return { ft, pt, total: ft + pt };
+}
+
+async function getHDProgrammeStudentCountsByStudyMode(
+  academicYear: string,
+  programmeCode: string
+): Promise<ProgrammeStudentCounts> {
+  const code = normalizeProgrammeCode(programmeCode);
+
+  const sepTerm = offeredTermToStudyTerm(academicYear, "Sep").toUpperCase();
+  const febTerm = offeredTermToStudyTerm(academicYear, "Feb").toUpperCase();
+  const juneTerm = offeredTermToStudyTerm(academicYear, "Jun").toUpperCase();
+
+  const allowedFirstTerms = new Set([sepTerm, febTerm, juneTerm]);
+
+  const { data: students, error: studentsError } = await supabase
+    .from("study_plan_students")
+    .select("id,study_mode")
+    .eq("programme_code", code);
+
+  if (studentsError) throw studentsError;
+
+  const studentIds = (students ?? [])
+    .map((s: any) => String(s?.id ?? "").trim())
+    .filter(Boolean);
+
+  const studentsById = new Map<
+    string,
+    {
+      studyMode: string | null;
+    }
+  >();
+
+  for (const s of students ?? []) {
+    const id = String(s?.id ?? "").trim();
+    if (!id) continue;
+    studentsById.set(id, { studyMode: s?.study_mode ?? null });
+  }
+
+  const chunkSize = 100;
+  let ft = 0;
+  let pt = 0;
+
+  for (let index = 0; index < studentIds.length; index += chunkSize) {
+    const profileChunk = studentIds.slice(index, index + chunkSize);
+
+    const { data: moduleRows, error: modulesError } = await supabase
+      .from("study_plan_modules")
+      .select("student_profile_id,plan_stage,status,study_term")
+      .in("student_profile_id", profileChunk);
+
+    if (modulesError) throw modulesError;
+
+    const earliestProgrammeTermByProfileId = new Map<string, string>();
+
+    for (const m of moduleRows ?? []) {
+      const planStage = String(m?.plan_stage ?? "").trim();
+      const status = String(m?.status ?? "").trim();
+
+      if (planStage !== "programme") continue;
+      if (status !== "planned") continue;
+
+      const profileId = String(m?.student_profile_id ?? "").trim();
+      if (!profileId) continue;
+
+      const studyTerm = String(m?.study_term ?? "").trim().toUpperCase();
+      if (!studyTerm) continue;
+
+      const existing = earliestProgrammeTermByProfileId.get(profileId);
+      if (!existing || compareStudyTerm(studyTerm, existing) < 0) {
+        earliestProgrammeTermByProfileId.set(profileId, studyTerm);
+      }
+    }
+
+    for (const profileId of profileChunk) {
+      const earliestTerm = earliestProgrammeTermByProfileId.get(profileId);
+      if (!earliestTerm) continue;
+      if (!allowedFirstTerms.has(earliestTerm)) continue;
+
+      const student = studentsById.get(profileId);
+      const mode = normalizeStudyMode(student?.studyMode);
+
+      if (mode === "PT") {
+        pt += 1;
+      } else {
+        ft += 1;
+      }
+    }
+  }
+
+  return { ft, pt, total: ft + pt };
+}
+
+function readFtPtQuota(confirmation: Record<string, unknown> | null) {
+  const ft = Number(confirmation?.ft_quota ?? confirmation?.programme_quota ?? 0);
+  const pt = Number(confirmation?.pt_quota ?? 0);
+
+  return {
+    ftQuota: Math.max(0, Math.floor(ft)),
+    ptQuota: Math.max(0, Math.floor(pt)),
+  };
 }
 
 export async function listQuotaProgrammesForUser(
@@ -134,29 +247,19 @@ export async function listQuotaProgrammesForUser(
   academicYear = canonicalAcademicYear(academicYear);
   const programmes = await listProgrammes();
   const grouped = groupProgrammesByCode(programmes);
-
   const codes = Array.from(grouped.keys());
 
   if (codes.length === 0) {
     return [];
   }
 
-  const [{ data: confirmations, error: confirmationError }, { data: streamRows, error: streamError }] =
-    await Promise.all([
-      supabase
-        .from("programme_quota_confirmations")
-        .select("*")
-        .eq("academic_year", academicYear)
-        .in("programme_code", codes),
-      supabase
-        .from("programme_stream_quotas")
-        .select("programme_code, programme_stream, stream_quota")
-        .eq("academic_year", academicYear)
-        .in("programme_code", codes),
-    ]);
+  const { data: confirmations, error } = await supabase
+    .from("programme_quota_confirmations")
+    .select("*")
+    .eq("academic_year", academicYear)
+    .in("programme_code", codes);
 
-  if (confirmationError) throw confirmationError;
-  if (streamError) throw streamError;
+  if (error) throw error;
 
   const confirmationByCode = new Map(
     (confirmations ?? []).map((row) => [
@@ -165,51 +268,35 @@ export async function listQuotaProgrammesForUser(
     ])
   );
 
-  const streamsByCode = new Map<string, ProgrammeQuotaStreamRow[]>();
+  const items: ProgrammeQuotaListItem[] = [];
 
-  for (const row of streamRows ?? []) {
-    const code = normalizeProgrammeCode(row.programme_code);
-    const existing = streamsByCode.get(code) ?? [];
+  for (const code of codes) {
+    const meta = grouped.get(code)!;
+    const confirmation = confirmationByCode.get(code);
+    const { ftQuota, ptQuota } = readFtPtQuota(confirmation);
+    const counts = await getProgrammeStudentCountsByStudyMode(academicYear, code);
 
-    existing.push({
-      programmeStream: normalizeStream(row.programme_stream),
-      streamQuota: Number(row.stream_quota ?? 0),
+    items.push({
+      programmeCode: code,
+      programmeName: meta.programmeName,
+      programmeLeader: meta.programmeLeader,
+      ftQuota,
+      ptQuota,
+      actualFt: counts.ft,
+      actualPt: counts.pt,
+      isOverFtQuota: ftQuota > 0 && counts.ft > ftQuota,
+      isOverPtQuota: ptQuota > 0 && counts.pt > ptQuota,
+      hasQuota: ftQuota > 0 || ptQuota > 0,
     });
-    streamsByCode.set(code, existing);
   }
 
-  return codes
-    .map((code) => {
-      const meta = grouped.get(code)!;
-      const confirmation = confirmationByCode.get(code);
-      const streams = streamsByCode.get(code) ?? [];
-      const streamQuotaTotal = sumStreamQuotas(streams);
-      const editableByProgrammeLeader = isQuotaEditableByProgrammeLeader(
-        academicYear,
-        confirmation?.admin_unlocked_until
-      );
-      const isConfirmed = Boolean(confirmation?.confirmed_at);
-
-      return {
-        programmeCode: code,
-        programmeName: meta.programmeName,
-        programmeLeader: meta.programmeLeader,
-        programmeQuota: Number(confirmation?.programme_quota ?? 0),
-        streamCount: meta.streams.length,
-        streamQuotaTotal,
-        confirmedAt: confirmation?.confirmed_at ?? null,
-        editableByProgrammeLeader,
-        isConfirmed,
-        needsReview: !isConfirmed,
-      };
-    })
-    .sort((a, b) => a.programmeCode.localeCompare(b.programmeCode));
+  return items.sort((a, b) => a.programmeCode.localeCompare(b.programmeCode));
 }
 
 export async function getProgrammeQuotaDetail(
   academicYear: string,
   programmeCode: string,
-  user: AppUser
+  _user: AppUser
 ): Promise<ProgrammeQuotaSummary> {
   academicYear = canonicalAcademicYear(academicYear);
   const code = normalizeProgrammeCode(programmeCode);
@@ -222,207 +309,67 @@ export async function getProgrammeQuotaDetail(
     throw new Error(`找不到課程「${code}」。請先在課程管理（programmes）中建立。`);
   }
 
-  const confirmation = await loadConfirmationRow(academicYear, code);
-  let streamRows = await loadStreamQuotaRows(academicYear, code);
+  let confirmation = await loadConfirmationRow(academicYear, code);
 
-  const expectedStreams = Array.from(
-    new Set(streamsForProgramme.map((row) => normalizeStream(row.programme_stream)))
-  ).sort((a, b) => a.localeCompare(b));
-
-  if (streamRows.length === 0 && expectedStreams.length > 0) {
-    const copied = await copyQuotaFromPreviousYear(academicYear, code, user);
+  if (!confirmation) {
+    const copied = await copyQuotaFromPreviousYear(academicYear, code, _user);
 
     if (copied) {
-      streamRows = copied.streams;
-    } else {
-      const programmeQuota = 0;
-      const even = expectedStreams.length
-        ? Math.floor(programmeQuota / expectedStreams.length)
-        : 0;
-
-      streamRows = expectedStreams.map((stream, index) => {
-        const remainder =
-          index === expectedStreams.length - 1
-            ? programmeQuota - even * (expectedStreams.length - 1)
-            : even;
-
-        return {
-          programmeStream: stream,
-          streamQuota: remainder,
-        };
-      });
+      confirmation = await loadConfirmationRow(academicYear, code);
     }
-  } else {
-    const existingStreams = new Set(streamRows.map((row) => row.programmeStream));
-
-    for (const stream of expectedStreams) {
-      if (!existingStreams.has(stream)) {
-        streamRows.push({ programmeStream: stream, streamQuota: 0 });
-      }
-    }
-
-    streamRows.sort((a, b) => a.programmeStream.localeCompare(b.programmeStream));
   }
 
-  const programmeQuota = Number(confirmation?.programme_quota ?? 0);
-  const editableByProgrammeLeader = isQuotaEditableByProgrammeLeader(
-    academicYear,
-    confirmation?.admin_unlocked_until
-  );
+  const { ftQuota, ptQuota } = readFtPtQuota(confirmation);
+  const counts = await getProgrammeStudentCountsByStudyMode(academicYear, code);
 
   return {
     academicYear,
     programmeCode: code,
     programmeName: streamsForProgramme[0]?.programme_name ?? null,
     programmeLeader: streamsForProgramme[0]?.programme_leader ?? null,
-    programmeQuota,
-    streams: streamRows,
-    streamQuotaTotal: sumStreamQuotas(streamRows),
-    confirmedAt: confirmation?.confirmed_at ?? null,
-    confirmedBy: confirmation?.confirmed_by ?? null,
-    adminUnlockedUntil: confirmation?.admin_unlocked_until ?? null,
-    editableByProgrammeLeader,
-    isConfirmed: Boolean(confirmation?.confirmed_at),
+    ftQuota,
+    ptQuota,
+    actualFt: counts.ft,
+    actualPt: counts.pt,
+    isOverFtQuota: ftQuota > 0 && counts.ft > ftQuota,
+    isOverPtQuota: ptQuota > 0 && counts.pt > ptQuota,
+    savedAt: confirmation?.updated_at ?? confirmation?.confirmed_at ?? null,
+    savedBy: confirmation?.confirmed_by ?? null,
   };
 }
 
-export async function saveProgrammeQuotaDraft(params: {
+export async function saveProgrammeQuota(params: {
   academicYear: string;
   programmeCode: string;
-  programmeQuota: number;
-  streams: ProgrammeQuotaStreamRow[];
+  ftQuota: number;
+  ptQuota: number;
   user: AppUser;
 }) {
   params = { ...params, academicYear: canonicalAcademicYear(params.academicYear) };
-  const detail = await getProgrammeQuotaDetail(
-    params.academicYear,
-    params.programmeCode,
-    params.user
-  );
-
-  if (
-    params.user.role === "programme_leader" &&
-    !detail.editableByProgrammeLeader
-  ) {
-    throw new Error("此學年 Quota 已鎖定，請聯絡 Admin 解鎖。");
-  }
-
-  const programmeQuota = Math.max(0, Math.floor(params.programmeQuota));
-  const streams = params.streams.map((row) => ({
-    programmeStream: normalizeStream(row.programmeStream),
-    streamQuota: Math.max(0, Math.floor(row.streamQuota)),
-  }));
-
-  const streamTotal = sumStreamQuotas(streams);
-
-  if (streamTotal !== programmeQuota) {
-    throw new Error(
-      `Stream 總和（${streamTotal}）必須等於 Programme Quota（${programmeQuota}）。`
-    );
-  }
-
+  const code = normalizeProgrammeCode(params.programmeCode);
+  const ftQuota = Math.max(0, Math.floor(params.ftQuota));
+  const ptQuota = Math.max(0, Math.floor(params.ptQuota));
   const now = new Date().toISOString();
+  const legacyTotal = ftQuota + ptQuota;
 
-  const { error: confirmationError } = await supabase
-    .from("programme_quota_confirmations")
-    .upsert(
-      {
-        academic_year: params.academicYear,
-        programme_code: detail.programmeCode,
-        programme_quota: programmeQuota,
-        confirmed_at: null,
-        confirmed_by: null,
-        updated_at: now,
-      },
-      { onConflict: "academic_year,programme_code" }
-    );
-
-  if (confirmationError) throw confirmationError;
-
-  const streamPayload = streams.map((row) => ({
-    academic_year: params.academicYear,
-    programme_code: detail.programmeCode,
-    programme_stream: row.programmeStream,
-    programme_quota: programmeQuota,
-    stream_quota: row.streamQuota,
-    updated_at: now,
-  }));
-
-  if (streamPayload.length > 0) {
-    const { error: streamError } = await supabase
-      .from("programme_stream_quotas")
-      .upsert(streamPayload, {
-        onConflict: "academic_year,programme_code,programme_stream",
-      });
-
-    if (streamError) throw streamError;
-  }
-}
-
-export async function confirmProgrammeQuota(params: {
-  academicYear: string;
-  programmeCode: string;
-  programmeQuota: number;
-  streams: ProgrammeQuotaStreamRow[];
-  user: AppUser;
-}) {
-  params = { ...params, academicYear: canonicalAcademicYear(params.academicYear) };
-  await saveProgrammeQuotaDraft({
-    academicYear: params.academicYear,
-    programmeCode: params.programmeCode,
-    programmeQuota: params.programmeQuota,
-    streams: params.streams,
-    user: params.user,
-  });
-
-  const programmeQuota = Math.max(0, Math.floor(params.programmeQuota));
-  const streams = params.streams.map((row) => ({
-    programmeStream: normalizeStream(row.programmeStream),
-    streamQuota: Math.max(0, Math.floor(row.streamQuota)),
-  }));
-
-  const detail = await getProgrammeQuotaDetail(
-    params.academicYear,
-    params.programmeCode,
-    params.user
+  const { error } = await supabase.from("programme_quota_confirmations").upsert(
+    {
+      academic_year: params.academicYear,
+      programme_code: code,
+      programme_quota: legacyTotal,
+      ft_quota: ftQuota,
+      pt_quota: ptQuota,
+      confirmed_at: now,
+      confirmed_by: params.user.username,
+      updated_at: now,
+    },
+    { onConflict: "academic_year,programme_code" }
   );
-
-  if (
-    params.user.role === "programme_leader" &&
-    !detail.editableByProgrammeLeader
-  ) {
-    throw new Error("此學年 Quota 已鎖定，請聯絡 Admin 解鎖。");
-  }
-
-  const now = new Date().toISOString();
-
-  const { error } = await supabase
-    .from("programme_quota_confirmations")
-    .upsert(
-      {
-        academic_year: params.academicYear,
-        programme_code: detail.programmeCode,
-        programme_quota: programmeQuota,
-        confirmed_at: now,
-        confirmed_by: params.user.username,
-        admin_unlocked_until: null,
-        admin_unlocked_by: null,
-        updated_at: now,
-      },
-      { onConflict: "academic_year,programme_code" }
-    );
 
   if (error) throw error;
-
-  await generateModuleExpectedFromQuota({
-    academicYear: params.academicYear,
-    programmeCode: detail.programmeCode,
-    streams,
-    programmeQuota,
-    createdBy: params.user.id,
-  });
 }
 
+/** @deprecated Timetable no longer requires quota confirmation. */
 export async function isProgrammeQuotaConfirmed(
   academicYear: string,
   programmeCode: string
@@ -433,64 +380,36 @@ export async function isProgrammeQuotaConfirmed(
     normalizeProgrammeCode(programmeCode)
   );
 
-  return Boolean(row?.confirmed_at);
+  const { ftQuota, ptQuota } = readFtPtQuota(row);
+
+  return ftQuota > 0 || ptQuota > 0;
 }
 
 export async function copyQuotaFromPreviousYear(
   academicYear: string,
   programmeCode: string,
   user: AppUser
-): Promise<ProgrammeQuotaSummary | null> {
+): Promise<boolean> {
   academicYear = canonicalAcademicYear(academicYear);
   const code = normalizeProgrammeCode(programmeCode);
   const previousYear = getPreviousAcademicYear(academicYear);
-
   const previousConfirmation = await loadConfirmationRow(previousYear, code);
 
   if (!previousConfirmation) {
-    return null;
+    return false;
   }
 
-  const previousStreams = await loadStreamQuotaRows(previousYear, code);
-  const now = new Date().toISOString();
+  const { ftQuota, ptQuota } = readFtPtQuota(previousConfirmation);
 
-  const { error: confirmationError } = await supabase
-    .from("programme_quota_confirmations")
-    .upsert(
-      {
-        academic_year: academicYear,
-        programme_code: code,
-        programme_quota: Number(previousConfirmation.programme_quota ?? 0),
-        confirmed_at: null,
-        confirmed_by: null,
-        admin_unlocked_until: null,
-        admin_unlocked_by: null,
-        updated_at: now,
-      },
-      { onConflict: "academic_year,programme_code" }
-    );
+  await saveProgrammeQuota({
+    academicYear,
+    programmeCode: code,
+    ftQuota,
+    ptQuota,
+    user,
+  });
 
-  if (confirmationError) throw confirmationError;
-
-  if (previousStreams.length > 0) {
-    const { error: streamError } = await supabase
-      .from("programme_stream_quotas")
-      .upsert(
-        previousStreams.map((row) => ({
-          academic_year: academicYear,
-          programme_code: code,
-          programme_stream: row.programmeStream,
-          programme_quota: Number(previousConfirmation.programme_quota ?? 0),
-          stream_quota: row.streamQuota,
-          updated_at: now,
-        })),
-        { onConflict: "academic_year,programme_code,programme_stream" }
-      );
-
-    if (streamError) throw streamError;
-  }
-
-  return getProgrammeQuotaDetail(academicYear, code, user);
+  return true;
 }
 
 export async function ensureQuotaCopiedForAcademicYear(
@@ -499,136 +418,68 @@ export async function ensureQuotaCopiedForAcademicYear(
 ) {
   academicYear = canonicalAcademicYear(academicYear);
   const programmes = await listQuotaProgrammesForUser(user, academicYear);
-  const needsCopy = programmes.filter(
-    (row) => !row.isConfirmed && row.programmeQuota === 0 && row.streamQuotaTotal === 0
-  );
 
-  for (const row of needsCopy) {
-    await copyQuotaFromPreviousYear(academicYear, row.programmeCode, user);
+  for (const row of programmes) {
+    if (!row.hasQuota) {
+      await copyQuotaFromPreviousYear(academicYear, row.programmeCode, user);
+    }
   }
 }
 
-export async function adminUnlockProgrammeQuota(params: {
+export function getQuotaStatusMessage(academicYear: string) {
+  return `學年 ${canonicalAcademicYear(academicYear)}：設定 FT / PT 收生人數上限，並與 Study Plan 實際人數比對（僅供參考，不影響製作時間表）。`;
+}
+
+// --- Legacy exports (stream quota removed; kept for gradual cleanup) ---
+
+export interface ProgrammeQuotaStreamRow {
+  programmeStream: string;
+  streamQuota: number;
+}
+
+export async function saveProgrammeQuotaDraft(params: {
+  academicYear: string;
+  programmeCode: string;
+  programmeQuota: number;
+  streams: ProgrammeQuotaStreamRow[];
+  user: AppUser;
+}) {
+  await saveProgrammeQuota({
+    academicYear: params.academicYear,
+    programmeCode: params.programmeCode,
+    ftQuota: params.programmeQuota,
+    ptQuota: 0,
+    user: params.user,
+  });
+}
+
+export async function confirmProgrammeQuota(params: {
+  academicYear: string;
+  programmeCode: string;
+  programmeQuota: number;
+  streams: ProgrammeQuotaStreamRow[];
+  user: AppUser;
+}) {
+  const ft = Math.max(0, Math.floor(params.programmeQuota));
+  const pt = params.streams.reduce(
+    (sum, row) => sum + Math.max(0, Math.floor(row.streamQuota)),
+    0
+  );
+
+  await saveProgrammeQuota({
+    academicYear: params.academicYear,
+    programmeCode: params.programmeCode,
+    ftQuota: ft,
+    ptQuota: pt > 0 ? pt : 0,
+    user: params.user,
+  });
+}
+
+export async function adminUnlockProgrammeQuota(_params: {
   academicYear: string;
   programmeCode: string;
   unlockUntil: string;
   adminUser: AppUser;
 }) {
-  params = { ...params, academicYear: canonicalAcademicYear(params.academicYear) };
-  if (params.adminUser.role !== "admin") {
-    throw new Error("只有 Admin 可以解鎖 Quota。");
-  }
-
-  const code = normalizeProgrammeCode(params.programmeCode);
-  const existing = await loadConfirmationRow(params.academicYear, code);
-
-  if (!existing) {
-    throw new Error("找不到該學年的 Quota 記錄。");
-  }
-
-  const { error } = await supabase
-    .from("programme_quota_confirmations")
-    .update({
-      admin_unlocked_until: params.unlockUntil,
-      admin_unlocked_by: params.adminUser.username,
-      confirmed_at: null,
-      confirmed_by: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("academic_year", params.academicYear)
-    .eq("programme_code", code);
-
-  if (error) throw error;
-}
-
-async function generateModuleExpectedFromQuota(params: {
-  academicYear: string;
-  programmeCode: string;
-  programmeQuota: number;
-  streams: ProgrammeQuotaStreamRow[];
-  createdBy: string;
-}) {
-  await ensureTimetablePlanningModules({
-    academicYear: params.academicYear,
-    programmeCode: params.programmeCode,
-    createdBy: params.createdBy,
-  });
-
-  const streamQuotaByKey = new Map(
-    params.streams.map((row) => [row.programmeStream, row.streamQuota])
-  );
-
-  const { data: modules, error: moduleError } = await supabase
-    .from("modules")
-    .select("module_code, module_name, module_term, programme_code, stream_code")
-    .eq("programme_code", params.programmeCode)
-    .order("module_code");
-
-  if (moduleError) throw moduleError;
-
-  const existingRows = await listStudentNumbers(params.academicYear);
-  const existingByKey = new Map(
-    existingRows
-      .filter((row) => row.programme_code === params.programmeCode)
-      .map((row) => [
-        [
-          row.module_code,
-          normalizeStream(row.programme_stream),
-          row.study_term,
-        ].join("|"),
-        row,
-      ])
-  );
-
-  const inputRows: StudentNumberInputRow[] = [];
-
-  for (const module of modules ?? []) {
-    const programmeStream = normalizeStream(module.stream_code);
-    const studyTerm = offeredTermToStudyTerm(
-      params.academicYear,
-      String(module.module_term ?? "")
-    );
-
-    if (!studyTerm) {
-      continue;
-    }
-
-    const expected =
-      streamQuotaByKey.get(programmeStream) ??
-      (programmeStream === "nil" ? params.programmeQuota : 0);
-
-    const key = [
-      module.module_code,
-      programmeStream,
-      studyTerm,
-    ].join("|");
-
-    const existing = existingByKey.get(key);
-
-    inputRows.push({
-      academic_year: params.academicYear,
-      module_code: module.module_code,
-      module_name: module.module_name ?? null,
-      module_term: module.module_term ?? null,
-      programme_code: params.programmeCode,
-      programme_stream: programmeStream,
-      study_term: studyTerm,
-      streams_included: [programmeStream],
-      expected_student_number: expected,
-      actual_student_number: existing?.actual_student_number ?? 0,
-    });
-  }
-
-  if (inputRows.length > 0) {
-    await bulkUpsertStudentNumbers({
-      rows: inputRows,
-      createdBy: params.createdBy,
-    });
-  }
-}
-
-export function getQuotaStatusMessage(academicYear: string) {
-  const startYear = academicYearToStartYear(academicYear);
-
-  return `學年 ${academicYear} 的 Quota 須在 ${startYear} 年 6 月 30 日或之前確認；${startYear} 年 7 月 1 日起鎖定（Admin 可解鎖）。`;
+  // Quota locking removed; no-op for compatibility.
 }

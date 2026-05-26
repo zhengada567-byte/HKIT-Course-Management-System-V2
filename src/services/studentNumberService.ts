@@ -12,6 +12,33 @@ import type {
 } from "../types";
 import type { ModuleEnrollmentRow } from "./moduleEnrollmentService";
 
+/**
+ * Option B: keep PL-edited expected; otherwise default expected to actual on sync/load.
+ */
+export function resolveExpectedStudentNumberOnSync(params: {
+  existingExpected: number | null | undefined;
+  existingActual: number | null | undefined;
+  newActual: number;
+}) {
+  const expected = params.existingExpected;
+
+  if (expected === null || expected === undefined) {
+    return params.newActual;
+  }
+
+  if (expected === 0) {
+    return params.newActual;
+  }
+
+  const previousActual = Number(params.existingActual ?? 0);
+
+  if (expected === previousActual) {
+    return params.newActual;
+  }
+
+  return expected;
+}
+
 export interface StudentNumberInputRow {
   academic_year: string;
   module_code: string;
@@ -194,10 +221,18 @@ export function buildStudentNumberInputRows(
         programme_stream: timetableStream,
         study_term: studyTerm,
         streams_included: [],
-        expected_student_number:
-          existing?.expected_student_number ??
-          enrollment?.expected_student_number ??
-          null,
+        expected_student_number: resolveExpectedStudentNumberOnSync({
+          existingExpected:
+            existing?.expected_student_number ??
+            enrollment?.expected_student_number,
+          existingActual:
+            existing?.actual_student_number ??
+            enrollment?.actual_student_number,
+          newActual:
+            existing?.actual_student_number ??
+            enrollment?.actual_student_number ??
+            0,
+        }),
         actual_student_number:
           existing?.actual_student_number ??
           enrollment?.actual_student_number ??
