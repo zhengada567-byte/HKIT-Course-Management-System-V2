@@ -73,45 +73,51 @@ function normalizeStream(value?: string | null): string {
   return cleanStream(value || "nil") || "nil";
 }
 
-const STUDY_PLAN_RECALC_DEBUG_KEY = "debugStudyPlanRecalculate";
-const STUDY_PLAN_RECALC_FILTER_KEY = "debugStudyPlanRecalculateFilter";
-
-/** Enable in browser console: localStorage.setItem('debugStudyPlanRecalculate', '1') */
-function isStudyPlanRecalculateDebugEnabled() {
-  try {
-    if (localStorage.getItem(STUDY_PLAN_RECALC_DEBUG_KEY) === "1") {
-      return true;
-    }
-  } catch {
-    // ignore (SSR / privacy mode)
-  }
-
-  return import.meta.env.DEV;
-}
-
-function getStudyPlanRecalculateDebugFilter(): string {
-  try {
-    return String(localStorage.getItem(STUDY_PLAN_RECALC_FILTER_KEY) ?? "").trim();
-  } catch {
-    return "";
-  }
-}
-
-function logStudyPlanRecalculate(
-  message: string,
-  payload?: Record<string, unknown>
-) {
-  if (!isStudyPlanRecalculateDebugEnabled()) {
-    return;
-  }
-
-  if (payload) {
-    console.info(`[recalculateActualStudentNumbers] ${message}`, payload);
-    return;
-  }
-
-  console.info(`[recalculateActualStudentNumbers] ${message}`);
-}
+/*
+ * Recalculate debug logging (academic_year / study_term totals in console).
+ * Re-enable: uncomment block below and the `if (debug) { ... }` in recalculateActualStudentNumbers.
+ *
+ * localStorage.setItem('debugStudyPlanRecalculate', '1')
+ * localStorage.setItem('debugStudyPlanRecalculateFilter', 'HDC|CS401|T2026C')
+ */
+// const STUDY_PLAN_RECALC_DEBUG_KEY = "debugStudyPlanRecalculate";
+// const STUDY_PLAN_RECALC_FILTER_KEY = "debugStudyPlanRecalculateFilter";
+//
+// function isStudyPlanRecalculateDebugEnabled() {
+//   try {
+//     if (localStorage.getItem(STUDY_PLAN_RECALC_DEBUG_KEY) === "1") {
+//       return true;
+//     }
+//   } catch {
+//     // ignore (SSR / privacy mode)
+//   }
+//
+//   return import.meta.env.DEV;
+// }
+//
+// function getStudyPlanRecalculateDebugFilter(): string {
+//   try {
+//     return String(localStorage.getItem(STUDY_PLAN_RECALC_FILTER_KEY) ?? "").trim();
+//   } catch {
+//     return "";
+//   }
+// }
+//
+// function logStudyPlanRecalculate(
+//   message: string,
+//   payload?: Record<string, unknown>
+// ) {
+//   if (!isStudyPlanRecalculateDebugEnabled()) {
+//     return;
+//   }
+//
+//   if (payload) {
+//     console.info(`[recalculateActualStudentNumbers] ${message}`, payload);
+//     return;
+//   }
+//
+//   console.info(`[recalculateActualStudentNumbers] ${message}`);
+// }
 
 const RECALCULATE_UPSERT_BATCH_SIZE = 500;
 
@@ -231,25 +237,25 @@ async function deleteStudyPlanActualOrphanRows(
   });
 }
 
-export function setStudyPlanRecalculateDebug(enabled: boolean) {
-  try {
-    if (enabled) {
-      localStorage.setItem(STUDY_PLAN_RECALC_DEBUG_KEY, "1");
-      console.info(
-        "[recalculateActualStudentNumbers] Debug logging ON. Optional filter: localStorage.setItem('debugStudyPlanRecalculateFilter', 'HDC|CS401|T2026C')"
-      );
-      return;
-    }
-
-    localStorage.removeItem(STUDY_PLAN_RECALC_DEBUG_KEY);
-    console.info("[recalculateActualStudentNumbers] Debug logging OFF");
-  } catch (error) {
-    console.warn(
-      "[recalculateActualStudentNumbers] Could not set debug flag:",
-      error
-    );
-  }
-}
+// export function setStudyPlanRecalculateDebug(enabled: boolean) {
+//   try {
+//     if (enabled) {
+//       localStorage.setItem(STUDY_PLAN_RECALC_DEBUG_KEY, "1");
+//       console.info(
+//         "[recalculateActualStudentNumbers] Debug logging ON. Optional filter: localStorage.setItem('debugStudyPlanRecalculateFilter', 'HDC|CS401|T2026C')"
+//       );
+//       return;
+//     }
+//
+//     localStorage.removeItem(STUDY_PLAN_RECALC_DEBUG_KEY);
+//     console.info("[recalculateActualStudentNumbers] Debug logging OFF");
+//   } catch (error) {
+//     console.warn(
+//       "[recalculateActualStudentNumbers] Could not set debug flag:",
+//       error
+//     );
+//   }
+// }
 
 /**
  * Normalize text for identity key.
@@ -2389,12 +2395,6 @@ export async function recalculateAllStudentStatuses(
 }
 
 export async function recalculateActualStudentNumbers() {
-  const startedAt = performance.now();
-  const debug = isStudyPlanRecalculateDebugEnabled();
-  const filterText = getStudyPlanRecalculateDebugFilter();
-
-  logStudyPlanRecalculate("start", { filter: filterText || "(none)" });
-
   try {
     const [moduleRows, studentRows] = await Promise.all([
       fetchAllPaginatedRows<{
@@ -2428,18 +2428,6 @@ export async function recalculateActualStudentNumbers() {
             .range(from, to),
       }),
     ]);
-
-    if (moduleRows.length >= SUPABASE_DEFAULT_PAGE_SIZE) {
-      logStudyPlanRecalculate("loaded all planned modules (paged)", {
-        plannedModuleRows: moduleRows.length,
-        pageSize: SUPABASE_DEFAULT_PAGE_SIZE,
-      });
-    } else {
-      logStudyPlanRecalculate("loaded source rows", {
-        plannedModuleRows: moduleRows.length,
-        studentProfiles: studentRows.length,
-      });
-    }
 
     const studyModeByProfileId = new Map<string, string>();
 
@@ -2489,80 +2477,7 @@ export async function recalculateActualStudentNumbers() {
 
     const rows = Array.from(counts.values()) as StudyPlanActualAggregateRow[];
 
-    if (debug) {
-      const filterParts = filterText
-        ? filterText.split("|").map((part) => part.trim().toLowerCase())
-        : [];
-
-      const summaryRows = rows
-        .filter((row) => {
-          if (filterParts.length === 0) {
-            return true;
-          }
-
-          const haystack = [
-            row.academic_year,
-            row.study_term,
-            row.programme_code,
-            row.module_code,
-            row.programme_stream,
-          ]
-            .join("|")
-            .toLowerCase();
-
-          return filterParts.every((part) => haystack.includes(part));
-        })
-        .map((row) => ({
-          academic_year: row.academic_year,
-          study_term: row.study_term,
-          programme_code: row.programme_code,
-          programme_stream: row.programme_stream,
-          module_code: row.module_code,
-          study_mode: row.study_mode,
-          actual_student_number: row.actual_student_number,
-        }))
-        .sort((a, b) => {
-          const yearDiff = String(a.academic_year).localeCompare(
-            String(b.academic_year)
-          );
-
-          if (yearDiff !== 0) return yearDiff;
-
-          return String(a.study_term).localeCompare(String(b.study_term));
-        });
-
-      console.info(
-        `[recalculateActualStudentNumbers] aggregated ${rows.length} row(s) to upsert`
-      );
-
-      if (summaryRows.length > 0) {
-        console.table(summaryRows);
-      } else if (filterText) {
-        console.warn(
-          `[recalculateActualStudentNumbers] filter "${filterText}" matched 0 aggregated rows`
-        );
-      }
-
-      const byYearTerm = new Map<string, number>();
-
-      for (const row of rows) {
-        const bucket = `${row.academic_year} · ${row.study_term}`;
-        byYearTerm.set(
-          bucket,
-          (byYearTerm.get(bucket) ?? 0) + Number(row.actual_student_number ?? 0)
-        );
-      }
-
-      console.info(
-        "[recalculateActualStudentNumbers] totals by academic_year · study_term:"
-      );
-
-      for (const [label, total] of [...byYearTerm.entries()].sort((a, b) =>
-        a[0].localeCompare(b[0])
-      )) {
-        console.info(`  ${label} → ${total}`);
-      }
-    }
+    // if (debug) { ... console.table / academic_year · study_term totals ... }
 
     if (rows.length > 0) {
       for (
@@ -2581,14 +2496,7 @@ export async function recalculateActualStudentNumbers() {
       }
     }
 
-    const deletedOrphanRows = await deleteStudyPlanActualOrphanRows(rows);
-
-    logStudyPlanRecalculate("success", {
-      upsertedRows: rows.length,
-      upsertBatches: Math.ceil(rows.length / RECALCULATE_UPSERT_BATCH_SIZE),
-      deletedOrphanRows,
-      durationMs: Math.round(performance.now() - startedAt),
-    });
+    await deleteStudyPlanActualOrphanRows(rows);
   } catch (error) {
     console.error("[recalculateActualStudentNumbers] failed:", error);
     throw error;
