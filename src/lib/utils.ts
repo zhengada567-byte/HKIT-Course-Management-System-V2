@@ -17,7 +17,55 @@ export function academicYearToStartYear(academicYear: string) {
 
 export function getPreviousAcademicYear(academicYear: string) {
   const startYear = academicYearToStartYear(academicYear);
-  return `${startYear - 1}/${startYear}`;
+  return formatAcademicYear(startYear - 1);
+}
+
+export function getNextAcademicYear(academicYear: string) {
+  const startYear = academicYearToStartYear(academicYear);
+
+  if (!Number.isFinite(startYear)) {
+    return academicYear;
+  }
+
+  return formatAcademicYear(startYear + 1);
+}
+
+/** Quota for academic year Y/(Y+1) locks at 00:00 on 1 July of calendar year Y. */
+export function getQuotaLockStartDate(academicYear: string): Date {
+  const startYear = academicYearToStartYear(academicYear);
+  return new Date(startYear, 6, 1, 0, 0, 0, 0);
+}
+
+export function getQuotaEditDeadlineLabel(academicYear: string): string {
+  const startYear = academicYearToStartYear(academicYear);
+
+  if (!Number.isFinite(startYear)) {
+    return "";
+  }
+
+  return `${startYear}年6月30日`;
+}
+
+export function isQuotaEditableByProgrammeLeader(
+  academicYear: string,
+  adminUnlockedUntil?: string | null
+): boolean {
+  if (adminUnlockedUntil) {
+    const unlockEnd = new Date(adminUnlockedUntil);
+
+    if (!Number.isNaN(unlockEnd.getTime()) && unlockEnd.getTime() > Date.now()) {
+      return true;
+    }
+  }
+
+  return Date.now() < getQuotaLockStartDate(academicYear).getTime();
+}
+
+/** Default quota planning year while operating in the current academic year. */
+export function getDefaultQuotaPlanningAcademicYear(
+  currentAcademicYear: string
+): string {
+  return getNextAcademicYear(currentAcademicYear);
 }
 
 /** Alternate academic-year labels used across study plan vs timetable. */

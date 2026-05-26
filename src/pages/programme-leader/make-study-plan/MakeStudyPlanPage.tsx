@@ -12,9 +12,10 @@ import StudentListTab from "./components/StudentListTab";
 import StudentProfileEditor from "./components/StudentProfileEditor";
 import StudyPlanSearchTab from "./components/StudyPlanSearchTab";
 import ReportsTab from "./components/ReportsTab";
+import QuotaTab from "./components/QuotaTab";
 import { InitialStudyPlanUpload } from "./components/InitialStudyPlanUpload";
 
-type TabKey = "students" | "search" | "upload" | "editor" | "reports";
+type TabKey = "students" | "search" | "quota" | "upload" | "editor" | "reports";
 type EditorOrigin = "list" | "search" | "new";
 
 export default function MakeStudyPlanPage() {
@@ -188,6 +189,18 @@ export default function MakeStudyPlanPage() {
         <button
           type="button"
           className={`px-4 py-2 rounded-md text-sm ${
+            activeTab === "quota"
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted"
+          }`}
+          onClick={() => goToTab("quota")}
+        >
+          学年 Quota
+        </button>
+
+        <button
+          type="button"
+          className={`px-4 py-2 rounded-md text-sm ${
             activeTab === "upload"
               ? "bg-primary text-primary-foreground"
               : "bg-muted"
@@ -230,6 +243,10 @@ export default function MakeStudyPlanPage() {
           onNew={handleNewStudent}
           onEdit={handleEditStudent}
         />
+      </div>
+
+      <div className={activeTab === "quota" ? "block" : "hidden"}>
+        <QuotaTab />
       </div>
 
       <div className={activeTab === "search" ? "block" : "hidden"}>

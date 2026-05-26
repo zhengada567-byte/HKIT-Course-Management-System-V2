@@ -88,6 +88,26 @@ create table if not exists public.programme_stream_quotas (
     )
 );
 
+create table if not exists public.programme_quota_confirmations (
+  id uuid primary key default gen_random_uuid(),
+
+  academic_year text not null,
+  programme_code text not null,
+  programme_quota integer not null default 0 check (programme_quota >= 0),
+
+  confirmed_at timestamptz,
+  confirmed_by text,
+
+  admin_unlocked_until timestamptz,
+  admin_unlocked_by text,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint programme_quota_confirmations_unique
+    unique (academic_year, programme_code)
+);
+
 create table if not exists public.degree_hd_affiliations (
   id uuid primary key default gen_random_uuid(),
 
@@ -155,6 +175,7 @@ do nothing;
 alter table public.study_plan_students enable row level security;
 alter table public.study_plan_modules enable row level security;
 alter table public.programme_stream_quotas enable row level security;
+alter table public.programme_quota_confirmations enable row level security;
 alter table public.degree_hd_affiliations enable row level security;
 alter table public.study_plan_settings enable row level security;
 alter table public.study_plan_actual_student_numbers enable row level security;
@@ -164,6 +185,9 @@ grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.study_plan_students to authenticated;
 grant select, insert, update, delete on public.study_plan_modules to authenticated;
 grant select, insert, update, delete on public.programme_stream_quotas to authenticated;
+grant select, insert, update, delete on public.programme_stream_quotas to anon;
+grant select, insert, update, delete on public.programme_quota_confirmations to authenticated;
+grant select, insert, update, delete on public.programme_quota_confirmations to anon;
 grant select, insert, update, delete on public.degree_hd_affiliations to authenticated;
 grant select, insert, update, delete on public.study_plan_settings to authenticated;
 grant select, insert, update, delete on public.study_plan_actual_student_numbers to authenticated;
@@ -189,6 +213,30 @@ create policy "Authenticated full access programme_stream_quotas"
 on public.programme_stream_quotas
 for all
 to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "Allow anon all programme_stream_quotas" on public.programme_stream_quotas;
+create policy "Allow anon all programme_stream_quotas"
+on public.programme_stream_quotas
+for all
+to anon
+using (true)
+with check (true);
+
+drop policy if exists "Authenticated full access programme_quota_confirmations" on public.programme_quota_confirmations;
+create policy "Authenticated full access programme_quota_confirmations"
+on public.programme_quota_confirmations
+for all
+to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "Allow anon all programme_quota_confirmations" on public.programme_quota_confirmations;
+create policy "Allow anon all programme_quota_confirmations"
+on public.programme_quota_confirmations
+for all
+to anon
 using (true)
 with check (true);
 
