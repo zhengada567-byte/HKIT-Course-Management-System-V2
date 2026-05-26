@@ -15,7 +15,7 @@ create table if not exists public.study_plan_students (
   programme_stream text not null default '',
 
   student_status text not null default 'potential'
-    check (student_status in ('potential', 'in_progress', 'graduated')),
+    check (student_status in ('potential', 'bridging', 'in_progress', 'graduated')),
 
   intake_term text,
   graduate_term text,

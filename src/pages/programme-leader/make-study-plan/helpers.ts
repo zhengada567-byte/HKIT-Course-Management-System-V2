@@ -236,10 +236,59 @@ export function getLatestStudyTerm(
   return terms[terms.length - 1];
 }
 
-export function calculateStudentStatus(
+export function getLatestBridgingStudyTerm(
+  modules: StudyPlanModule[]
+): string | undefined {
+  const terms = modules
+    .filter((m) => m.planStage === "bridging")
+    .filter((m) => m.status === "planned")
+    .filter((m) => !!m.studyTerm)
+    .map((m) => m.studyTerm as string)
+    .sort(compareStudyTerm);
+
+  return terms[terms.length - 1];
+}
+
+function normalizeStudyTermKey(term: string): string {
+  return String(term ?? "").trim().toUpperCase();
+}
+
+/**
+ * Degree students studying planned bridging modules in the given study term.
+ * Exempted / failed bridging modules are ignored.
+ */
+export function isStudyingBridgingInCurrentTerm(
   modules: StudyPlanModule[],
   currentTerm: string
+): boolean {
+  const normalizedCurrent = normalizeStudyTermKey(currentTerm);
+
+  if (!normalizedCurrent) {
+    return false;
+  }
+
+  return modules.some((module) => {
+    if (module.planStage !== "bridging" || module.status !== "planned") {
+      return false;
+    }
+
+    return normalizeStudyTermKey(String(module.studyTerm ?? "")) === normalizedCurrent;
+  });
+}
+
+export function calculateStudentStatus(
+  modules: StudyPlanModule[],
+  currentTerm: string,
+  programmeType?: string | null
 ): StudentStatus {
+  if (isDegreeProgrammeType(programmeType)) {
+    const bridgingTerm = inferCurrentStudyTermFromDate();
+
+    if (isStudyingBridgingInCurrentTerm(modules, bridgingTerm)) {
+      return "bridging";
+    }
+  }
+
   const plannedTerms = modules
     .filter((m) => m.planStage === "programme")
     .filter((m) => m.status === "planned")

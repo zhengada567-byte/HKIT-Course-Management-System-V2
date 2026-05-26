@@ -13,6 +13,7 @@ import {
   getDefaultIntakeLevel,
   getEarliestStudyTerm,
   getLatestStudyTerm,
+  getLatestBridgingStudyTerm,
   getTermIndex,
   intakeTermToIntakeYear,
   isDegreeProgramme,
@@ -1219,7 +1220,7 @@ function chunkValues<T>(values: T[], size: number): T[][] {
   return chunks;
 }
 
-function escapeGraduateSearchCsvCell(value: unknown): string {
+function escapeStudyPlanSearchCsvCell(value: unknown): string {
   const text = String(value ?? "");
 
   if (/[",\n\r]/.test(text)) {
@@ -1234,7 +1235,7 @@ function graduatingStudentsToCsv(
   rows: string[][]
 ): string {
   return [headers, ...rows]
-    .map((row) => row.map(escapeGraduateSearchCsvCell).join(","))
+    .map((row) => row.map(escapeStudyPlanSearchCsvCell).join(","))
     .join("\n");
 }
 
@@ -1257,29 +1258,7 @@ export async function searchGraduatingStudents(
     return [];
   }
 
-  const modulesByProfile = new Map<string, StudyPlanModule[]>();
-
-  for (const profileChunk of chunkValues(profileIds, 100)) {
-    const { data, error } = await supabase
-      .from("study_plan_modules")
-      .select("*")
-      .in("student_profile_id", profileChunk);
-
-    if (error) throw error;
-
-    for (const row of data ?? []) {
-      const profileId = String(row.student_profile_id ?? "").trim();
-
-      if (!profileId) {
-        continue;
-      }
-
-      const existing = modulesByProfile.get(profileId) ?? [];
-      existing.push(fromModuleRow(row));
-      modulesByProfile.set(profileId, existing);
-    }
-  }
-
+  const modulesByProfile = await loadStudyPlanModulesByProfileIds(profileIds);
   const results: GraduatingStudentSearchRow[] = [];
 
   for (const student of students) {
@@ -1307,17 +1286,7 @@ export async function searchGraduatingStudents(
     });
   }
 
-  results.sort((a, b) => {
-    const streamDiff = a.programmeStream.localeCompare(b.programmeStream);
-
-    if (streamDiff !== 0) {
-      return streamDiff;
-    }
-
-    return a.studentId.localeCompare(b.studentId);
-  });
-
-  return results;
+  return sortStudyPlanSearchRows(results);
 }
 
 export async function downloadGraduatingStudentsCsv(
@@ -1355,6 +1324,170 @@ export async function downloadGraduatingStudentsCsv(
 
   const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const fileName = `study_plan_graduates_${programmeCodeKey(
+    params.programmeCode
+  )}_${normalizeStudyTermKey(params.studyTerm)}_${dateStamp}.csv`;
+
+  saveAs(
+    new Blob([graduatingStudentsToCsv(headers, csvRows)], {
+      type: "text/csv;charset=utf-8;",
+    }),
+    fileName
+  );
+
+  return {
+    fileName,
+    rowCount: rows.length,
+  };
+}
+
+export interface BridgingCompleteStudentSearchParams {
+  studyTerm: string;
+  programmeCode: string;
+}
+
+export interface BridgingCompleteStudentSearchRow {
+  profileId: string;
+  studentId: string;
+  studentName: string;
+  programmeCode: string;
+  programmeStream: string;
+  studyMode: string;
+  studentStatus?: string;
+  intakeTerm?: string;
+  calculatedBridgingCompleteTerm: string;
+}
+
+async function loadStudyPlanModulesByProfileIds(
+  profileIds: string[]
+): Promise<Map<string, StudyPlanModule[]>> {
+  const modulesByProfile = new Map<string, StudyPlanModule[]>();
+
+  for (const profileChunk of chunkValues(profileIds, 100)) {
+    const { data, error } = await supabase
+      .from("study_plan_modules")
+      .select("*")
+      .in("student_profile_id", profileChunk);
+
+    if (error) throw error;
+
+    for (const row of data ?? []) {
+      const profileId = String(row.student_profile_id ?? "").trim();
+
+      if (!profileId) {
+        continue;
+      }
+
+      const existing = modulesByProfile.get(profileId) ?? [];
+      existing.push(fromModuleRow(row));
+      modulesByProfile.set(profileId, existing);
+    }
+  }
+
+  return modulesByProfile;
+}
+
+function sortStudyPlanSearchRows<
+  T extends { programmeStream: string; studentId: string },
+>(rows: T[]): T[] {
+  return rows.sort((a, b) => {
+    const streamDiff = a.programmeStream.localeCompare(b.programmeStream);
+
+    if (streamDiff !== 0) {
+      return streamDiff;
+    }
+
+    return a.studentId.localeCompare(b.studentId);
+  });
+}
+
+export async function searchBridgingCompleteStudents(
+  params: BridgingCompleteStudentSearchParams
+): Promise<BridgingCompleteStudentSearchRow[]> {
+  const studyTerm = normalizeStudyTermKey(params.studyTerm);
+  const programmeCode = String(params.programmeCode ?? "").trim();
+
+  if (!studyTerm || !programmeCode) {
+    return [];
+  }
+
+  const students = await listStudyPlanStudents({ programmeCode });
+  const profileIds = students
+    .map((student) => student.id)
+    .filter((value): value is string => Boolean(value));
+
+  if (profileIds.length === 0) {
+    return [];
+  }
+
+  const modulesByProfile = await loadStudyPlanModulesByProfileIds(profileIds);
+  const results: BridgingCompleteStudentSearchRow[] = [];
+
+  for (const student of students) {
+    if (!student.id) {
+      continue;
+    }
+
+    const modules = modulesByProfile.get(student.id) ?? [];
+    const latestBridgingTerm = getLatestBridgingStudyTerm(modules);
+
+    if (
+      !latestBridgingTerm ||
+      normalizeStudyTermKey(latestBridgingTerm) !== studyTerm
+    ) {
+      continue;
+    }
+
+    results.push({
+      profileId: student.id,
+      studentId: student.studentId,
+      studentName: student.studentName,
+      programmeCode: student.programmeCode,
+      programmeStream: cleanStream(student.programmeStream),
+      studyMode: student.studyMode,
+      studentStatus: student.studentStatus,
+      intakeTerm: student.intakeTerm,
+      calculatedBridgingCompleteTerm: normalizeStudyTermKey(latestBridgingTerm),
+    });
+  }
+
+  return sortStudyPlanSearchRows(results);
+}
+
+export async function downloadBridgingCompleteStudentsCsv(
+  params: BridgingCompleteStudentSearchParams
+): Promise<{ fileName: string; rowCount: number }> {
+  const rows = await searchBridgingCompleteStudents(params);
+
+  if (rows.length === 0) {
+    throw new Error("沒有符合條件的學生，無法匯出。");
+  }
+
+  const headers = [
+    "Programme Code",
+    "Programme Stream",
+    "Student ID",
+    "Student Name",
+    "Study Mode",
+    "Student Status",
+    "Intake Term",
+    "Calculated Bridging Complete Term",
+    "Selected Study Term",
+  ];
+
+  const csvRows = rows.map((row) => [
+    row.programmeCode,
+    row.programmeStream,
+    row.studentId,
+    row.studentName,
+    row.studyMode,
+    row.studentStatus ?? "",
+    row.intakeTerm ?? "",
+    row.calculatedBridgingCompleteTerm,
+    normalizeStudyTermKey(params.studyTerm),
+  ]);
+
+  const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const fileName = `study_plan_bridging_complete_${programmeCodeKey(
     params.programmeCode
   )}_${normalizeStudyTermKey(params.studyTerm)}_${dateStamp}.csv`;
 
@@ -1667,7 +1800,8 @@ export async function saveStudyPlan(
 
   const studentStatus = calculateStudentStatus(
     modules,
-    settings.currentStudyTerm
+    settings.currentStudyTerm,
+    studentInput.programmeType
   );
 
   const savedStudent = await upsertStudyPlanStudent({
@@ -1988,9 +2122,41 @@ export async function recalculateAllStudentStatuses(
 
   const { data: students, error: studentError } = await supabase
     .from("study_plan_students")
-    .select("id");
+    .select("id, programme_code");
 
   if (studentError) throw studentError;
+
+  const programmeTypeByCode = new Map<string, string>();
+
+  const programmeCodes = Array.from(
+    new Set(
+      (students ?? [])
+        .map((row) => String(row.programme_code ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (programmeCodes.length > 0) {
+    const { data: programmeRows, error: programmeError } = await supabase
+      .from("programmes")
+      .select("programme_code, programme_type")
+      .in("programme_code", programmeCodes);
+
+    if (programmeError) throw programmeError;
+
+    for (const row of programmeRows ?? []) {
+      const code = String(row.programme_code ?? "").trim().toUpperCase();
+
+      if (!code || programmeTypeByCode.has(code)) {
+        continue;
+      }
+
+      programmeTypeByCode.set(
+        code,
+        String(row.programme_type ?? "").trim() || "Unknown"
+      );
+    }
+  }
 
   const { data: moduleRows, error: moduleError } = await supabase
     .from("study_plan_modules")
@@ -2018,7 +2184,10 @@ export async function recalculateAllStudentStatuses(
 
   const updates = (students ?? []).map((student) => {
     const modules = modulesByStudent.get(student.id) ?? [];
-    const studentStatus = calculateStudentStatus(modules, term);
+    const programmeType = programmeTypeByCode.get(
+      String(student.programme_code ?? "").trim().toUpperCase()
+    );
+    const studentStatus = calculateStudentStatus(modules, term, programmeType);
 
     return supabase
       .from("study_plan_students")

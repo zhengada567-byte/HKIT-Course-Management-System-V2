@@ -7,6 +7,7 @@ export type StudyPlanModuleStatus =
 
 export type StudentStatus =
   | "potential"
+  | "bridging"
   | "in_progress"
   | "graduated";
 
