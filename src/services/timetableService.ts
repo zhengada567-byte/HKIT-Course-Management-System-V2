@@ -1,5 +1,10 @@
 import { supabase } from "../lib/supabase";
-import { getAcademicYearVariants, normalizeStream } from "../lib/utils";
+import {
+  getAcademicYearVariants,
+  normalizeAcademicYear,
+  normalizeStream,
+  offeredTermToStudyTerm,
+} from "../lib/utils";
 import type {
   ModuleAdjustmentRow,
   ModuleRow,
@@ -73,13 +78,15 @@ function buildSimpleKey(params: {
   academicYear: string;
   moduleCode: string;
   programmeCode: string;
-  moduleTerm?: string | null;
+  programmeStream?: string | null;
+  studyTerm: string;
 }) {
   return [
-    normalizeText(params.academicYear).toLowerCase(),
+    normalizeAcademicYear(params.academicYear).toLowerCase(),
     normalizeCodePart(params.moduleCode),
     normalizeCodePart(params.programmeCode),
-    normalizeText(params.moduleTerm).toLowerCase(),
+    normalizeStream(params.programmeStream).toLowerCase(),
+    normalizeText(params.studyTerm).toLowerCase(),
   ].join("|");
 }
 
@@ -186,6 +193,11 @@ export async function generateTimetablePlanningModules(
 export async function ensureTimetablePlanningModules(
   params: GeneratePlanningModulesParams
 ) {
+  params = {
+    ...params,
+    academicYear: normalizeAcademicYear(params.academicYear),
+  };
+
   let moduleQuery = supabase
     .from("modules")
     .select("*")
@@ -365,11 +377,19 @@ async function attachStudentNumbersAndDefaults(params: {
   >();
 
   for (const row of studentNumbers.data ?? []) {
+    const studyTerm =
+      String(row.study_term ?? "").trim() ||
+      offeredTermToStudyTerm(
+        params.academicYear,
+        getOptionalModuleTerm(row) ?? ""
+      );
+
     const key = buildSimpleKey({
       academicYear: params.academicYear,
       moduleCode: row.module_code,
       programmeCode: row.programme_code,
-      moduleTerm: getOptionalModuleTerm(row),
+      programmeStream: row.programme_stream,
+      studyTerm,
     });
 
     studentNumberMap.set(key, {
@@ -387,11 +407,17 @@ async function attachStudentNumbersAndDefaults(params: {
   >();
 
   for (const row of (enrollmentsResult.data ?? []) as ModuleEnrollmentRow[]) {
+    const studyTerm = offeredTermToStudyTerm(
+      params.academicYear,
+      getOptionalModuleTerm(row) ?? ""
+    );
+
     const key = buildSimpleKey({
       academicYear: params.academicYear,
       moduleCode: row.module_code,
       programmeCode: row.programme_code,
-      moduleTerm: getOptionalModuleTerm(row),
+      programmeStream: row.stream_code,
+      studyTerm,
     });
 
     enrollmentMap.set(key, {
@@ -403,11 +429,17 @@ async function attachStudentNumbersAndDefaults(params: {
   const defaultAssignmentMap = new Map<string, ModuleDefaultAssignmentRow>();
 
   for (const row of (defaultsResult.data ?? []) as ModuleDefaultAssignmentRow[]) {
+    const studyTerm = offeredTermToStudyTerm(
+      params.academicYear,
+      getOptionalModuleTerm(row) ?? ""
+    );
+
     const key = buildSimpleKey({
       academicYear: params.academicYear,
       moduleCode: row.module_code,
       programmeCode: row.programme_code,
-      moduleTerm: getOptionalModuleTerm(row),
+      programmeStream: row.stream_code,
+      studyTerm,
     });
 
     defaultAssignmentMap.set(key, row);
@@ -415,11 +447,17 @@ async function attachStudentNumbersAndDefaults(params: {
 
   return params.planningModules.map<PlanningModuleWithStudentNumber>(
     (module) => {
+      const studyTerm = offeredTermToStudyTerm(
+        module.academic_year,
+        module.module_term ?? ""
+      );
+
       const key = buildSimpleKey({
         academicYear: module.academic_year,
         moduleCode: module.module_code,
         programmeCode: module.programme_code,
-        moduleTerm: module.module_term,
+        programmeStream: module.stream_code,
+        studyTerm,
       });
 
       const studentNumber = studentNumberMap.get(key);

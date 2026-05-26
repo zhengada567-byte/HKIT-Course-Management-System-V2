@@ -6,6 +6,7 @@ import {
   isHDProgrammeType,
 } from "../pages/programme-leader/make-study-plan/helpers";
 import { supabase } from "../lib/supabase";
+import { fetchAllPaginatedRows } from "../lib/supabasePagination";
 
 function normalizeStream(value?: string | null): string {
   const text = String(value ?? "").trim();
@@ -315,39 +316,48 @@ function compareModuleEnrollmentRows(
 export async function getModuleEnrollmentReport(
   params: ModuleEnrollmentReportParams = {}
 ): Promise<ModuleEnrollmentReportRow[]> {
-  let query = supabase
-    .from("study_plan_modules")
-    .select(
-      "module_code, module_name, programme_code, programme_stream, study_term, status, plan_stage"
-    )
-    .eq("status", "planned")
-    .not("study_term", "is", null);
+  const programmeCode = String(params.programmeCode ?? "").trim();
+  const studyTerm = String(params.studyTerm ?? "").trim().toUpperCase();
+  const includeBridging = params.includeBridging ?? false;
 
-  if (!params.includeBridging) {
-    query = query.eq("plan_stage", "programme");
-  }
+  const data = await fetchAllPaginatedRows<{
+    module_code: string;
+    module_name: string | null;
+    programme_code: string;
+    programme_stream: string | null;
+    study_term: string;
+    status: string;
+    plan_stage: string;
+  }>({
+    fetchPage: ({ from, to }) => {
+      let query = supabase
+        .from("study_plan_modules")
+        .select(
+          "module_code, module_name, programme_code, programme_stream, study_term, status, plan_stage"
+        )
+        .eq("status", "planned")
+        .not("study_term", "is", null)
+        .order("id", { ascending: true });
 
-  if (params.programmeCode) {
-    query = query.eq(
-      "programme_code",
-      String(params.programmeCode).trim()
-    );
-  }
+      if (!includeBridging) {
+        query = query.eq("plan_stage", "programme");
+      }
 
-  if (params.studyTerm) {
-    query = query.eq(
-      "study_term",
-      String(params.studyTerm).trim().toUpperCase()
-    );
-  }
+      if (programmeCode) {
+        query = query.eq("programme_code", programmeCode);
+      }
 
-  const { data, error } = await query;
+      if (studyTerm) {
+        query = query.eq("study_term", studyTerm);
+      }
 
-  if (error) throw error;
+      return query.range(from, to);
+    },
+  });
 
   const grouped = new Map<string, ModuleEnrollmentReportRow>();
 
-  for (const row of data ?? []) {
+  for (const row of data) {
     const programmeCode = String(row.programme_code ?? "").trim();
     const programmeStream = normalizeStream(row.programme_stream);
     const moduleCode = String(row.module_code ?? "").trim();

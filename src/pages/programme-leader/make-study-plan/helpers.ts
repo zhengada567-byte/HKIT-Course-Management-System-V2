@@ -105,11 +105,10 @@ export function studyTermToAcademicYear(studyTerm: string): string {
 
   if (!parsed) return "";
 
-  if (parsed.letter === "C") {
-    return `${parsed.year}/${String(parsed.year + 1).slice(-2)}`;
-  }
+  const startYear =
+    parsed.letter === "C" ? parsed.year : parsed.year - 1;
 
-  return `${parsed.year - 1}/${String(parsed.year).slice(-2)}`;
+  return formatAcademicYear(startYear);
 }
 
 /**
@@ -174,11 +173,10 @@ export function inferCurrentStudyTermFromDate(date = new Date()): string {
 
 export function inferCurrentAcademicYearFromDate(date = new Date()): string {
   const studyTerm = inferCurrentStudyTermFromDate(date);
-  const shortYear = studyTermToAcademicYear(studyTerm);
-  const startYear = Number(shortYear.split("/")[0]);
+  const academicYear = studyTermToAcademicYear(studyTerm);
 
-  if (Number.isInteger(startYear) && startYear >= 2000) {
-    return formatAcademicYear(startYear);
+  if (academicYear) {
+    return academicYear;
   }
 
   return formatAcademicYear(date.getFullYear());

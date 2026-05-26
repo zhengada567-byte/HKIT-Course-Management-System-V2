@@ -1,304 +1,351 @@
-import { supabase } from "../lib/supabase";
-import {
-  getAcademicYearVariants,
-  normalizeStream,
-  offeredTermToStudyTerm,
-} from "../lib/utils";
-import { offeredTermFromStudyTerm } from "../pages/programme-leader/make-study-plan/helpers";
-import type { ModuleTerm } from "../types/common";
-import { recalculateActualStudentNumbers } from "./studyPlanService";
-import type { ModuleEnrollmentRow } from "./moduleEnrollmentService";
-import {
-  ensureTimetablePlanningModules,
-  listPlanningModulesWithStudentNumbers,
-} from "./timetableService";
-import { listStudentNumbers } from "./studentNumberService";
-
-function buildSyncKey(params: {
-  academicYear: string;
-  moduleCode: string;
-  programmeCode: string;
-  programmeStream: string;
-  studyTerm: string;
-}) {
-  return [
-    params.academicYear,
-    params.moduleCode,
-    params.programmeCode,
-    params.programmeStream,
-    params.studyTerm,
-  ].join("|");
-}
-
-function normalizeOfferedTermKey(value: ModuleTerm) {
-  return value.toLowerCase();
-}
-
-function catalogModuleTermToOfferedTerm(
-  academicYear: string,
-  moduleTerm: string | null | undefined
-): ModuleTerm {
-  const text = String(moduleTerm ?? "").trim();
-
-  if (/^T\d{4}[ABC]$/i.test(text)) {
-    return offeredTermFromStudyTerm(text.toUpperCase());
-  }
-
-  const upper = text.toUpperCase();
-
-  if (upper === "FEB" || upper === "FEBRUARY" || upper === "A") {
-    return "Feb";
-  }
-
-  if (upper === "JUN" || upper === "JUNE" || upper === "B") {
-    return "Jun";
-  }
-
-  if (
-    upper === "SEP" ||
-    upper === "SEPT" ||
-    upper === "SEPTEMBER" ||
-    upper === "C"
-  ) {
-    return "Sep";
-  }
-
-  if (text) {
-    return offeredTermFromStudyTerm(
-      offeredTermToStudyTerm(academicYear, text)
-    );
-  }
-
-  return "Feb";
-}
-
-function buildActualCountKey(params: {
-  academicYear: string;
-  moduleCode: string;
-  programmeCode: string;
-  programmeStream: string;
-  offeredTerm: ModuleTerm;
-}) {
-  return [
-    params.academicYear,
-    params.moduleCode,
-    params.programmeCode,
-    params.programmeStream,
-    normalizeOfferedTermKey(params.offeredTerm),
-  ].join("|");
-}
-
-export interface SyncStudyPlanStudentNumbersResult {
-  syncedCount: number;
-  zeroActualCount: number;
-}
-
-export async function syncStudyPlanStudentNumbersToTimetable(params: {
-  academicYear: string;
-  programmeCode?: string;
-  streamCode?: string;
-  createdBy: string;
-}): Promise<SyncStudyPlanStudentNumbersResult> {
-  try {
-    await recalculateActualStudentNumbers();
-  } catch (error) {
-    console.warn(
-      "[syncStudyPlanStudentNumbersToTimetable] Could not recalculate study plan counts:",
-      error
-    );
-  }
-
-  await ensureTimetablePlanningModules({
-    academicYear: params.academicYear,
-    programmeCode: params.programmeCode,
-    streamCode: params.streamCode,
-    createdBy: params.createdBy,
-  });
-
-  const planningModules = await listPlanningModulesWithStudentNumbers({
-    academicYear: params.academicYear,
-    programmeCode: params.programmeCode,
-    streamCode: params.streamCode,
-  });
-
-  if (planningModules.length === 0) {
-    return {
-      syncedCount: 0,
-      zeroActualCount: 0,
-    };
-  }
-
-  const yearVariants = getAcademicYearVariants(params.academicYear);
-
-  const [{ data: studyPlanRows, error: studyPlanError }, existingRows, enrollmentResult] =
-    await Promise.all([
-      supabase
-        .from("study_plan_actual_student_numbers")
-        .select("*")
-        .in("academic_year", yearVariants),
-      listStudentNumbers(params.academicYear),
-      supabase
-        .from("module_enrollment")
-        .select("*")
-        .in("academic_year", yearVariants),
-    ]);
-
-  if (studyPlanError) throw studyPlanError;
-  if (enrollmentResult.error) throw enrollmentResult.error;
-
-  const actualByKey = new Map<string, number>();
-
-  for (const row of studyPlanRows ?? []) {
-    if (
-      params.programmeCode &&
-      String(row.programme_code ?? "").trim() !== params.programmeCode
-    ) {
-      continue;
-    }
-
-    const studyTerm = String(row.study_term ?? "").trim();
-    const offeredTerm = offeredTermFromStudyTerm(studyTerm);
-    const key = buildActualCountKey({
-      academicYear: params.academicYear,
-      moduleCode: String(row.module_code ?? "").trim(),
-      programmeCode: String(row.programme_code ?? "").trim(),
-      programmeStream: normalizeStream(row.programme_stream),
-      offeredTerm,
-    });
-
-    actualByKey.set(
-      key,
-      (actualByKey.get(key) ?? 0) + Number(row.actual_student_number ?? 0)
-    );
-  }
-
-  const existingMap = new Map<string, (typeof existingRows)[number]>();
-
-  for (const row of existingRows) {
-    const studyTerm =
-      String(row.study_term ?? "").trim() ||
-      offeredTermToStudyTerm(row.academic_year, row.module_term ?? "");
-
-    existingMap.set(
-      buildSyncKey({
-        academicYear: row.academic_year,
-        moduleCode: row.module_code,
-        programmeCode: row.programme_code,
-        programmeStream: normalizeStream(row.programme_stream),
-        studyTerm,
-      }),
-      row
-    );
-  }
-
-  const enrollmentMap = new Map<
-    string,
-    { expected_student_number: number; actual_student_number: number | null }
-  >();
-
-  for (const row of (enrollmentResult.data ?? []) as ModuleEnrollmentRow[]) {
-    const studyTerm = offeredTermToStudyTerm(
-      row.academic_year,
-      row.module_term ?? ""
-    );
-
-    enrollmentMap.set(
-      buildSyncKey({
-        academicYear: row.academic_year,
-        moduleCode: row.module_code,
-        programmeCode: row.programme_code ?? "",
-        programmeStream: normalizeStream(row.stream_code),
-        studyTerm,
-      }),
-      {
-        expected_student_number: row.expected_student_number,
-        actual_student_number: row.actual_student_number,
-      }
-    );
-  }
-
-  let zeroActualCount = 0;
-
-  const payload = planningModules.map((module) => {
-    const programmeStream = normalizeStream(module.stream_code);
-    const studyTerm = offeredTermToStudyTerm(
-      module.academic_year,
-      module.module_term
-    );
-
-    const key = buildSyncKey({
-      academicYear: module.academic_year,
-      moduleCode: module.module_code,
-      programmeCode: module.programme_code,
-      programmeStream,
-      studyTerm,
-    });
-
-    const existing = existingMap.get(key);
-    const enrollment = enrollmentMap.get(key);
-    const actualCountKey = buildActualCountKey({
-      academicYear: module.academic_year,
-      moduleCode: module.module_code,
-      programmeCode: module.programme_code,
-      programmeStream,
-      offeredTerm: catalogModuleTermToOfferedTerm(
-        module.academic_year,
-        module.module_term
-      ),
-    });
-    const actual = actualByKey.get(actualCountKey) ?? 0;
-
-    if (actual === 0) {
-      zeroActualCount += 1;
-    }
-
-    return {
-      academic_year: module.academic_year,
-      module_code: module.module_code,
-      module_term: module.module_term,
-      programme_code: module.programme_code,
-      programme_stream: programmeStream,
-      study_term: studyTerm,
-      expected_student_number:
-        existing?.expected_student_number ??
-        enrollment?.expected_student_number ??
-        0,
-      actual_student_number: actual,
-      created_by: params.createdBy,
-    };
-  });
-
-  const { error: upsertError } = await supabase
-    .from("timetable_student_numbers")
-    .upsert(payload, {
-      onConflict:
-        "academic_year,module_code,programme_code,programme_stream,study_term",
-    });
-
-  if (upsertError) {
-    const message = String(upsertError.message ?? upsertError);
-
-    if (message.includes("created_by") || message.includes("foreign key")) {
-      throw new Error(
-        "Could not save student numbers because the login session is invalid. Please log out and log in again."
-      );
-    }
-
-    if (
-      message.includes("programme_stream") ||
-      message.includes("study_term") ||
-      message.includes("on conflict")
-    ) {
-      throw new Error(
-        "Could not save student numbers. Please run migration 003_drop_all_module_term_unique_constraints.sql in Supabase SQL Editor, then try again."
-      );
-    }
-
-    throw upsertError;
-  }
-
-  return {
-    syncedCount: payload.length,
-    zeroActualCount,
-  };
-}
+import { supabase } from "../lib/supabase";
+import { fetchAllPaginatedRows } from "../lib/supabasePagination";
+import {
+  getAcademicYearVariants,
+  hasSelectedTimetableStream,
+  normalizeAcademicYear,
+  normalizeStream,
+  offeredTermToStudyTerm,
+  timetableProgrammeStreamFromSelection,
+} from "../lib/utils";
+import { recalculateActualStudentNumbers } from "./studyPlanService";
+import type { ModuleEnrollmentRow } from "./moduleEnrollmentService";
+import {
+  ensureTimetablePlanningModules,
+  listPlanningModulesWithStudentNumbers,
+} from "./timetableService";
+import { listStudentNumbers } from "./studentNumberService";
+
+function buildSyncKey(params: {
+  academicYear: string;
+  moduleCode: string;
+  programmeCode: string;
+  programmeStream: string;
+  studyTerm: string;
+}) {
+  return [
+    normalizeAcademicYear(params.academicYear),
+    params.moduleCode,
+    params.programmeCode,
+    normalizeStream(params.programmeStream),
+    params.studyTerm,
+  ].join("|");
+}
+
+/** Per-stream key (sums FT/PT within the same stream). */
+function buildStudyPlanActualStreamKey(params: {
+  academicYear: string;
+  moduleCode: string;
+  programmeCode: string;
+  programmeStream: string;
+  studyTerm: string;
+}) {
+  return buildSyncKey(params);
+}
+
+/** All-streams aggregate key (no programme_stream). */
+function buildStudyPlanActualAllStreamsKey(params: {
+  academicYear: string;
+  moduleCode: string;
+  programmeCode: string;
+  studyTerm: string;
+}) {
+  return [
+    normalizeAcademicYear(params.academicYear),
+    params.moduleCode,
+    params.programmeCode,
+    params.studyTerm,
+  ].join("|");
+}
+
+function buildStudyPlanActualLookupMaps(params: {
+  studyPlanRows: Record<string, unknown>[];
+  canonicalYear: string;
+  programmeCode?: string;
+}) {
+  const byStreamKey = new Map<string, number>();
+  const byAllStreamsKey = new Map<string, number>();
+
+  for (const row of params.studyPlanRows) {
+    const programmeCode = String(row.programme_code ?? "").trim();
+
+    if (
+      params.programmeCode &&
+      programmeCode !== params.programmeCode.trim()
+    ) {
+      continue;
+    }
+
+    const studyTerm = String(row.study_term ?? "").trim();
+
+    if (!studyTerm) {
+      continue;
+    }
+
+    const academicYear = normalizeAcademicYear(
+      String(row.academic_year ?? params.canonicalYear)
+    );
+    const moduleCode = String(row.module_code ?? "").trim();
+    const programmeStream = normalizeStream(
+      String(row.programme_stream ?? "").trim()
+    );
+    const count = Number(row.actual_student_number ?? 0);
+
+    const streamKey = buildStudyPlanActualStreamKey({
+      academicYear,
+      moduleCode,
+      programmeCode,
+      programmeStream,
+      studyTerm,
+    });
+
+    byStreamKey.set(streamKey, (byStreamKey.get(streamKey) ?? 0) + count);
+
+    const allStreamsKey = buildStudyPlanActualAllStreamsKey({
+      academicYear,
+      moduleCode,
+      programmeCode,
+      studyTerm,
+    });
+
+    byAllStreamsKey.set(
+      allStreamsKey,
+      (byAllStreamsKey.get(allStreamsKey) ?? 0) + count
+    );
+  }
+
+  return { byStreamKey, byAllStreamsKey };
+}
+
+function getStudyPlanActualForTimetable(params: {
+  maps: ReturnType<typeof buildStudyPlanActualLookupMaps>;
+  selectedStreamCode?: string;
+  academicYear: string;
+  moduleCode: string;
+  programmeCode: string;
+  studyTerm: string;
+}) {
+  const academicYear = normalizeAcademicYear(params.academicYear);
+
+  if (hasSelectedTimetableStream(params.selectedStreamCode)) {
+    const programmeStream = timetableProgrammeStreamFromSelection(
+      params.selectedStreamCode
+    );
+
+    return (
+      params.maps.byStreamKey.get(
+        buildStudyPlanActualStreamKey({
+          academicYear,
+          moduleCode: params.moduleCode,
+          programmeCode: params.programmeCode,
+          programmeStream,
+          studyTerm: params.studyTerm,
+        })
+      ) ?? 0
+    );
+  }
+
+  return (
+    params.maps.byAllStreamsKey.get(
+      buildStudyPlanActualAllStreamsKey({
+        academicYear,
+        moduleCode: params.moduleCode,
+        programmeCode: params.programmeCode,
+        studyTerm: params.studyTerm,
+      })
+    ) ?? 0
+  );
+}
+
+export interface SyncStudyPlanStudentNumbersResult {
+  syncedCount: number;
+  zeroActualCount: number;
+}
+
+export async function syncStudyPlanStudentNumbersToTimetable(params: {
+  academicYear: string;
+  programmeCode?: string;
+  streamCode?: string;
+  createdBy: string;
+}): Promise<SyncStudyPlanStudentNumbersResult> {
+  const canonicalYear = normalizeAcademicYear(params.academicYear);
+  const timetableStream = timetableProgrammeStreamFromSelection(
+    params.streamCode
+  );
+
+  await recalculateActualStudentNumbers();
+
+  await ensureTimetablePlanningModules({
+    academicYear: canonicalYear,
+    programmeCode: params.programmeCode,
+    streamCode: params.streamCode,
+    createdBy: params.createdBy,
+  });
+
+  const planningModules = await listPlanningModulesWithStudentNumbers({
+    academicYear: canonicalYear,
+    programmeCode: params.programmeCode,
+    streamCode: params.streamCode,
+  });
+
+  if (planningModules.length === 0) {
+    return {
+      syncedCount: 0,
+      zeroActualCount: 0,
+    };
+  }
+
+  const yearVariants = getAcademicYearVariants(canonicalYear);
+
+  const [studyPlanRows, existingRows, enrollmentResult] = await Promise.all([
+    fetchAllPaginatedRows<Record<string, unknown>>({
+      fetchPage: ({ from, to }) =>
+        supabase
+          .from("study_plan_actual_student_numbers")
+          .select("*")
+          .in("academic_year", yearVariants)
+          .order("id", { ascending: true })
+          .range(from, to),
+    }),
+    listStudentNumbers(canonicalYear),
+    supabase
+      .from("module_enrollment")
+      .select("*")
+      .in("academic_year", yearVariants),
+  ]);
+
+  if (enrollmentResult.error) throw enrollmentResult.error;
+
+  const actualMaps = buildStudyPlanActualLookupMaps({
+    studyPlanRows,
+    canonicalYear,
+    programmeCode: params.programmeCode,
+  });
+
+  const existingMap = new Map<string, (typeof existingRows)[number]>();
+
+  for (const row of existingRows) {
+    const studyTerm =
+      String(row.study_term ?? "").trim() ||
+      offeredTermToStudyTerm(row.academic_year, row.module_term ?? "");
+
+    existingMap.set(
+      buildSyncKey({
+        academicYear: row.academic_year,
+        moduleCode: row.module_code,
+        programmeCode: row.programme_code,
+        programmeStream: normalizeStream(row.programme_stream),
+        studyTerm,
+      }),
+      row
+    );
+  }
+
+  const enrollmentMap = new Map<
+    string,
+    { expected_student_number: number; actual_student_number: number | null }
+  >();
+
+  for (const row of (enrollmentResult.data ?? []) as ModuleEnrollmentRow[]) {
+    const studyTerm = offeredTermToStudyTerm(
+      row.academic_year,
+      row.module_term ?? ""
+    );
+
+    enrollmentMap.set(
+      buildSyncKey({
+        academicYear: row.academic_year,
+        moduleCode: row.module_code,
+        programmeCode: row.programme_code ?? "",
+        programmeStream: normalizeStream(row.stream_code),
+        studyTerm,
+      }),
+      {
+        expected_student_number: row.expected_student_number,
+        actual_student_number: row.actual_student_number,
+      }
+    );
+  }
+
+  let zeroActualCount = 0;
+
+  const payload = planningModules.map((module) => {
+    const studyTerm = offeredTermToStudyTerm(
+      module.academic_year,
+      module.module_term
+    );
+
+    const key = buildSyncKey({
+      academicYear: module.academic_year,
+      moduleCode: module.module_code,
+      programmeCode: module.programme_code,
+      programmeStream: timetableStream,
+      studyTerm,
+    });
+
+    const existing = existingMap.get(key);
+    const enrollment = enrollmentMap.get(key);
+    const actual = getStudyPlanActualForTimetable({
+      maps: actualMaps,
+      selectedStreamCode: params.streamCode,
+      academicYear: module.academic_year,
+      moduleCode: module.module_code,
+      programmeCode: module.programme_code,
+      studyTerm,
+    });
+
+    if (actual === 0) {
+      zeroActualCount += 1;
+    }
+
+    return {
+      academic_year: canonicalYear,
+      module_code: module.module_code,
+      module_term: module.module_term,
+      programme_code: module.programme_code,
+      programme_stream: timetableStream,
+      study_term: studyTerm,
+      expected_student_number:
+        existing?.expected_student_number ??
+        enrollment?.expected_student_number ??
+        0,
+      actual_student_number: actual,
+      created_by: params.createdBy,
+    };
+  });
+
+  const { error: upsertError } = await supabase
+    .from("timetable_student_numbers")
+    .upsert(payload, {
+      onConflict:
+        "academic_year,module_code,programme_code,programme_stream,study_term",
+    });
+
+  if (upsertError) {
+    const message = String(upsertError.message ?? upsertError);
+
+    if (message.includes("created_by") || message.includes("foreign key")) {
+      throw new Error(
+        "Could not save student numbers because the login session is invalid. Please log out and log in again."
+      );
+    }
+
+    if (
+      message.includes("programme_stream") ||
+      message.includes("study_term") ||
+      message.includes("on conflict")
+    ) {
+      throw new Error(
+        "Could not save student numbers. Please run migration 003_drop_all_module_term_unique_constraints.sql in Supabase SQL Editor, then try again."
+      );
+    }
+
+    throw upsertError;
+  }
+
+  return {
+    syncedCount: payload.length,
+    zeroActualCount,
+  };
+}
+

@@ -1,5 +1,11 @@
 import { supabase } from "../lib/supabase";
-import { getAcademicYearVariants, normalizeStream, offeredTermToStudyTerm } from "../lib/utils";
+import {
+  getAcademicYearVariants,
+  normalizeAcademicYear,
+  normalizeStream,
+  offeredTermToStudyTerm,
+  timetableProgrammeStreamFromSelection,
+} from "../lib/utils";
 import type {
   TimetablePlanningModuleRow,
   TimetableStudentNumberRow,
@@ -114,8 +120,11 @@ function getRowProgrammeStream(row: {
 export function buildStudentNumberInputRows(
   planningModules: TimetablePlanningModuleRow[],
   existingStudentNumbers: TimetableStudentNumberRow[],
-  moduleEnrollments: ModuleEnrollmentRow[] = []
+  moduleEnrollments: ModuleEnrollmentRow[] = [],
+  selectedStreamCode?: string
 ) {
+  const timetableStream =
+    timetableProgrammeStreamFromSelection(selectedStreamCode);
   const map = new Map<string, StudentNumberInputRow>();
 
   const existingMap = new Map<string, TimetableStudentNumberRow>();
@@ -159,7 +168,6 @@ export function buildStudentNumberInputRows(
   }
 
   for (const module of planningModules) {
-    const programmeStream = normalizeStream(module.stream_code);
     const studyTerm = offeredTermToStudyTerm(
       module.academic_year,
       module.module_term
@@ -169,7 +177,7 @@ export function buildStudentNumberInputRows(
       academicYear: module.academic_year,
       moduleCode: module.module_code,
       programmeCode: module.programme_code,
-      programmeStream,
+      programmeStream: timetableStream,
       studyTerm,
     });
 
@@ -183,7 +191,7 @@ export function buildStudentNumberInputRows(
         module_name: module.module_name ?? null,
         module_term: module.module_term ?? null,
         programme_code: module.programme_code,
-        programme_stream: programmeStream,
+        programme_stream: timetableStream,
         study_term: studyTerm,
         streams_included: [],
         expected_student_number:
@@ -229,15 +237,18 @@ export async function listStudentNumbers(academicYear: string) {
 
   if (error) throw error;
 
+  const canonicalYear = normalizeAcademicYear(academicYear);
+
   return ((data ?? []) as TimetableStudentNumberRow[]).map((row) => ({
     ...row,
-    academic_year: academicYear,
+    academic_year: canonicalYear,
   }));
 }
 
 export async function getStudentNumberInputRows(params: {
   academicYear: string;
   planningModules: TimetablePlanningModuleRow[];
+  selectedStreamCode?: string;
 }) {
   const [existing, enrollmentResult] = await Promise.all([
     listStudentNumbers(params.academicYear),
@@ -252,7 +263,8 @@ export async function getStudentNumberInputRows(params: {
   return buildStudentNumberInputRows(
     params.planningModules,
     existing,
-    (enrollmentResult.data ?? []) as ModuleEnrollmentRow[]
+    (enrollmentResult.data ?? []) as ModuleEnrollmentRow[],
+    params.selectedStreamCode
   );
 }
 
@@ -280,15 +292,16 @@ export async function upsertStudentNumber(input: {
   }
 
   const programmeStream = normalizeStream(input.programmeStream);
+  const canonicalYear = normalizeAcademicYear(input.academicYear);
   const studyTerm =
     String(input.studyTerm ?? "").trim() ||
-    offeredTermToStudyTerm(input.academicYear, input.moduleTerm ?? "");
+    offeredTermToStudyTerm(canonicalYear, input.moduleTerm ?? "");
 
   const { data, error } = await supabase
     .from("timetable_student_numbers")
     .upsert(
       {
-        academic_year: input.academicYear,
+        academic_year: canonicalYear,
         module_code: input.moduleCode,
         module_term: input.moduleTerm ?? null,
         programme_code: input.programmeCode,
@@ -338,7 +351,7 @@ export async function bulkUpsertStudentNumbers(params: {
     }
 
     return {
-      academic_year: row.academic_year,
+      academic_year: normalizeAcademicYear(row.academic_year),
       module_code: row.module_code,
       module_term: row.module_term ?? null,
       programme_code: row.programme_code,

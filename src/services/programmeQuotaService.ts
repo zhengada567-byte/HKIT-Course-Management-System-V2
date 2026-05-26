@@ -3,6 +3,7 @@ import {
   academicYearToStartYear,
   getPreviousAcademicYear,
   isQuotaEditableByProgrammeLeader,
+  normalizeAcademicYear,
   normalizeStream,
   offeredTermToStudyTerm,
 } from "../lib/utils";
@@ -15,6 +16,10 @@ import {
   type StudentNumberInputRow,
 } from "./studentNumberService";
 import { ensureTimetablePlanningModules } from "./timetableService";
+
+function canonicalAcademicYear(academicYear: string) {
+  return normalizeAcademicYear(academicYear);
+}
 
 export interface ProgrammeQuotaStreamRow {
   programmeStream: string;
@@ -126,6 +131,7 @@ export async function listQuotaProgrammesForUser(
   user: AppUser,
   academicYear: string
 ): Promise<ProgrammeQuotaListItem[]> {
+  academicYear = canonicalAcademicYear(academicYear);
   const programmes = await listProgrammes();
   const grouped = groupProgrammesByCode(programmes);
 
@@ -205,6 +211,7 @@ export async function getProgrammeQuotaDetail(
   programmeCode: string,
   user: AppUser
 ): Promise<ProgrammeQuotaSummary> {
+  academicYear = canonicalAcademicYear(academicYear);
   const code = normalizeProgrammeCode(programmeCode);
   const programmes = await listProgrammes();
   const streamsForProgramme = programmes.filter(
@@ -286,6 +293,7 @@ export async function saveProgrammeQuotaDraft(params: {
   streams: ProgrammeQuotaStreamRow[];
   user: AppUser;
 }) {
+  params = { ...params, academicYear: canonicalAcademicYear(params.academicYear) };
   const detail = await getProgrammeQuotaDetail(
     params.academicYear,
     params.programmeCode,
@@ -358,6 +366,7 @@ export async function confirmProgrammeQuota(params: {
   streams: ProgrammeQuotaStreamRow[];
   user: AppUser;
 }) {
+  params = { ...params, academicYear: canonicalAcademicYear(params.academicYear) };
   await saveProgrammeQuotaDraft({
     academicYear: params.academicYear,
     programmeCode: params.programmeCode,
@@ -418,6 +427,7 @@ export async function isProgrammeQuotaConfirmed(
   academicYear: string,
   programmeCode: string
 ) {
+  academicYear = canonicalAcademicYear(academicYear);
   const row = await loadConfirmationRow(
     academicYear,
     normalizeProgrammeCode(programmeCode)
@@ -431,6 +441,7 @@ export async function copyQuotaFromPreviousYear(
   programmeCode: string,
   user: AppUser
 ): Promise<ProgrammeQuotaSummary | null> {
+  academicYear = canonicalAcademicYear(academicYear);
   const code = normalizeProgrammeCode(programmeCode);
   const previousYear = getPreviousAcademicYear(academicYear);
 
@@ -486,6 +497,7 @@ export async function ensureQuotaCopiedForAcademicYear(
   academicYear: string,
   user: AppUser
 ) {
+  academicYear = canonicalAcademicYear(academicYear);
   const programmes = await listQuotaProgrammesForUser(user, academicYear);
   const needsCopy = programmes.filter(
     (row) => !row.isConfirmed && row.programmeQuota === 0 && row.streamQuotaTotal === 0
@@ -502,6 +514,7 @@ export async function adminUnlockProgrammeQuota(params: {
   unlockUntil: string;
   adminUser: AppUser;
 }) {
+  params = { ...params, academicYear: canonicalAcademicYear(params.academicYear) };
   if (params.adminUser.role !== "admin") {
     throw new Error("只有 Admin 可以解鎖 Quota。");
   }

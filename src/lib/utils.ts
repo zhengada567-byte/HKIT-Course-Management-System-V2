@@ -15,6 +15,44 @@ export function academicYearToStartYear(academicYear: string) {
   return Number(start);
 }
 
+/**
+ * Canonical label for DB writes and UI: `2026/2027`.
+ * Accepts short (`2026/27`) or long (`2026/2027`) input.
+ */
+export function normalizeAcademicYear(academicYear: string): string {
+  const trimmed = String(academicYear ?? "").trim();
+
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  const [startPart, endPart] = trimmed.split("/");
+  const startYear = Number(startPart);
+
+  if (!Number.isFinite(startYear) || startYear < 1900) {
+    return trimmed;
+  }
+
+  if (!endPart) {
+    return formatAcademicYear(startYear);
+  }
+
+  const endYear =
+    endPart.length <= 2
+      ? Math.floor(startYear / 100) * 100 + Number(endPart)
+      : Number(endPart);
+
+  if (!Number.isFinite(endYear)) {
+    return formatAcademicYear(startYear);
+  }
+
+  if (endYear === startYear + 1) {
+    return formatAcademicYear(startYear);
+  }
+
+  return formatAcademicYear(startYear);
+}
+
 export function getPreviousAcademicYear(academicYear: string) {
   const startYear = academicYearToStartYear(academicYear);
   return formatAcademicYear(startYear - 1);
@@ -122,8 +160,36 @@ export function normalizeStream(value?: string | null) {
   return trimmed || "nil";
 }
 
+/** Whether Timetable Step 1 has a specific programme stream selected (not All Streams). */
+export function hasSelectedTimetableStream(
+  selectedStreamCode?: string | null
+) {
+  return Boolean(String(selectedStreamCode ?? "").trim());
+}
+
 /**
- * Map catalog offered term (Sep/Feb/Jun) to study term code (T2025A/B/C).
+ * programme_stream written to / read from timetable_student_numbers during Sync.
+ * - Specific stream selected → that stream (scheme B).
+ * - All Streams → `nil` aggregate row.
+ */
+export function timetableProgrammeStreamFromSelection(
+  selectedStreamCode?: string | null
+) {
+  if (hasSelectedTimetableStream(selectedStreamCode)) {
+    return normalizeStream(selectedStreamCode);
+  }
+
+  return "nil";
+}
+
+/**
+ * Map catalog offered term (Sep/Feb/Jun) to study term for an academic year.
+ *
+ * Example for 2026/2027:
+ * - Sep -> T2026C
+ * - Feb -> T2027A
+ * - Jun -> T2027B
+ *
  * If value is already T2025B format, return as-is.
  */
 export function offeredTermToStudyTerm(
@@ -136,8 +202,11 @@ export function offeredTermToStudyTerm(
     return text;
   }
 
-  const yearMatch = String(academicYear ?? "").trim().match(/\d{4}/);
-  const year = yearMatch?.[0] ?? String(academicYear ?? "").trim();
+  const startYear = academicYearToStartYear(normalizeAcademicYear(academicYear));
+
+  if (!Number.isFinite(startYear)) {
+    return text;
+  }
 
   const letter = (() => {
     if (text === "FEB" || text === "FEBRUARY" || text === "A") return "A";
@@ -154,7 +223,9 @@ export function offeredTermToStudyTerm(
     return "A";
   })();
 
-  return `T${year}${letter}`;
+  const termYear = letter === "C" ? startYear : startYear + 1;
+
+  return `T${termYear}${letter}`;
 }
 
 export function normalizeOptionalText(value?: string | null) {

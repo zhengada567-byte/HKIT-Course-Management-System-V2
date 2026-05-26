@@ -37,7 +37,11 @@ import {
   type StudentNumberInputRow,
 } from "../../services/studentNumberService";
 import { syncStudyPlanStudentNumbersToTimetable } from "../../services/timetableStudentNumberSyncService";
-import { normalizeStream, offeredTermToStudyTerm } from "../../lib/utils";
+import {
+  normalizeStream,
+  offeredTermToStudyTerm,
+  timetableProgrammeStreamFromSelection,
+} from "../../lib/utils";
 import { listTeachers } from "../../services/teacherService";
 import {
   ensureTimetablePlanningModules,
@@ -79,9 +83,12 @@ function isSameStudentNumberRow(
     programme_code: string;
     module_term?: string | null;
     stream_code?: string | null;
-  }
+  },
+  selectedStreamCode?: string
 ) {
-  const programmeStream = normalizeStream(module.stream_code);
+  const programmeStream = timetableProgrammeStreamFromSelection(
+    selectedStreamCode
+  );
   const studyTerm = offeredTermToStudyTerm(
     module.academic_year,
     module.module_term ?? ""
@@ -196,6 +203,7 @@ export function MakeTimetablePage() {
     const data = await getStudentNumberInputRows({
       academicYear,
       planningModules: planning,
+      selectedStreamCode: streamCode || undefined,
     });
 
     setStudentRows(data);
@@ -500,6 +508,7 @@ export function MakeTimetablePage() {
       const latestStudentRows = await getStudentNumberInputRows({
         academicYear,
         planningModules: latestPlanningModules,
+        selectedStreamCode: streamCode || undefined,
       });
 
       const latestManualGroups = await listManualCombineGroups({
@@ -542,7 +551,7 @@ export function MakeTimetablePage() {
     setMessage("Processing no split...");
 
     const student = studentRows.find((row) =>
-      isSameStudentNumberRow(row, module)
+      isSameStudentNumberRow(row, module, streamCode)
     );
 
     try {
@@ -592,7 +601,7 @@ export function MakeTimetablePage() {
     setMessage("Processing split...");
 
     const student = studentRows.find((row) =>
-      isSameStudentNumberRow(row, module)
+      isSameStudentNumberRow(row, module, streamCode)
     );
 
     try {
@@ -706,6 +715,7 @@ export function MakeTimetablePage() {
       const latestStudentRows = await getStudentNumberInputRows({
         academicYear,
         planningModules: latestPlanningModules,
+        selectedStreamCode: streamCode || undefined,
       });
 
       const decidedCombineGroupIds = new Set(
@@ -746,7 +756,7 @@ export function MakeTimetablePage() {
 
       for (const module of pendingSingleModules) {
         const student = latestStudentRows.find((row) =>
-          isSameStudentNumberRow(row, module)
+          isSameStudentNumberRow(row, module, streamCode)
         );
 
         await createNoSplitSingleModule({
@@ -959,6 +969,7 @@ export function MakeTimetablePage() {
         const studentData = await getStudentNumberInputRows({
           academicYear,
           planningModules: data,
+          selectedStreamCode: streamCode || undefined,
         });
 
         if (currentRequest !== requestId) return;
@@ -1138,6 +1149,7 @@ export function MakeTimetablePage() {
               manualGroups={manualGroups}
               timetableModules={timetableModules}
               assignments={assignments}
+              selectedStreamCode={streamCode}
               onNoSplitSingle={handleNoSplitSingle}
               onSplitSingle={handleSplitSingle}
               onCombinedSplit={handleCreateCombinedSplit}
@@ -1613,6 +1625,7 @@ function SplitStep({
   manualGroups,
   timetableModules,
   assignments,
+  selectedStreamCode,
   onNoSplitSingle,
   onSplitSingle,
   onCombinedSplit,
@@ -1624,6 +1637,7 @@ function SplitStep({
   manualGroups: ManualCombineGroupWithDetails[];
   timetableModules: TimetableModuleRow[];
   assignments: TeachingAssignmentRow[];
+  selectedStreamCode?: string;
   onNoSplitSingle: (module: TimetablePlanningModuleRow) => void;
   onSplitSingle: (
     module: TimetablePlanningModuleRow,
@@ -1858,7 +1872,7 @@ function SplitStep({
                   header: "Expected",
                   render: (row) => {
                     const student = studentRows.find((s) =>
-                      isSameStudentNumberRow(s, row)
+                      isSameStudentNumberRow(s, row, selectedStreamCode)
                     );
 
                     return student?.expected_student_number ?? 0;
@@ -1874,7 +1888,7 @@ function SplitStep({
                   header: "Action",
                   render: (row) => {
                     const student = studentRows.find((s) =>
-                      isSameStudentNumberRow(s, row)
+                      isSameStudentNumberRow(s, row, selectedStreamCode)
                     );
 
                     return (

@@ -1,6 +1,15 @@
 import { saveAs } from "file-saver";
 
 import { supabase } from "../lib/supabase";
+import {
+  deleteByIdsInBatches,
+  fetchAllPaginatedRows,
+  SUPABASE_DEFAULT_PAGE_SIZE,
+} from "../lib/supabasePagination";
+import {
+  getAcademicYearVariants,
+  normalizeAcademicYear,
+} from "../lib/utils";
 
 import type {
   StudyPlanModule,
@@ -62,6 +71,184 @@ function cleanStream(value?: string | null): string {
  */
 function normalizeStream(value?: string | null): string {
   return cleanStream(value || "nil") || "nil";
+}
+
+const STUDY_PLAN_RECALC_DEBUG_KEY = "debugStudyPlanRecalculate";
+const STUDY_PLAN_RECALC_FILTER_KEY = "debugStudyPlanRecalculateFilter";
+
+/** Enable in browser console: localStorage.setItem('debugStudyPlanRecalculate', '1') */
+function isStudyPlanRecalculateDebugEnabled() {
+  try {
+    if (localStorage.getItem(STUDY_PLAN_RECALC_DEBUG_KEY) === "1") {
+      return true;
+    }
+  } catch {
+    // ignore (SSR / privacy mode)
+  }
+
+  return import.meta.env.DEV;
+}
+
+function getStudyPlanRecalculateDebugFilter(): string {
+  try {
+    return String(localStorage.getItem(STUDY_PLAN_RECALC_FILTER_KEY) ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function logStudyPlanRecalculate(
+  message: string,
+  payload?: Record<string, unknown>
+) {
+  if (!isStudyPlanRecalculateDebugEnabled()) {
+    return;
+  }
+
+  if (payload) {
+    console.info(`[recalculateActualStudentNumbers] ${message}`, payload);
+    return;
+  }
+
+  console.info(`[recalculateActualStudentNumbers] ${message}`);
+}
+
+const RECALCULATE_UPSERT_BATCH_SIZE = 500;
+
+const STUDY_PLAN_ACTUAL_UPSERT_CONFLICT =
+  "academic_year,study_term,module_code,programme_code,programme_stream,study_mode";
+
+type StudyPlanActualAggregateRow = {
+  academic_year: string;
+  study_term: string;
+  module_code: string;
+  module_name: string | null;
+  programme_code: string;
+  programme_stream: string;
+  study_mode: string;
+  actual_student_number: number;
+  updated_at: string;
+};
+
+function buildStudyPlanActualAggregateKey(row: {
+  academic_year: string;
+  study_term: string;
+  module_code: string;
+  programme_code: string;
+  programme_stream: string;
+  study_mode: string;
+}) {
+  return [
+    normalizeAcademicYear(row.academic_year),
+    String(row.study_term ?? "").trim(),
+    String(row.module_code ?? "").trim(),
+    String(row.programme_code ?? "").trim(),
+    normalizeStream(row.programme_stream),
+    String(row.study_mode ?? "").trim(),
+  ].join("|");
+}
+
+function studyPlanActualRowMatchesCanonical(
+  dbRow: {
+    academic_year: string;
+    study_term: string;
+    module_code: string;
+    programme_code: string;
+    programme_stream: string | null;
+    study_mode: string | null;
+  },
+  canonical: StudyPlanActualAggregateRow
+) {
+  return (
+    normalizeAcademicYear(dbRow.academic_year) === canonical.academic_year &&
+    String(dbRow.study_term ?? "").trim() === canonical.study_term &&
+    String(dbRow.module_code ?? "").trim() === canonical.module_code &&
+    String(dbRow.programme_code ?? "").trim() === canonical.programme_code &&
+    normalizeStream(dbRow.programme_stream) === canonical.programme_stream &&
+    String(dbRow.study_mode ?? "").trim() === canonical.study_mode
+  );
+}
+
+async function deleteStudyPlanActualOrphanRows(
+  canonicalRows: StudyPlanActualAggregateRow[]
+) {
+  const canonicalByKey = new Map<string, StudyPlanActualAggregateRow>();
+
+  for (const row of canonicalRows) {
+    canonicalByKey.set(buildStudyPlanActualAggregateKey(row), row);
+  }
+
+  const existingRows = await fetchAllPaginatedRows<{
+    id: string;
+    academic_year: string;
+    study_term: string;
+    module_code: string;
+    programme_code: string;
+    programme_stream: string | null;
+    study_mode: string | null;
+  }>({
+    fetchPage: ({ from, to }) =>
+      supabase
+        .from("study_plan_actual_student_numbers")
+        .select(
+          "id, academic_year, study_term, module_code, programme_code, programme_stream, study_mode"
+        )
+        .order("id", { ascending: true })
+        .range(from, to),
+  });
+
+  const keptKeys = new Set<string>();
+  const orphanIds: string[] = [];
+
+  for (const dbRow of existingRows) {
+    const key = buildStudyPlanActualAggregateKey({
+      academic_year: String(dbRow.academic_year ?? ""),
+      study_term: String(dbRow.study_term ?? ""),
+      module_code: String(dbRow.module_code ?? ""),
+      programme_code: String(dbRow.programme_code ?? ""),
+      programme_stream: String(dbRow.programme_stream ?? ""),
+      study_mode: String(dbRow.study_mode ?? ""),
+    });
+
+    const canonical = canonicalByKey.get(key);
+
+    if (
+      !canonical ||
+      !studyPlanActualRowMatchesCanonical(dbRow, canonical) ||
+      keptKeys.has(key)
+    ) {
+      orphanIds.push(dbRow.id);
+      continue;
+    }
+
+    keptKeys.add(key);
+  }
+
+  return deleteByIdsInBatches({
+    ids: orphanIds,
+    deleteByIds: (ids) =>
+      supabase.from("study_plan_actual_student_numbers").delete().in("id", ids),
+  });
+}
+
+export function setStudyPlanRecalculateDebug(enabled: boolean) {
+  try {
+    if (enabled) {
+      localStorage.setItem(STUDY_PLAN_RECALC_DEBUG_KEY, "1");
+      console.info(
+        "[recalculateActualStudentNumbers] Debug logging ON. Optional filter: localStorage.setItem('debugStudyPlanRecalculateFilter', 'HDC|CS401|T2026C')"
+      );
+      return;
+    }
+
+    localStorage.removeItem(STUDY_PLAN_RECALC_DEBUG_KEY);
+    console.info("[recalculateActualStudentNumbers] Debug logging OFF");
+  } catch (error) {
+    console.warn(
+      "[recalculateActualStudentNumbers] Could not set debug flag:",
+      error
+    );
+  }
 }
 
 /**
@@ -2202,181 +2389,298 @@ export async function recalculateAllStudentStatuses(
 }
 
 export async function recalculateActualStudentNumbers() {
-  const [{ data: moduleRows, error: moduleError }, { data: studentRows, error: studentError }] =
-    await Promise.all([
-      supabase
-        .from("study_plan_modules")
-        .select(
-          "module_code, module_name, programme_code, programme_stream, study_term, status, plan_stage, student_profile_id"
-        )
-        .eq("status", "planned")
-        .eq("plan_stage", "programme")
-        .not("study_term", "is", null),
-      supabase.from("study_plan_students").select("id, study_mode"),
+  const startedAt = performance.now();
+  const debug = isStudyPlanRecalculateDebugEnabled();
+  const filterText = getStudyPlanRecalculateDebugFilter();
+
+  logStudyPlanRecalculate("start", { filter: filterText || "(none)" });
+
+  try {
+    const [moduleRows, studentRows] = await Promise.all([
+      fetchAllPaginatedRows<{
+        module_code: string;
+        module_name: string | null;
+        programme_code: string;
+        programme_stream: string | null;
+        study_term: string;
+        status: string;
+        plan_stage: string;
+        student_profile_id: string;
+      }>({
+        fetchPage: ({ from, to }) =>
+          supabase
+            .from("study_plan_modules")
+            .select(
+              "module_code, module_name, programme_code, programme_stream, study_term, status, plan_stage, student_profile_id"
+            )
+            .eq("status", "planned")
+            .eq("plan_stage", "programme")
+            .not("study_term", "is", null)
+            .order("id", { ascending: true })
+            .range(from, to),
+      }),
+      fetchAllPaginatedRows<{ id: string; study_mode: string | null }>({
+        fetchPage: ({ from, to }) =>
+          supabase
+            .from("study_plan_students")
+            .select("id, study_mode")
+            .order("id", { ascending: true })
+            .range(from, to),
+      }),
     ]);
 
-  if (moduleError) throw moduleError;
-  if (studentError) throw studentError;
-
-  const studyModeByProfileId = new Map<string, string>();
-
-  for (const student of studentRows ?? []) {
-    studyModeByProfileId.set(
-      String(student.id),
-      String(student.study_mode ?? "").trim()
-    );
-  }
-
-  const counts = new Map<string, any>();
-
-  for (const row of moduleRows ?? []) {
-    const studyTerm = row.study_term as string;
-    const academicYear = studyTermToAcademicYear(studyTerm);
-    const programmeStream = normalizeStream(row.programme_stream);
-    const studyMode =
-      studyModeByProfileId.get(String(row.student_profile_id ?? "")) ?? "";
-
-    const key = [
-      academicYear,
-      studyTerm,
-      row.module_code,
-      row.programme_code,
-      programmeStream,
-      studyMode,
-    ].join("|");
-
-    const existing = counts.get(key);
-
-    if (existing) {
-      existing.actual_student_number += 1;
+    if (moduleRows.length >= SUPABASE_DEFAULT_PAGE_SIZE) {
+      logStudyPlanRecalculate("loaded all planned modules (paged)", {
+        plannedModuleRows: moduleRows.length,
+        pageSize: SUPABASE_DEFAULT_PAGE_SIZE,
+      });
     } else {
-      counts.set(key, {
+      logStudyPlanRecalculate("loaded source rows", {
+        plannedModuleRows: moduleRows.length,
+        studentProfiles: studentRows.length,
+      });
+    }
+
+    const studyModeByProfileId = new Map<string, string>();
+
+    for (const student of studentRows) {
+      studyModeByProfileId.set(
+        String(student.id),
+        String(student.study_mode ?? "").trim()
+      );
+    }
+
+    const counts = new Map<string, any>();
+
+    for (const row of moduleRows) {
+      const studyTerm = String(row.study_term ?? "").trim();
+      const academicYear = studyTermToAcademicYear(studyTerm);
+      const programmeStream = normalizeStream(row.programme_stream);
+      const studyMode =
+        studyModeByProfileId.get(String(row.student_profile_id ?? "")) ?? "";
+
+      const key = buildStudyPlanActualAggregateKey({
         academic_year: academicYear,
         study_term: studyTerm,
         module_code: row.module_code,
-        module_name: row.module_name,
         programme_code: row.programme_code,
         programme_stream: programmeStream,
         study_mode: studyMode,
-        actual_student_number: 1,
-        updated_at: new Date().toISOString(),
       });
+
+      const existing = counts.get(key);
+
+      if (existing) {
+        existing.actual_student_number += 1;
+      } else {
+        counts.set(key, {
+          academic_year: normalizeAcademicYear(academicYear),
+          study_term: studyTerm,
+          module_code: row.module_code,
+          module_name: row.module_name,
+          programme_code: row.programme_code,
+          programme_stream: programmeStream,
+          study_mode: studyMode,
+          actual_student_number: 1,
+          updated_at: new Date().toISOString(),
+        });
+      }
     }
+
+    const rows = Array.from(counts.values()) as StudyPlanActualAggregateRow[];
+
+    if (debug) {
+      const filterParts = filterText
+        ? filterText.split("|").map((part) => part.trim().toLowerCase())
+        : [];
+
+      const summaryRows = rows
+        .filter((row) => {
+          if (filterParts.length === 0) {
+            return true;
+          }
+
+          const haystack = [
+            row.academic_year,
+            row.study_term,
+            row.programme_code,
+            row.module_code,
+            row.programme_stream,
+          ]
+            .join("|")
+            .toLowerCase();
+
+          return filterParts.every((part) => haystack.includes(part));
+        })
+        .map((row) => ({
+          academic_year: row.academic_year,
+          study_term: row.study_term,
+          programme_code: row.programme_code,
+          programme_stream: row.programme_stream,
+          module_code: row.module_code,
+          study_mode: row.study_mode,
+          actual_student_number: row.actual_student_number,
+        }))
+        .sort((a, b) => {
+          const yearDiff = String(a.academic_year).localeCompare(
+            String(b.academic_year)
+          );
+
+          if (yearDiff !== 0) return yearDiff;
+
+          return String(a.study_term).localeCompare(String(b.study_term));
+        });
+
+      console.info(
+        `[recalculateActualStudentNumbers] aggregated ${rows.length} row(s) to upsert`
+      );
+
+      if (summaryRows.length > 0) {
+        console.table(summaryRows);
+      } else if (filterText) {
+        console.warn(
+          `[recalculateActualStudentNumbers] filter "${filterText}" matched 0 aggregated rows`
+        );
+      }
+
+      const byYearTerm = new Map<string, number>();
+
+      for (const row of rows) {
+        const bucket = `${row.academic_year} · ${row.study_term}`;
+        byYearTerm.set(
+          bucket,
+          (byYearTerm.get(bucket) ?? 0) + Number(row.actual_student_number ?? 0)
+        );
+      }
+
+      console.info(
+        "[recalculateActualStudentNumbers] totals by academic_year · study_term:"
+      );
+
+      for (const [label, total] of [...byYearTerm.entries()].sort((a, b) =>
+        a[0].localeCompare(b[0])
+      )) {
+        console.info(`  ${label} → ${total}`);
+      }
+    }
+
+    if (rows.length > 0) {
+      for (
+        let offset = 0;
+        offset < rows.length;
+        offset += RECALCULATE_UPSERT_BATCH_SIZE
+      ) {
+        const batch = rows.slice(offset, offset + RECALCULATE_UPSERT_BATCH_SIZE);
+        const { error: upsertError } = await supabase
+          .from("study_plan_actual_student_numbers")
+          .upsert(batch, {
+            onConflict: STUDY_PLAN_ACTUAL_UPSERT_CONFLICT,
+          });
+
+        if (upsertError) throw upsertError;
+      }
+    }
+
+    const deletedOrphanRows = await deleteStudyPlanActualOrphanRows(rows);
+
+    logStudyPlanRecalculate("success", {
+      upsertedRows: rows.length,
+      upsertBatches: Math.ceil(rows.length / RECALCULATE_UPSERT_BATCH_SIZE),
+      deletedOrphanRows,
+      durationMs: Math.round(performance.now() - startedAt),
+    });
+  } catch (error) {
+    console.error("[recalculateActualStudentNumbers] failed:", error);
+    throw error;
   }
-
-  const { error: deleteError } = await supabase
-    .from("study_plan_actual_student_numbers")
-    .delete()
-    .neq("id", "00000000-0000-0000-0000-000000000000");
-
-  if (deleteError) throw deleteError;
-
-  const rows = Array.from(counts.values());
-
-  if (rows.length === 0) return;
-
-  const { error: insertError } = await supabase
-    .from("study_plan_actual_student_numbers")
-    .insert(rows);
-
-  if (insertError) throw insertError;
 }
 
 export async function syncActualStudentNumbersToTimetable() {
-  const { data, error } = await supabase
-    .from("study_plan_actual_student_numbers")
-    .select("*");
+  const data = await fetchAllPaginatedRows<Record<string, unknown>>({
+    fetchPage: ({ from, to }) =>
+      supabase
+        .from("study_plan_actual_student_numbers")
+        .select("*")
+        .order("id", { ascending: true })
+        .range(from, to),
+  });
 
-  if (error) throw error;
+  const actualByModuleTerm = new Map<string, number>();
+  const academicYears = new Set<string>();
 
-  const grouped = new Map<string, any>();
-
-  for (const row of data ?? []) {
-    const programmeStream = normalizeStream(row.programme_stream);
+  for (const row of data) {
     const studyTerm = String(row.study_term ?? "").trim();
+    const academicYear = normalizeAcademicYear(String(row.academic_year ?? ""));
+
+    if (!academicYear || !studyTerm) {
+      continue;
+    }
+
+    academicYears.add(academicYear);
+
+    const programmeStream = normalizeStream(
+      String(row.programme_stream ?? "").trim()
+    );
 
     const key = [
-      row.academic_year,
-      studyTerm,
-      row.module_code,
-      row.programme_code,
+      academicYear,
+      String(row.programme_code ?? "").trim(),
+      String(row.module_code ?? "").trim(),
       programmeStream,
+      studyTerm,
     ].join("|");
 
-    const existing = grouped.get(key);
-
-    if (existing) {
-      existing.actual_student_number += row.actual_student_number;
-      existing.updated_at = new Date().toISOString();
-    } else {
-      grouped.set(key, {
-        academic_year: row.academic_year,
-        module_code: row.module_code,
-        programme_code: row.programme_code,
-        programme_stream: programmeStream,
-        study_term: studyTerm,
-        actual_student_number: row.actual_student_number,
-        updated_at: new Date().toISOString(),
-      });
-    }
+    actualByModuleTerm.set(
+      key,
+      (actualByModuleTerm.get(key) ?? 0) +
+        Number(row.actual_student_number ?? 0)
+    );
   }
 
-  const rows = Array.from(grouped.values());
+  if (actualByModuleTerm.size === 0) return;
 
-  if (rows.length === 0) return;
-
-  const moduleCodes = Array.from(
-    new Set(rows.map((row) => String(row.module_code ?? "").trim()).filter(Boolean))
+  const yearVariants = Array.from(academicYears).flatMap((year) =>
+    getAcademicYearVariants(year)
   );
 
-  const { data: moduleRows } = await supabase
-    .from("modules")
-    .select("module_code, programme_code, stream_code, module_term")
-    .in("module_code", moduleCodes);
+  const { data: timetableRows, error: timetableError } = await supabase
+    .from("timetable_student_numbers")
+    .select("*")
+    .in("academic_year", Array.from(new Set(yearVariants)));
 
-  const catalogTermMap = new Map<string, string>();
+  if (timetableError) throw timetableError;
 
-  for (const moduleRow of moduleRows ?? []) {
-    const key = buildModuleIdentityKey({
-      moduleCode: moduleRow.module_code,
-      programmeCode: moduleRow.programme_code,
-      programmeStream: moduleRow.stream_code,
+  const rowsForUpsert: Array<Record<string, unknown>> = [];
+
+  for (const row of timetableRows ?? []) {
+    const academicYear = normalizeAcademicYear(String(row.academic_year ?? ""));
+    const studyTerm = String(row.study_term ?? "").trim();
+    const lookupKey = [
+      academicYear,
+      String(row.programme_code ?? "").trim(),
+      String(row.module_code ?? "").trim(),
+      normalizeStream(String(row.programme_stream ?? "").trim()),
+      studyTerm,
+    ].join("|");
+
+    const actual = actualByModuleTerm.get(lookupKey);
+
+    if (actual === undefined) {
+      continue;
+    }
+
+    rowsForUpsert.push({
+      academic_year: academicYear,
+      module_code: row.module_code,
+      module_term: row.module_term,
+      programme_code: row.programme_code,
+      programme_stream: normalizeStream(row.programme_stream),
+      study_term: studyTerm,
+      expected_student_number: Number(row.expected_student_number ?? 0),
+      actual_student_number: actual,
+      updated_at: new Date().toISOString(),
     });
-
-    catalogTermMap.set(key, moduleRow.module_term);
   }
-
-  const DEFAULT_CATALOG_MODULE_TERM = "Sep";
-
-  const rowsForUpsert = rows
-    .map((row) => {
-      const moduleTerm =
-        resolveCatalogModuleTermFromMap(
-          {
-            moduleCode: String(row.module_code ?? "").trim(),
-            programmeCode: String(row.programme_code ?? "").trim(),
-            programmeStream: row.programme_stream,
-          },
-          catalogTermMap
-        ) ?? DEFAULT_CATALOG_MODULE_TERM;
-
-      return {
-        academic_year: row.academic_year,
-        module_code: row.module_code,
-        programme_code: row.programme_code,
-        programme_stream: row.programme_stream,
-        study_term: row.study_term,
-        module_term: moduleTerm,
-        expected_student_number: 0,
-        actual_student_number: row.actual_student_number,
-        updated_at: row.updated_at,
-      };
-    })
-    .filter((row) => {
-      const academicYear = String(row.academic_year ?? "").trim();
-      const studyTerm = String(row.study_term ?? "").trim();
-      return Boolean(academicYear && studyTerm);
-    });
 
   if (rowsForUpsert.length === 0) return;
 
