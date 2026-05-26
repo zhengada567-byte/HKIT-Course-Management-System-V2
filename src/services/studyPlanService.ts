@@ -1164,6 +1164,28 @@ export async function getStudyPlanStudent(profileId: string) {
   };
 }
 
+export async function getStudyPlanStudentByStudentId(studentId: string) {
+  const trimmedId = String(studentId ?? "").trim();
+
+  if (!trimmedId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("study_plan_students")
+    .select("id")
+    .eq("student_id", trimmedId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (!data?.id) {
+    return null;
+  }
+
+  return getStudyPlanStudent(String(data.id));
+}
+
 export interface StudyPlanExportFilters {
   studentProfileId?: string;
   programmeCode?: string;

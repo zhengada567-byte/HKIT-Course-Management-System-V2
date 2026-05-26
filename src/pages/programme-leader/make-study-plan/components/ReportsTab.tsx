@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { cn } from "../../../../lib/utils";
 import {
   downloadModuleEnrollmentReportCsv,
   downloadStudentHeadcountReportCsv,
@@ -43,6 +44,23 @@ export default function ReportsTab() {
     return Array.from(
       new Set(moduleRows.map((row) => row.programmeCode).filter(Boolean))
     ).sort();
+  }, [moduleRows]);
+
+  const moduleRowBackgroundByIndex = useMemo(() => {
+    const backgrounds: string[] = [];
+    let useAltBackground = false;
+    let previousModuleCode = "";
+
+    for (const row of moduleRows) {
+      if (row.moduleCode !== previousModuleCode) {
+        useAltBackground = !useAltBackground;
+        previousModuleCode = row.moduleCode;
+      }
+
+      backgrounds.push(useAltBackground ? "bg-slate-50" : "bg-white");
+    }
+
+    return backgrounds;
   }, [moduleRows]);
 
   async function loadStudentReport() {
@@ -445,7 +463,13 @@ export default function ReportsTab() {
 
                 {!loading &&
                   moduleRows.map((row, index) => (
-                    <tr key={index} className="border-t">
+                    <tr
+                      key={`${row.moduleCode}-${row.programmeCode}-${row.programmeStream}-${row.planStage}-${row.studyTerm}-${index}`}
+                      className={cn(
+                        "border-t",
+                        moduleRowBackgroundByIndex[index]
+                      )}
+                    >
                       <td className="p-2">{row.programmeCode}</td>
                       <td className="p-2">{row.programmeStream}</td>
                       <td className="p-2">{row.planStage}</td>

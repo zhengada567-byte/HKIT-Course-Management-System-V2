@@ -4,18 +4,22 @@ import type { StudyPlanModule, StudyPlanStudent } from "./types";
 
 import {
   getStudyPlanStudent,
+  getStudyPlanStudentByStudentId,
   listStudyPlanStudents,
 } from "../../../services/studyPlanService";
 
 import StudentListTab from "./components/StudentListTab";
 import StudentProfileEditor from "./components/StudentProfileEditor";
+import StudyPlanSearchTab from "./components/StudyPlanSearchTab";
 import ReportsTab from "./components/ReportsTab";
 import { InitialStudyPlanUpload } from "./components/InitialStudyPlanUpload";
 
-type TabKey = "students" | "upload" | "editor" | "reports";
+type TabKey = "students" | "search" | "upload" | "editor" | "reports";
+type EditorOrigin = "list" | "search" | "new";
 
 export default function MakeStudyPlanPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("students");
+  const [editorOrigin, setEditorOrigin] = useState<EditorOrigin>("list");
   const [students, setStudents] = useState<StudyPlanStudent[]>([]);
   const [selectedStudent, setSelectedStudent] =
     useState<StudyPlanStudent | null>(null);
@@ -38,6 +42,7 @@ export default function MakeStudyPlanPage() {
   function clearEditorState() {
     setSelectedStudent(null);
     setSelectedModules([]);
+    setEditorOrigin("list");
   }
 
   function goToTab(tab: Exclude<TabKey, "editor">) {
@@ -45,12 +50,36 @@ export default function MakeStudyPlanPage() {
     setActiveTab(tab);
   }
 
-  async function handleEditStudent(profileId: string) {
+  async function openEditorFromProfile(profileId: string, origin: EditorOrigin) {
     setLoading(true);
 
     try {
       const result = await getStudyPlanStudent(profileId);
 
+      setEditorOrigin(origin);
+      setSelectedStudent(result.student);
+      setSelectedModules(result.modules);
+      setActiveTab("editor");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleEditStudent(profileId: string) {
+    await openEditorFromProfile(profileId, "list");
+  }
+
+  async function handleSearchByStudentId(studentId: string) {
+    setLoading(true);
+
+    try {
+      const result = await getStudyPlanStudentByStudentId(studentId);
+
+      if (!result) {
+        throw new Error(`找不到學號「${studentId}」的學習計劃。`);
+      }
+
+      setEditorOrigin("search");
       setSelectedStudent(result.student);
       setSelectedModules(result.modules);
       setActiveTab("editor");
@@ -60,6 +89,7 @@ export default function MakeStudyPlanPage() {
   }
 
   function handleNewStudent() {
+    setEditorOrigin("new");
     setSelectedStudent({
       studentId: "",
       studentName: "",
@@ -76,7 +106,31 @@ export default function MakeStudyPlanPage() {
     setActiveTab("editor");
   }
 
-  function handleBackToStudentList() {
+  function handleBackFromEditor() {
+    if (editorOrigin === "search") {
+      goToTab("search");
+      return;
+    }
+
+    goToTab("students");
+  }
+
+  async function handleEditorSaved() {
+    await refreshStudents();
+
+    if (editorOrigin === "search") {
+      const profileId = selectedStudent?.id;
+
+      if (profileId) {
+        const result = await getStudyPlanStudent(profileId);
+        setSelectedStudent(result.student);
+        setSelectedModules(result.modules);
+      }
+
+      alert("已保存");
+      return;
+    }
+
     goToTab("students");
   }
 
@@ -116,6 +170,18 @@ export default function MakeStudyPlanPage() {
         <button
           type="button"
           className={`px-4 py-2 rounded-md text-sm ${
+            activeTab === "search"
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted"
+          }`}
+          onClick={() => goToTab("search")}
+        >
+          搜寻
+        </button>
+
+        <button
+          type="button"
+          className={`px-4 py-2 rounded-md text-sm ${
             activeTab === "upload"
               ? "bg-primary text-primary-foreground"
               : "bg-muted"
@@ -150,16 +216,6 @@ export default function MakeStudyPlanPage() {
         </button>
       </div>
 
-      {/*
-        Important:
-        Keep StudentListTab mounted.
-
-        Do not use:
-        activeTab === "students" && <StudentListTab ... />
-
-        Because that will unmount StudentListTab when editing a student,
-        causing internal filter / selected programme / search state to reset.
-      */}
       <div className={activeTab === "students" ? "block" : "hidden"}>
         <StudentListTab
           students={students}
@@ -167,6 +223,13 @@ export default function MakeStudyPlanPage() {
           onRefresh={refreshStudents}
           onNew={handleNewStudent}
           onEdit={handleEditStudent}
+        />
+      </div>
+
+      <div className={activeTab === "search" ? "block" : "hidden"}>
+        <StudyPlanSearchTab
+          loading={loading}
+          onSearch={handleSearchByStudentId}
         />
       </div>
 
@@ -193,20 +256,19 @@ export default function MakeStudyPlanPage() {
 
             <button
               type="button"
-              onClick={handleBackToStudentList}
+              onClick={handleBackFromEditor}
               className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
             >
-              ← 返回學生列表
+              {editorOrigin === "search"
+                ? "← 返回搜寻"
+                : "← 返回學生列表"}
             </button>
           </div>
 
           <StudentProfileEditor
             initialStudent={selectedStudent}
             initialModules={selectedModules}
-            onSaved={async () => {
-              await refreshStudents();
-              goToTab("students");
-            }}
+            onSaved={handleEditorSaved}
           />
         </div>
       )}

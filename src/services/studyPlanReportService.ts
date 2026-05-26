@@ -1,6 +1,10 @@
 import { saveAs } from "file-saver";
 
-import { compareStudyTerm } from "../pages/programme-leader/make-study-plan/helpers";
+import {
+  compareStudyTerm,
+  isDegreeProgrammeType,
+  isHDProgrammeType,
+} from "../pages/programme-leader/make-study-plan/helpers";
 import { supabase } from "../lib/supabase";
 
 function normalizeStream(value?: string | null): string {
@@ -58,6 +62,23 @@ function rowsToCsv(headers: string[], rows: string[][]): string {
     .join("\n");
 }
 
+function normalizeProgrammeCodeKey(programmeCode: string): string {
+  return String(programmeCode ?? "").trim().toUpperCase();
+}
+
+function resolveProgrammeTypeFromMap(
+  programmeCode: string,
+  programmeTypeByCode: Map<string, string>
+): string | undefined {
+  const key = normalizeProgrammeCodeKey(programmeCode);
+
+  if (!key) {
+    return undefined;
+  }
+
+  return programmeTypeByCode.get(key);
+}
+
 async function loadProgrammeTypeByCode(): Promise<Map<string, string>> {
   const { data, error } = await supabase
     .from("programmes")
@@ -71,13 +92,20 @@ async function loadProgrammeTypeByCode(): Promise<Map<string, string>> {
   const map = new Map<string, string>();
 
   for (const row of data ?? []) {
-    const programmeCode = String(row.programme_code ?? "").trim();
+    const programmeCode = normalizeProgrammeCodeKey(
+      String(row.programme_code ?? "")
+    );
 
-    if (!programmeCode || map.has(programmeCode)) {
+    if (!programmeCode) {
       continue;
     }
 
-    map.set(programmeCode, String(row.programme_type ?? "").trim() || "Unknown");
+    const nextType = String(row.programme_type ?? "").trim() || "Unknown";
+    const existing = map.get(programmeCode);
+
+    if (!existing || existing === "Unknown") {
+      map.set(programmeCode, nextType);
+    }
   }
 
   return map;
@@ -98,7 +126,8 @@ export async function getStudentHeadcountReport(
     const programmeCode = String(row.programme_code ?? "").trim();
     const programmeStream = normalizeStream(row.programme_stream);
     const programmeType =
-      programmeTypeByCode.get(programmeCode) ?? "Unknown";
+      resolveProgrammeTypeFromMap(programmeCode, programmeTypeByCode) ??
+      "Unknown";
     const intakeTerm = String(row.intake_term ?? "").trim();
 
     const keyParts: string[] = [];
@@ -137,11 +166,16 @@ export async function getStudentHeadcountReport(
   const rows = Array.from(grouped.values());
 
   rows.sort((a, b) => {
-    const typeDiff = a.programmeType.localeCompare(b.programmeType);
+    const typeDiff =
+      programmeKindRank(a.programmeType) - programmeKindRank(b.programmeType);
 
     if (typeDiff !== 0) return typeDiff;
 
-    const codeDiff = a.programmeCode.localeCompare(b.programmeCode);
+    const codeDiff = compareProgrammeCodeForReport(
+      a.programmeCode,
+      b.programmeCode,
+      programmeTypeByCode
+    );
 
     if (codeDiff !== 0) return codeDiff;
 
@@ -184,6 +218,98 @@ function comparePlanStageForReport(a: string, b: string): number {
   if (b === "bridging") return 1;
 
   return a.localeCompare(b);
+}
+
+function programmeKindRank(programmeType: string | undefined): number {
+  if (isHDProgrammeType(programmeType)) {
+    return 0;
+  }
+
+  if (isDegreeProgrammeType(programmeType)) {
+    return 1;
+  }
+
+  return 2;
+}
+
+function compareProgrammeCodeForReport(
+  aCode: string,
+  bCode: string,
+  programmeTypeByCode: Map<string, string>
+): number {
+  const kindDiff =
+    programmeKindRank(resolveProgrammeTypeFromMap(aCode, programmeTypeByCode)) -
+    programmeKindRank(resolveProgrammeTypeFromMap(bCode, programmeTypeByCode));
+
+  if (kindDiff !== 0) {
+    return kindDiff;
+  }
+
+  return normalizeProgrammeCodeKey(aCode).localeCompare(
+    normalizeProgrammeCodeKey(bCode)
+  );
+}
+
+function compareModuleEnrollmentRows(
+  a: ModuleEnrollmentReportRow,
+  b: ModuleEnrollmentReportRow,
+  params: ModuleEnrollmentReportParams,
+  programmeTypeByCode: Map<string, string>
+): number {
+  const hasProgramme = Boolean(String(params.programmeCode ?? "").trim());
+  const hasTerm = Boolean(String(params.studyTerm ?? "").trim());
+
+  const chain = (...parts: number[]) => {
+    for (const part of parts) {
+      if (part !== 0) {
+        return part;
+      }
+    }
+
+    return 0;
+  };
+
+  if (hasProgramme && hasTerm) {
+    return chain(
+      a.moduleCode.localeCompare(b.moduleCode),
+      a.programmeStream.localeCompare(b.programmeStream),
+      comparePlanStageForReport(a.planStage, b.planStage)
+    );
+  }
+
+  if (hasProgramme && !hasTerm) {
+    return chain(
+      compareStudyTerm(a.studyTerm, b.studyTerm),
+      a.moduleCode.localeCompare(b.moduleCode),
+      a.programmeStream.localeCompare(b.programmeStream),
+      comparePlanStageForReport(a.planStage, b.planStage)
+    );
+  }
+
+  if (!hasProgramme && hasTerm) {
+    return chain(
+      a.moduleCode.localeCompare(b.moduleCode),
+      a.programmeStream.localeCompare(b.programmeStream),
+      compareProgrammeCodeForReport(
+        a.programmeCode,
+        b.programmeCode,
+        programmeTypeByCode
+      ),
+      comparePlanStageForReport(a.planStage, b.planStage)
+    );
+  }
+
+  return chain(
+    compareStudyTerm(a.studyTerm, b.studyTerm),
+    a.moduleCode.localeCompare(b.moduleCode),
+    a.programmeStream.localeCompare(b.programmeStream),
+    compareProgrammeCodeForReport(
+      a.programmeCode,
+      b.programmeCode,
+      programmeTypeByCode
+    ),
+    comparePlanStageForReport(a.planStage, b.planStage)
+  );
 }
 
 export async function getModuleEnrollmentReport(
@@ -260,26 +386,11 @@ export async function getModuleEnrollmentReport(
   }
 
   const rows = Array.from(grouped.values());
+  const programmeTypeByCode = await loadProgrammeTypeByCode();
 
-  rows.sort((a, b) => {
-    const codeDiff = a.programmeCode.localeCompare(b.programmeCode);
-
-    if (codeDiff !== 0) return codeDiff;
-
-    const stageDiff = comparePlanStageForReport(a.planStage, b.planStage);
-
-    if (stageDiff !== 0) return stageDiff;
-
-    const streamDiff = a.programmeStream.localeCompare(b.programmeStream);
-
-    if (streamDiff !== 0) return streamDiff;
-
-    const termDiff = compareStudyTerm(a.studyTerm, b.studyTerm);
-
-    if (termDiff !== 0) return termDiff;
-
-    return a.moduleCode.localeCompare(b.moduleCode);
-  });
+  rows.sort((a, b) =>
+    compareModuleEnrollmentRows(a, b, params, programmeTypeByCode)
+  );
 
   return rows;
 }
