@@ -9,12 +9,14 @@ import { CourseSearchPage } from "../pages/CourseSearchPage";
 import { TeacherLoadingPage } from "../pages/TeacherLoadingPage";
 
 import { AcademicYearPage } from "../pages/admin/AcademicYearPage";
+import { AcademicCalendarAdminPage } from "../pages/admin/AcademicCalendarAdminPage";
 import { UploadExcelPage } from "../pages/admin/UploadExcelPage";
 import { ProgrammeManagementPage } from "../pages/admin/ProgrammeManagementPage";
 import { TeacherManagementPage } from "../pages/admin/TeacherManagementPage";
 import { ModuleManagementPage } from "../pages/admin/ModuleManagementPage";
 import { AdminPasswordManagementPage } from "../pages/admin/AdminPasswordManagementPage";
 
+import { AcademicCalendarPage } from "../pages/AcademicCalendarPage";
 import { MakeTimetablePage } from "../pages/programme-leader/MakeTimetablePage";
 import MakeStudyPlanPage from "../pages/programme-leader/make-study-plan/MakeStudyPlanPage";
 import { AssignmentConfirmationMonitorPage } from "../pages/admin/AssignmentConfirmationMonitorPage";
@@ -48,6 +50,14 @@ export const routes: RouteObject[] = [
         element: <CourseSearchPage />,
       },
       {
+        path: "academic-calendar",
+        element: (
+          <ProtectedRoute allowedRoles={["programme_leader", "admin"]}>
+            <AcademicCalendarPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: "teacher-loading",
         element: <TeacherLoadingPage />,
       },
@@ -64,6 +74,14 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute allowedRoles={["admin"]}>
             <AcademicYearPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "admin/academic-calendar",
+        element: (
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AcademicCalendarAdminPage />
           </ProtectedRoute>
         ),
       },

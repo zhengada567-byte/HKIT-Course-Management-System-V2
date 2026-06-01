@@ -1,1 +1,4 @@
+/api/hk-public-holidays-ics/en https://www.1823.gov.hk/common/ical/en.ics 200
+/api/hk-public-holidays-ics/tc https://www.1823.gov.hk/common/ical/tc.ics 200
+/api/hk-public-holidays-ics/sc https://www.1823.gov.hk/common/ical/sc.ics 200
 /* /index.html 200

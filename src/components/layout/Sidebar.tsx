@@ -5,6 +5,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import {
   BookOpenCheck,
   CalendarCog,
+  CalendarDays,
   ClipboardCheck,
   FileSpreadsheet,
   Gauge,
@@ -64,6 +65,12 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       icon: Search,
     },
     {
+      to: "/academic-calendar",
+      label: "Academic Calendar",
+      icon: CalendarDays,
+      roles: ["programme_leader", "admin"],
+    },
+    {
       to: "/teacher-loading",
       label: t.teacherLoading,
       icon: Gauge,
@@ -82,6 +89,12 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       to: "/admin/academic-year",
       label: "學年與學期設定",
       icon: CalendarCog,
+      roles: ["admin"],
+    },
+    {
+      to: "/admin/academic-calendar",
+      label: "學年日曆設定",
+      icon: CalendarDays,
       roles: ["admin"],
     },
     {

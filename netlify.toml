@@ -2,6 +2,25 @@
   command = "npm run build"
   publish = "dist"
 
+# Proxy 1823 iCal (browser cannot fetch cross-origin due to CORS).
+[[redirects]]
+  from = "/api/hk-public-holidays-ics/en"
+  to = "https://www.1823.gov.hk/common/ical/en.ics"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/hk-public-holidays-ics/tc"
+  to = "https://www.1823.gov.hk/common/ical/tc.ics"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/hk-public-holidays-ics/sc"
+  to = "https://www.1823.gov.hk/common/ical/sc.ics"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
