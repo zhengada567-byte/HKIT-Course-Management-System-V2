@@ -12,6 +12,7 @@ export function StepTabs({
     { key: "combine", label: "2. 合班" },
     { key: "split", label: "3. 分班" },
     { key: "assignment", label: "4. 分配教師" },
+    { key: "schedule", label: "5. 排課（教室/日期）" },
   ];
 
   return (

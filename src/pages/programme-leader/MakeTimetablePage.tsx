@@ -63,6 +63,7 @@ import type {
 import { SplitAction } from "./make-timetable/components/SplitAction";
 import { StepTabs } from "./make-timetable/components/StepTabs";
 import { StudentNumberStep } from "./make-timetable/components/StudentNumberStep";
+import { ScheduleStep } from "./make-timetable/components/ScheduleStep";
 import {
   displayStream,
   normalizeCompareText,
@@ -1128,6 +1129,13 @@ export function MakeTimetablePage() {
               assignments={assignments}
               onSave={handleSaveAssignment}
               onConfirm={handleConfirmAssignments}
+            />
+          )}
+
+          {step === "schedule" && (
+            <ScheduleStep
+              timetableModules={timetableModules}
+              assignments={assignments}
             />
           )}
         </>
