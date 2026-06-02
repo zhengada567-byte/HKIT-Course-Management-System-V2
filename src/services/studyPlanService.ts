@@ -329,6 +329,120 @@ function buildModuleIdentityKey(input: {
     .join("|");
 }
 
+/** Matches DB unique constraint on study_plan_modules (per student profile). */
+export function buildStudyPlanModulePersistKey(module: {
+  moduleCode?: string | null;
+  programmeCode?: string | null;
+  programmeStream?: string | null;
+  planStage?: string | null;
+}): string {
+  return [
+    normalizeKeyPart(module.moduleCode),
+    normalizeKeyPart(module.programmeCode),
+    normalizeStream(module.programmeStream),
+    normalizeKeyPart(module.planStage ?? "programme"),
+  ].join("|");
+}
+
+const STUDY_PLAN_MODULE_ROW_UNIQUE_CONFLICT =
+  "student_profile_id,module_code,programme_code,programme_stream,plan_stage";
+
+function studyPlanModulePersistKeyForStudent(
+  module: StudyPlanModule,
+  student: Pick<StudyPlanStudent, "programmeCode" | "programmeStream">
+) {
+  return buildStudyPlanModulePersistKey({
+    moduleCode: module.moduleCode,
+    programmeCode: module.programmeCode || student.programmeCode,
+    programmeStream: module.programmeStream || student.programmeStream,
+    planStage: module.planStage,
+  });
+}
+
+/**
+ * One row per DB unique key; prefer the row that already has an id.
+ */
+function dedupeStudyPlanModulesByPersistKey(
+  modules: StudyPlanModule[],
+  student: Pick<StudyPlanStudent, "programmeCode" | "programmeStream">
+): StudyPlanModule[] {
+  const byKey = new Map<string, StudyPlanModule>();
+
+  for (const module of modules) {
+    const key = studyPlanModulePersistKeyForStudent(module, student);
+    const existing = byKey.get(key);
+
+    if (!existing) {
+      byKey.set(key, module);
+      continue;
+    }
+
+    if (!existing.id && module.id) {
+      byKey.set(key, module);
+      continue;
+    }
+
+    if (existing.id && !module.id) {
+      continue;
+    }
+
+    byKey.set(key, module);
+  }
+
+  return Array.from(byKey.values());
+}
+
+async function attachExistingStudyPlanModuleIds(
+  studentProfileId: string,
+  modules: StudyPlanModule[],
+  student: Pick<StudyPlanStudent, "programmeCode" | "programmeStream">
+): Promise<StudyPlanModule[]> {
+  const { data: existingRows, error } = await supabase
+    .from("study_plan_modules")
+    .select("id, module_code, programme_code, programme_stream, plan_stage")
+    .eq("student_profile_id", studentProfileId);
+
+  if (error) {
+    throw error;
+  }
+
+  const idByKey = new Map<string, string>();
+
+  for (const row of existingRows ?? []) {
+    const id = String(row.id ?? "").trim();
+
+    if (!id) {
+      continue;
+    }
+
+    idByKey.set(
+      buildStudyPlanModulePersistKey({
+        moduleCode: row.module_code,
+        programmeCode: row.programme_code,
+        programmeStream: row.programme_stream,
+        planStage: row.plan_stage,
+      }),
+      id
+    );
+  }
+
+  return modules.map((module) => {
+    if (module.id) {
+      return module;
+    }
+
+    const existingId = idByKey.get(
+      studyPlanModulePersistKeyForStudent(module, student)
+    );
+
+    if (!existingId) {
+      return module;
+    }
+
+    return { ...module, id: existingId };
+  });
+}
+
 /**
  * Build identity key directly from modules table row.
  */
@@ -2201,8 +2315,19 @@ export async function saveStudyPlan(
     );
   }
 
-  const modulesWithId = enrichedModules.filter((module) => module.id);
-  const modulesWithoutId = enrichedModules.filter((module) => !module.id);
+  const dedupedModules = dedupeStudyPlanModulesByPersistKey(
+    enrichedModules,
+    studentWithType
+  );
+
+  const modulesReadyToSave = await attachExistingStudyPlanModuleIds(
+    savedStudentId,
+    dedupedModules,
+    studentWithType
+  );
+
+  const modulesWithId = modulesReadyToSave.filter((module) => module.id);
+  const modulesWithoutId = modulesReadyToSave.filter((module) => !module.id);
 
   if (modulesWithId.length > 0) {
     const { error: updateError } = await supabase
@@ -2222,10 +2347,11 @@ export async function saveStudyPlan(
   if (modulesWithoutId.length > 0) {
     const { data: insertedRows, error: insertError } = await supabase
       .from("study_plan_modules")
-      .insert(
+      .upsert(
         modulesWithoutId.map((module) =>
           toModuleRow(module, studentWithType, savedStudentId)
-        )
+        ),
+        { onConflict: STUDY_PLAN_MODULE_ROW_UNIQUE_CONFLICT }
       )
       .select("id");
 
@@ -2267,7 +2393,7 @@ export async function saveStudyPlan(
   if (await isDegreeProgrammeByCode(studentWithType.programmeCode)) {
     const bridgingModuleCodes = Array.from(
       new Set(
-        enrichedModules
+        modulesReadyToSave
           .filter((module) => module.planStage === "bridging")
           .flatMap((module) => {
             const raw = String(module.moduleCode ?? "").trim();

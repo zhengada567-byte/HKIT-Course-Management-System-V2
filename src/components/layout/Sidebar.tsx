@@ -22,6 +22,7 @@ import {
 import { cn } from "../../lib/utils";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
+import { useSidebarLayout } from "../../contexts/SidebarLayoutContext";
 import type { UserRole } from "../../types";
 
 interface SidebarProps {
@@ -42,6 +43,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const { role } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const { collapsed } = useSidebarLayout();
 
   /**
    * 保留這兩個狀態，但不再請求 teacher_loading_runs。
@@ -222,10 +224,11 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
         className={cn(
           "w-64 shrink-0 border-r border-slate-200 bg-white p-3",
           "min-h-[calc(100vh-3.5rem)]",
-          "lg:static lg:block",
           mobileOpen
-            ? "fixed left-0 top-14 z-40 block h-[calc(100vh-3.5rem)] overflow-y-auto shadow-xl"
-            : "hidden lg:block"
+            ? "fixed left-0 top-14 z-40 block h-[calc(100vh-3.5rem)] overflow-y-auto shadow-xl lg:static lg:shadow-none"
+            : collapsed
+              ? "hidden"
+              : "hidden lg:block lg:static"
         )}
       >
         {nav}

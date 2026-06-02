@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { useSidebarLayout } from "../../../contexts/SidebarLayoutContext";
 import type { StudyPlanModule, StudyPlanStudent } from "./types";
 
 import {
@@ -19,6 +20,7 @@ type TabKey = "students" | "search" | "quota" | "upload" | "editor" | "reports";
 type EditorOrigin = "list" | "search" | "new";
 
 export default function MakeStudyPlanPage() {
+  const { setCollapsed } = useSidebarLayout();
   const [activeTab, setActiveTab] = useState<TabKey>("students");
   const [editorOrigin, setEditorOrigin] = useState<EditorOrigin>("list");
   const [students, setStudents] = useState<StudyPlanStudent[]>([]);
@@ -149,6 +151,14 @@ export default function MakeStudyPlanPage() {
   useEffect(() => {
     void refreshStudents();
   }, []);
+
+  useEffect(() => {
+    setCollapsed(activeTab === "editor");
+
+    return () => {
+      setCollapsed(false);
+    };
+  }, [activeTab, setCollapsed]);
 
   return (
     <div className="p-6 space-y-6">

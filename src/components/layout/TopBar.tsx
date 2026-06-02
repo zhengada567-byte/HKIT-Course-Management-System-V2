@@ -3,6 +3,8 @@ import { Menu } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
+import { useSidebarLayout } from "../../contexts/SidebarLayoutContext";
+import { cn } from "../../lib/utils";
 
 interface TopBarProps {
   mobileNavOpen: boolean;
@@ -13,13 +15,17 @@ export function TopBar({ mobileNavOpen, onToggleMobileNav }: TopBarProps) {
   const { user, logout } = useAuth();
   const { language, setLanguage, t } = useLanguage();
   const { academicYear, currentStudyTerm, currentOfferedTerm } = useAcademicYear();
+  const { collapsed, expand } = useSidebarLayout();
 
   return (
     <header className="sticky top-0 z-20 border-b border-slate-200 bg-white">
       <div className="mx-auto flex h-14 max-w-[1600px] items-center justify-between px-4">
         <div className="flex items-center gap-3">
           <button
-            className="btn btn-secondary lg:hidden"
+            className={cn(
+              "btn btn-secondary",
+              !collapsed && "lg:hidden"
+            )}
             type="button"
             aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
             aria-expanded={mobileNavOpen}
@@ -29,15 +35,32 @@ export function TopBar({ mobileNavOpen, onToggleMobileNav }: TopBarProps) {
             <Menu className="h-4 w-4" />
           </button>
 
-          <div>
-            <h1 className="text-sm font-semibold text-slate-900 sm:text-base">
-              {t.systemTitle}
-            </h1>
-            <p className="text-xs text-slate-500">
-              {t.academicYear}: {academicYear} · {t.currentTerm}:{" "}
-              {currentOfferedTerm} ({currentStudyTerm})
-            </p>
-          </div>
+          {collapsed ? (
+            <button
+              type="button"
+              className="text-left rounded-md px-1 py-0.5 -ml-1 transition cursor-pointer hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+              aria-label="Show navigation menu"
+              onClick={expand}
+            >
+              <h1 className="text-sm font-semibold text-slate-900 sm:text-base">
+                {t.systemTitle}
+              </h1>
+              <p className="text-xs text-slate-500">
+                {t.academicYear}: {academicYear} · {t.currentTerm}:{" "}
+                {currentOfferedTerm} ({currentStudyTerm})
+              </p>
+            </button>
+          ) : (
+            <div>
+              <h1 className="text-sm font-semibold text-slate-900 sm:text-base">
+                {t.systemTitle}
+              </h1>
+              <p className="text-xs text-slate-500">
+                {t.academicYear}: {academicYear} · {t.currentTerm}:{" "}
+                {currentOfferedTerm} ({currentStudyTerm})
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

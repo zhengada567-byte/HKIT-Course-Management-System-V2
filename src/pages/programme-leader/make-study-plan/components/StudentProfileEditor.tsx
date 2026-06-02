@@ -7,6 +7,7 @@ import {
   loadProgrammeModules,
   loadBridgingModuleOptionsForDegree,
   buildStudyPlanModuleFieldsFromCode,
+  buildStudyPlanModulePersistKey,
   deleteStudyPlanModuleById,
   saveStudyPlan,
   sortModulesForStudyPlan,
@@ -46,6 +47,41 @@ function createEmptyBridgingRows(): BridgingRow[] {
 
 function normalizeStreamForCompare(value?: string | null): string {
   return String(value ?? "nil").trim() || "nil";
+}
+
+/**
+ * Merge catalogue row with an existing DB row when reloading programme modules.
+ * Resets failed/exempted progress so re-enrollment can start fresh study terms.
+ */
+function mergeLoadedProgrammeModule(
+  template: StudyPlanModule,
+  existing: StudyPlanModule | undefined,
+  student: StudyPlanStudent
+): StudyPlanModule {
+  const merged: StudyPlanModule = {
+    ...template,
+    programmeCode: template.programmeCode || student.programmeCode,
+    programmeStream: template.programmeStream || student.programmeStream,
+    studentId: student.studentId,
+    studentProfileId: student.id,
+    planStage: template.planStage ?? "programme",
+  };
+
+  if (!existing) {
+    return merged;
+  }
+
+  return {
+    ...merged,
+    id: existing.id,
+    moduleCode: existing.moduleCode || merged.moduleCode,
+    status: "planned",
+    studyTerm: undefined,
+    isExempted: false,
+    isFailed: false,
+    isLocked: existing.isLocked ?? false,
+    remark: existing.remark,
+  };
 }
 
 function buildModuleOptionKey(module: StudyPlanModule): string {
@@ -145,56 +181,6 @@ useEffect(() => {
           normalizeStreamForCompare(student.programmeStream)
     );
   }, [programmeOptions, student.programmeCode, student.programmeStream]);
-
-useEffect(() => {
-  console.log("[StudyPlan] Stream select debug:", {
-    initialStudentProgrammeCode: initialStudent.programmeCode,
-    initialStudentProgrammeStream: initialStudent.programmeStream,
-
-    studentProgrammeCode: student.programmeCode,
-    studentProgrammeStream: student.programmeStream,
-
-    programmeOptionsCount: programmeOptions.length,
-
-    programmeOptionsForHDC: programmeOptions
-      .filter(
-        (option) =>
-          String(option.programmeCode ?? "").trim().toUpperCase() === "HDC"
-      )
-      .map((option) => ({
-        programmeCode: option.programmeCode,
-        programmeStream: option.programmeStream,
-        programmeName: option.programmeName,
-        codeLength: String(option.programmeCode ?? "").length,
-        streamLength: String(option.programmeStream ?? "").length,
-      })),
-
-    streamOptions: streamOptions.map((option) => ({
-      programmeCode: option.programmeCode,
-      programmeStream: option.programmeStream,
-      programmeName: option.programmeName,
-      equal:
-        option.programmeStream === student.programmeStream,
-      normalizedEqual:
-        normalizeStreamForCompare(option.programmeStream) ===
-        normalizeStreamForCompare(student.programmeStream),
-    })),
-
-    selectedProgrammeOption,
-    selectValue:
-      selectedProgrammeOption?.programmeStream ??
-      student.programmeStream ??
-      "",
-  });
-}, [
-  initialStudent,
-  student.programmeCode,
-  student.programmeStream,
-  programmeOptions,
-  streamOptions,
-  selectedProgrammeOption,
-]);
-
 
   const confirmedBridgingModules = useMemo(() => {
     return modules.filter((module) => module.planStage === "bridging");
@@ -318,12 +304,28 @@ useEffect(() => {
     setLoadingModules(true);
 
     try {
+      const hadExistingModules = modules.length > 0;
+
+      if (
+        hadExistingModules &&
+        !window.confirm(
+          [
+            "载入 programme modules 会替换当前列表中的 programme 阶段模块。",
+            "",
+            "若学生为重新入学：请先确认 intake / bridging，再按 Generate 分配 study term，最后 Save。",
+            "不在列表中的旧修课记录会在 Save 时从数据库删除。",
+            "",
+            "是否继续载入？",
+          ].join("\n")
+        )
+      ) {
+        return;
+      }
+
       const loaded = await loadProgrammeModules(
         student.programmeCode,
         student.programmeStream
       );
-
-      console.log("[StudyPlan] Loaded modules:", loaded);
 
       /**
        * Important for Degree:
@@ -335,13 +337,79 @@ useEffect(() => {
             (module) => module.planStage === "bridging"
           );
 
+          const existingProgrammeByKey = new Map(
+            prev
+              .filter((module) => module.planStage === "programme")
+              .map((module) => [
+                buildStudyPlanModulePersistKey({
+                  moduleCode: module.moduleCode,
+                  programmeCode:
+                    module.programmeCode || student.programmeCode,
+                  programmeStream:
+                    module.programmeStream || student.programmeStream,
+                  planStage: "programme",
+                }),
+                module,
+              ] as const)
+          );
+
+          const mergedProgrammeModules = loaded.map((template) =>
+            mergeLoadedProgrammeModule(
+              template,
+              existingProgrammeByKey.get(
+                buildStudyPlanModulePersistKey({
+                  moduleCode: template.moduleCode,
+                  programmeCode:
+                    template.programmeCode || student.programmeCode,
+                  programmeStream:
+                    template.programmeStream || student.programmeStream,
+                  planStage: "programme",
+                })
+              ),
+              student
+            )
+          );
+
           return sortModulesForStudyPlan([
             ...existingBridgingModules,
-            ...loaded,
+            ...mergedProgrammeModules,
           ]);
         });
       } else {
-        setModules(loaded);
+        setModules((prev) => {
+          const existingByKey = new Map(
+            prev.map((module) => [
+              buildStudyPlanModulePersistKey({
+                moduleCode: module.moduleCode,
+                programmeCode:
+                  module.programmeCode || student.programmeCode,
+                programmeStream:
+                  module.programmeStream || student.programmeStream,
+                planStage: module.planStage ?? "programme",
+              }),
+              module,
+            ])
+          );
+
+          return sortModulesForStudyPlan(
+            loaded.map((template) =>
+              mergeLoadedProgrammeModule(
+                template,
+                existingByKey.get(
+                  buildStudyPlanModulePersistKey({
+                    moduleCode: template.moduleCode,
+                    programmeCode:
+                      template.programmeCode || student.programmeCode,
+                    programmeStream:
+                      template.programmeStream || student.programmeStream,
+                    planStage: template.planStage ?? "programme",
+                  })
+                ),
+                student
+              )
+            )
+          );
+        });
       }
 
       if (loaded.length === 0) {
