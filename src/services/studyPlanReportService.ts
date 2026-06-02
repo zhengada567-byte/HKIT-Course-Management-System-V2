@@ -1,4 +1,6 @@
-import { saveAs } from "file-saver";
+import FileSaver from "file-saver";
+
+const saveAs = FileSaver.saveAs;
 
 import {
   compareStudyTerm,

@@ -19,12 +19,17 @@ import {
 
 import {
   buildBridgingModulesFromUploadRow,
+  clearStudyPlanServiceCaches,
   formatStudyPlanSaveError,
   getProgrammeTypeByCode,
+  getStudyPlanSettingsCached,
   isDegreeProgrammeByCode,
   loadBridgingModuleOptionsForDegree,
+  loadModuleMetadataForPlan,
   loadProgrammeModules,
   saveStudyPlan,
+  syncStudyPlanPostSave,
+  type StudyPlanSaveBatchOptions,
 } from "./studyPlanService";
 
 type ExcelCell = string | number | boolean | Date | null | undefined;
@@ -45,6 +50,10 @@ export interface InitialStudyPlanUploadResult {
   successStudents: number;
   failedStudents: number;
   skippedModuleCells: number;
+  /** Student IDs that were saved in this upload (for verifying batch results). */
+  savedStudentIds: string[];
+  /** True when end-of-upload timetable sync was skipped for speed. */
+  timetableSyncSkipped?: boolean;
   errors: InitialStudyPlanUploadError[];
   warnings: InitialStudyPlanUploadWarning[];
 }
@@ -53,6 +62,11 @@ export interface InitialStudyPlanUploadError {
   row?: number;
   studentId?: string;
   message: string;
+}
+
+/** Whole-file failures (no row) block the save phase; row errors skip that student only. */
+function isBlockingUploadError(error: InitialStudyPlanUploadError): boolean {
+  return error.row === undefined && !error.studentId;
 }
 
 export interface InitialStudyPlanUploadWarning {
@@ -132,6 +146,25 @@ const NON_MODULE_HEADER_ALIASES = [
 
 function cleanText(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+/** Excel often stores student IDs as numbers; keep a stable integer string. */
+function normalizeStudentIdFromUpload(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(Math.round(value));
+  }
+
+  const text = cleanText(value);
+
+  if (/^\d+\.0+$/.test(text)) {
+    return text.replace(/\.0+$/, "");
+  }
+
+  return text;
 }
 
 function optionalText(value: unknown): string | undefined {
@@ -341,6 +374,65 @@ export interface InitialStudyPlanUploadOptions {
   relaxed?: boolean;
   /** When true, defer timetable sync until all students are saved. */
   deferPostSync?: boolean;
+  /**
+   * When true (default for UI), skip full-database timetable sync after upload.
+   * Sync separately when needed — it scans all study plans and is slow.
+   */
+  skipTimetableSync?: boolean;
+}
+
+const UPLOAD_SAVE_CONCURRENCY = 4;
+
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  if (items.length === 0) {
+    return;
+  }
+
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      await worker(items[currentIndex]);
+    }
+  }
+
+  const workerCount = Math.min(limit, items.length);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, () => runWorker())
+  );
+}
+
+function buildUploadBatchMetadataInputs(
+  grouped: Map<string, GroupedStudentPlan>
+) {
+  const inputs: Array<{
+    moduleCode: string;
+    programmeCode?: string;
+    programmeStream?: string;
+    moduleTerm?: string;
+    moduleTermPattern?: string;
+  }> = [];
+
+  for (const plan of grouped.values()) {
+    for (const module of plan.modules) {
+      inputs.push({
+        moduleCode: module.moduleCode,
+        programmeCode: module.programmeCode || plan.student.programmeCode,
+        programmeStream: module.programmeStream || plan.student.programmeStream,
+        moduleTerm: module.moduleTerm,
+        moduleTermPattern: module.moduleTermPattern,
+      });
+    }
+  }
+
+  return inputs;
 }
 
 function parseWorkbookRows(arrayBuffer: ArrayBuffer): ParsedExcelRow[] {
@@ -438,7 +530,11 @@ function buildStudentFromRow(
 ): StudyPlanStudent | null {
   const isDegreeUpload = options?.isDegreeUpload ?? false;
 
-  const studentId = getValueByAliases(row, STUDENT_FIELD_ALIASES.studentId);
+  const studentId = normalizeStudentIdFromUpload(
+    row.values[
+      findHeaderIndex(row.headers, STUDENT_FIELD_ALIASES.studentId)
+    ]
+  );
 
   const studentName = getValueByAliases(
     row,
@@ -1024,7 +1120,7 @@ function buildDegreeModulesFromModulePairs(
 
   if (!pairResult.usedPairFormat) {
     throw new Error(
-      `Student ${student.studentId}: No valid Module code / Study term column pairs found.`
+      "No valid Module code / Study term column pairs found."
     );
   }
 
@@ -1041,7 +1137,7 @@ function buildDegreeModulesFromModulePairs(
 
     if (parsed.status === "planned" && !parsed.studyTerm) {
       throw new Error(
-        `Student ${student.studentId}: Module ${moduleCode} is planned but has no study term.`
+        `Module ${moduleCode} is planned but has no study term.`
       );
     }
 
@@ -1077,10 +1173,24 @@ function buildDegreeModulesFromModulePairs(
       continue;
     }
 
-    if (options?.relaxed) {
-      const inferred = inferPlanStageFromModuleCode(moduleCode);
+    const inferred = inferPlanStageFromModuleCode(moduleCode);
+    const treatAsBridging =
+      inferred === "bridging" || isHdStyleModuleCode(moduleCode);
+    const treatAsProgramme =
+      inferred === "programme" || isDegreeStyleModuleCode(moduleCode);
+    const allowUnknownCodes = options?.relaxed;
 
-      if (inferred === "bridging" || isHdStyleModuleCode(moduleCode)) {
+    if (treatAsBridging || treatAsProgramme || allowUnknownCodes) {
+      if (treatAsBridging) {
+        if (!bridgingMatch) {
+          warnings.push({
+            row: row.rowNumber,
+            studentId: student.studentId,
+            moduleCode,
+            message: `Module ${moduleCode} is not in articulation settings for this degree; imported as bridging (HD-style code).`,
+          });
+        }
+
         bridgingModules.push(
           applyPlanStageFromModuleCode(
             createStudyPlanModule({
@@ -1095,7 +1205,16 @@ function buildDegreeModulesFromModulePairs(
         continue;
       }
 
-      if (inferred === "programme" || isDegreeStyleModuleCode(moduleCode)) {
+      if (treatAsProgramme) {
+        if (!degreeMatch) {
+          warnings.push({
+            row: row.rowNumber,
+            studentId: student.studentId,
+            moduleCode,
+            message: `Module ${moduleCode} is not in the degree programme catalogue; imported as programme module (degree-style code).`,
+          });
+        }
+
         programmeModulesFromImport.push(
           applyPlanStageFromModuleCode(
             createStudyPlanModule({
@@ -1122,7 +1241,7 @@ function buildDegreeModulesFromModulePairs(
     }
 
     throw new Error(
-      `Student ${student.studentId}: Module ${moduleCode} is not part of this degree programme or its articulated bridging modules.`
+      `Module ${moduleCode} is not part of this degree programme or its articulated bridging modules.`
     );
   }
 
@@ -1224,6 +1343,39 @@ async function buildGroupedDegreePlans(
     };
   }
 
+  let sharedProgrammeModules: StudyPlanModule[];
+
+  try {
+    sharedProgrammeModules = await loadProgrammeModules(programmeCode, "nil");
+  } catch (error) {
+    errors.push({
+      message: formatStudyPlanSaveError(
+        error,
+        `Failed to load programme modules for ${programmeCode}.`
+      ),
+    });
+
+    return {
+      grouped,
+      errors,
+      warnings,
+      skippedModuleCells: 0,
+    };
+  }
+
+  if (sharedProgrammeModules.length === 0) {
+    errors.push({
+      message: `No programme modules found for ${programmeCode} / nil.`,
+    });
+
+    return {
+      grouped,
+      errors,
+      warnings,
+      skippedModuleCells: 0,
+    };
+  }
+
   for (const row of rows) {
     const student = buildStudentFromRow(row, programmeCode, errors, {
       isDegreeUpload: true,
@@ -1251,33 +1403,7 @@ async function buildGroupedDegreePlans(
 
     let bridgingModules: StudyPlanModule[] = [];
     let programmeModulesFromImport: StudyPlanModule[] = [];
-    let programmeModules: StudyPlanModule[] = [];
-
-    try {
-      programmeModules = await loadProgrammeModules(
-        programmeCode,
-        studentWithType.programmeStream
-      );
-    } catch (error) {
-      errors.push({
-        row: row.rowNumber,
-        studentId: studentWithType.studentId,
-        message: formatStudyPlanSaveError(
-          error,
-          `Failed to load programme modules for ${programmeCode}.`
-        ),
-      });
-      continue;
-    }
-
-    if (programmeModules.length === 0) {
-      errors.push({
-        row: row.rowNumber,
-        studentId: studentWithType.studentId,
-        message: `No programme modules found for ${programmeCode} / ${studentWithType.programmeStream}.`,
-      });
-      continue;
-    }
+    const programmeModules = sharedProgrammeModules;
 
     try {
       if (uploadFormat === "bridging_columns") {
@@ -1312,7 +1438,6 @@ async function buildGroupedDegreePlans(
     }
 
     if (
-      uploadFormat === "module_pairs" &&
       bridgingModules.length === 0 &&
       programmeModulesFromImport.length === 0
     ) {
@@ -1320,20 +1445,9 @@ async function buildGroupedDegreePlans(
         row: row.rowNumber,
         studentId: studentWithType.studentId,
         message:
-          "No valid module study term or exempted status found for this student.",
-      });
-      continue;
-    }
-
-    if (
-      uploadFormat === "bridging_columns" &&
-      bridgingModules.length === 0
-    ) {
-      warnings.push({
-        row: row.rowNumber,
-        studentId: studentWithType.studentId,
-        message:
-          "No bridging modules found. Degree programme modules will start from intake term.",
+          uploadFormat === "bridging_columns"
+            ? "No bridging modules found. Degree programme modules will start from intake term."
+            : "No module pairs found. Treating as bridging complete; degree programme modules will start from intake term.",
       });
     }
 
@@ -1388,6 +1502,23 @@ async function buildGroupedDegreePlans(
   };
 }
 
+export async function previewInitialStudyPlanRows(
+  rows: ParsedExcelRow[],
+  context: InitialStudyPlanUploadContext,
+  options?: Pick<InitialStudyPlanUploadOptions, "relaxed">
+) {
+  const programmeCode = cleanText(context.programmeCode).toUpperCase();
+  const isDegree = await isDegreeProgrammeByCode(programmeCode);
+
+  if (!isDegree) {
+    return buildGroupedPlans(rows, context);
+  }
+
+  return buildGroupedDegreePlans(rows, context, {
+    relaxed: Boolean(options?.relaxed),
+  });
+}
+
 export async function uploadInitialStudyPlanExcel(
   file: File,
   context: InitialStudyPlanUploadContext,
@@ -1403,6 +1534,8 @@ export async function uploadInitialStudyPlanRows(
   context: InitialStudyPlanUploadContext,
   options?: InitialStudyPlanUploadOptions
 ): Promise<InitialStudyPlanUploadResult> {
+  clearStudyPlanServiceCaches();
+
   const programmeCode = cleanText(context.programmeCode).toUpperCase();
 
   const isDegree = await isDegreeProgrammeByCode(programmeCode);
@@ -1414,43 +1547,86 @@ export async function uploadInitialStudyPlanRows(
       })
     : buildGroupedPlans(rows, context);
 
-  if (errors.length > 0) {
+  const parseErrors = errors.filter((error) => !isBlockingUploadError(error));
+
+  if (errors.some(isBlockingUploadError)) {
     return {
       totalRows: rows.length,
       totalStudents: grouped.size,
       successStudents: 0,
-      failedStudents: grouped.size,
+      failedStudents: grouped.size + parseErrors.length,
       skippedModuleCells,
+      savedStudentIds: [],
       errors,
       warnings,
     };
   }
 
   let successStudents = 0;
-  let failedStudents = 0;
+  let failedStudents = parseErrors.length;
+  const savedStudentIds: string[] = [];
+  const skipTimetableSync = options?.skipTimetableSync ?? !options?.deferPostSync;
 
-  for (const [studentId, plan] of grouped.entries()) {
+  const saveEntries = Array.from(grouped.entries());
+
+  if (saveEntries.length > 0) {
+    const batch: StudyPlanSaveBatchOptions = {
+      settings: await getStudyPlanSettingsCached(),
+      isDegreeProgramme: isDegree,
+    };
+
+    const metadataInputs = buildUploadBatchMetadataInputs(grouped);
+
+    if (metadataInputs.length > 0) {
+      batch.moduleMetadataMap = await loadModuleMetadataForPlan(
+        programmeCode,
+        "nil",
+        metadataInputs
+      );
+    }
+
+    await runWithConcurrency(saveEntries, UPLOAD_SAVE_CONCURRENCY, async ([
+      studentId,
+      plan,
+    ]) => {
+      try {
+        await saveStudyPlan(plan.student, plan.modules, {
+          skipPostSync: true,
+          skipDegreeReconcile: isDegree,
+          batch,
+        });
+        successStudents += 1;
+        savedStudentIds.push(studentId);
+      } catch (error: unknown) {
+        failedStudents += 1;
+
+        errors.push({
+          row: plan.rowNumber,
+          studentId,
+          message: formatStudyPlanSaveError(
+            error,
+            `Failed to save study plan for student ${studentId}.`
+          ),
+        });
+      }
+    });
+  }
+
+  let timetableSyncSkipped = false;
+
+  if (successStudents > 0 && !options?.deferPostSync && !skipTimetableSync) {
     try {
-      await saveStudyPlan(plan.student, plan.modules, {
-        skipPostSync: options?.deferPostSync,
-      });
-      successStudents += 1;
+      await syncStudyPlanPostSave();
     } catch (error: unknown) {
-      failedStudents += 1;
-
       errors.push({
-        row: plan.rowNumber,
-        studentId,
         message: formatStudyPlanSaveError(
           error,
-          `Failed to save study plan for student ${studentId}.`
+          "Study plans were saved, but syncing timetable student numbers failed. Students are in the list; retry sync from admin or re-upload if counts look wrong."
         ),
       });
     }
-  }
-
-  if (options?.deferPostSync && successStudents > 0) {
-    // Caller runs syncStudyPlanPostSave() after batch completes.
+  } else if (successStudents > 0 && skipTimetableSync && !options?.deferPostSync) {
+    timetableSyncSkipped = true;
   }
 
   return {
@@ -1459,6 +1635,8 @@ export async function uploadInitialStudyPlanRows(
     successStudents,
     failedStudents,
     skippedModuleCells,
+    savedStudentIds,
+    timetableSyncSkipped,
     errors,
     warnings,
   };

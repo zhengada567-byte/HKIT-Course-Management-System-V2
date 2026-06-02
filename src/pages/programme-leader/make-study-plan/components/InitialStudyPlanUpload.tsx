@@ -7,6 +7,7 @@ import {
 
 import {
   listProgrammeOptions,
+  syncStudyPlanPostSave,
   type ProgrammeOption,
 } from "../../../../services/studyPlanService";
 
@@ -28,6 +29,11 @@ export function InitialStudyPlanUpload({
 
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
+  const [syncingTimetable, setSyncingTimetable] = useState(false);
+  const [syncTimetableAfterUpload, setSyncTimetableAfterUpload] = useState(
+    true
+  );
   const [result, setResult] = useState<InitialStudyPlanUploadResult | null>(
     null
   );
@@ -297,6 +303,7 @@ export function InitialStudyPlanUpload({
         successStudents: 0,
         failedStudents: 0,
         skippedModuleCells: 0,
+        savedStudentIds: [],
         errors: [
           {
             message: "Please select programme code first.",
@@ -313,12 +320,24 @@ export function InitialStudyPlanUpload({
     }
 
     setUploading(true);
+    setUploadStatus("正在解析 Excel…");
     setResult(null);
 
     try {
-      const uploadResult = await uploadInitialStudyPlanExcel(file, {
-        programmeCode,
-      });
+      setUploadStatus("正在保存學生修課計劃…");
+
+      const uploadResult = await uploadInitialStudyPlanExcel(
+        file,
+        { programmeCode },
+        {
+          relaxed: isDegree,
+          skipTimetableSync: !syncTimetableAfterUpload,
+        }
+      );
+
+      if (syncTimetableAfterUpload && uploadResult.successStudents > 0) {
+        setUploadStatus("正在同步課表人數（全庫掃描，可能需數分鐘）…");
+      }
 
       setResult(uploadResult);
 
@@ -332,6 +351,7 @@ export function InitialStudyPlanUpload({
         successStudents: 0,
         failedStudents: 0,
         skippedModuleCells: 0,
+        savedStudentIds: [],
         errors: [
           {
             message: error?.message || "Failed to upload initial study plan.",
@@ -341,10 +361,43 @@ export function InitialStudyPlanUpload({
       });
     } finally {
       setUploading(false);
+      setUploadStatus("");
 
       if (inputRef.current) {
         inputRef.current.value = "";
       }
+    }
+  }
+
+  async function handleSyncTimetable() {
+    setSyncingTimetable(true);
+
+    try {
+      await syncStudyPlanPostSave();
+      setResult((previous) =>
+        previous
+          ? { ...previous, timetableSyncSkipped: false }
+          : previous
+      );
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Timetable sync failed.";
+
+      setResult((previous) => ({
+        totalRows: previous?.totalRows ?? 0,
+        totalStudents: previous?.totalStudents ?? 0,
+        successStudents: previous?.successStudents ?? 0,
+        failedStudents: (previous?.failedStudents ?? 0) + 1,
+        skippedModuleCells: previous?.skippedModuleCells ?? 0,
+        savedStudentIds: previous?.savedStudentIds ?? [],
+        warnings: previous?.warnings ?? [],
+        errors: [
+          ...(previous?.errors ?? []),
+          { message: `Timetable sync failed: ${message}` },
+        ],
+      }));
+    } finally {
+      setSyncingTimetable(false);
     }
   }
 
@@ -462,8 +515,9 @@ export function InitialStudyPlanUpload({
                 </div>
 
                 <div>
-                  If all bridging module fields are empty, Degree modules start
-                  from the Excel intake term.
+                  If all bridging module fields are empty, or all Module
+                  code / Study term pairs are empty, degree modules start from
+                  the Excel intake term.
                 </div>
               </div>
             </div>
@@ -544,9 +598,22 @@ export function InitialStudyPlanUpload({
             Download Template
           </button>
 
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={syncTimetableAfterUpload}
+              onChange={(event) =>
+                setSyncTimetableAfterUpload(event.target.checked)
+              }
+              disabled={uploading}
+              className="rounded"
+            />
+            上傳完成後同步課表人數（較慢，會掃描全部修課計劃）
+          </label>
+
           {uploading && (
             <span className="text-sm text-blue-600">
-              Uploading and saving study plans...
+              {uploadStatus || "Uploading and saving study plans..."}
             </span>
           )}
         </div>
@@ -659,11 +726,50 @@ export function InitialStudyPlanUpload({
             </div>
           )}
 
-          {result.errors.length === 0 && result.successStudents > 0 && (
-            <div className="mt-4 rounded bg-green-50 px-3 py-2 text-green-700">
-              Upload completed successfully. Student list has been refreshed.
+          {result.timetableSyncSkipped && result.successStudents > 0 && (
+            <div className="mt-4 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-blue-900">
+              <p>
+                學生已保存。為加快上傳，此次未同步課表人數。需要更新課表時請按下方按鈕。
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleSyncTimetable()}
+                disabled={syncingTimetable}
+                className="mt-2 rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {syncingTimetable ? "正在同步課表…" : "立即同步課表人數"}
+              </button>
             </div>
           )}
+
+          {result.successStudents > 0 && result.errors.length === 0 && (
+            <div className="mt-4 rounded bg-green-50 px-3 py-2 text-green-700">
+              Upload completed successfully. Student list has been refreshed.
+              {!result.timetableSyncSkipped &&
+                syncTimetableAfterUpload &&
+                " Timetable student numbers were synced."}
+            </div>
+          )}
+
+          {result.successStudents > 0 && result.errors.length > 0 && (
+            <div className="mt-4 rounded bg-green-50 px-3 py-2 text-green-700">
+              Partial upload: {result.successStudents} student(s) saved.
+              Review errors for rows that were not imported.
+            </div>
+          )}
+
+          {result.savedStudentIds.length > 0 &&
+            result.totalStudents > result.successStudents && (
+              <div className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                <div className="font-medium">
+                  {result.totalStudents - result.successStudents} student(s) were
+                  not saved. Check Errors above (e.g. Row 22).
+                </div>
+                <div className="mt-1 text-xs">
+                  Saved IDs: {result.savedStudentIds.join(", ")}
+                </div>
+              </div>
+            )}
         </div>
       )}
     </div>

@@ -1,4 +1,6 @@
-import { saveAs } from "file-saver";
+import FileSaver from "file-saver";
+
+const saveAs = FileSaver.saveAs;
 
 import { supabase } from "../lib/supabase";
 import {
@@ -1037,7 +1039,7 @@ function deriveIntakeYearFromTerm(term?: string | null): string | undefined {
  * Important:
  * modules table currently does NOT have module_sequence.
  */
-async function loadModuleMetadataForPlan(
+export async function loadModuleMetadataForPlan(
   programmeCode: string,
   programmeStream: string | undefined,
   modules: Array<{
@@ -1186,8 +1188,25 @@ type ModuleCatalogRow = {
   module_term: string | null;
   programme_code: string | null;
   stream_code: string | null;
-  delivery_mode: string | null;
 };
+
+/** Cleared at the start of each bulk study-plan upload. */
+const bridgingModuleOptionsCache = new Map<string, StudyPlanModule[]>();
+const moduleCatalogRowsByCodeCache = new Map<string, ModuleCatalogRow[]>();
+let cachedStudyPlanSettings: StudyPlanSettings | null = null;
+
+export interface StudyPlanSaveBatchOptions {
+  settings?: StudyPlanSettings;
+  moduleMetadataMap?: Map<string, unknown>;
+  isDegreeProgramme?: boolean;
+}
+
+export function clearStudyPlanServiceCaches() {
+  bridgingModuleOptionsCache.clear();
+  moduleCatalogRowsByCodeCache.clear();
+  programmeTypeByCodeCache.clear();
+  cachedStudyPlanSettings = null;
+}
 
 function pickBestModuleCatalogRow(
   rows: ModuleCatalogRow[],
@@ -1250,12 +1269,24 @@ export interface StudyPlanModuleMetadataLookup {
 async function loadModuleCatalogRowsByCode(
   moduleCode: string
 ): Promise<ModuleCatalogRow[]> {
+  const lookupKey = String(moduleCode ?? "").trim().toUpperCase();
+
+  if (!lookupKey) {
+    return [];
+  }
+
+  const cached = moduleCatalogRowsByCodeCache.get(lookupKey);
+
+  if (cached) {
+    return cached;
+  }
+
   const { data: moduleRows, error: moduleError } = await supabase
     .from("modules")
     .select(
-      "id, module_code, module_name, module_year, module_term, programme_code, stream_code, delivery_mode"
+      "id, module_code, module_name, module_year, module_term, programme_code, stream_code"
     )
-    .eq("module_code", moduleCode)
+    .eq("module_code", lookupKey)
     .limit(50);
 
   if (moduleError) {
@@ -1266,7 +1297,10 @@ async function loadModuleCatalogRowsByCode(
     return [];
   }
 
-  return (moduleRows ?? []) as ModuleCatalogRow[];
+  const rows = (moduleRows ?? []) as ModuleCatalogRow[];
+  moduleCatalogRowsByCodeCache.set(lookupKey, rows);
+
+  return rows;
 }
 
 export async function lookupStudyPlanModuleMetadataByCode(params: {
@@ -1348,7 +1382,6 @@ export async function lookupStudyPlanModuleMetadataByCode(params: {
     programmeCode: String(matchedRow.programme_code ?? "").trim() || undefined,
     programmeStream: normalizeStream(matchedRow.stream_code),
     sourceModuleId: matchedRow.id ?? undefined,
-    deliveryMode: matchedRow.delivery_mode ?? undefined,
   };
 }
 
@@ -2318,7 +2351,8 @@ export async function saveStudyPlanStudentProfile(
 async function persistStudyPlanModulesForStudent(
   studentWithType: StudyPlanStudent,
   savedStudentId: string,
-  modulesReadyToSave: StudyPlanModule[]
+  modulesReadyToSave: StudyPlanModule[],
+  options?: { isDegreeProgramme?: boolean }
 ) {
   const modulesWithId = modulesReadyToSave.filter((module) => module.id);
   const modulesWithoutId = modulesReadyToSave.filter((module) => !module.id);
@@ -2384,7 +2418,11 @@ async function persistStudyPlanModulesForStudent(
 
   if (deleteOrphansError) throw deleteOrphansError;
 
-  if (await isDegreeProgrammeByCode(studentWithType.programmeCode)) {
+  const isDegree =
+    options?.isDegreeProgramme ??
+    (await isDegreeProgrammeByCode(studentWithType.programmeCode));
+
+  if (isDegree) {
     const bridgingModuleCodes = Array.from(
       new Set(
         modulesReadyToSave
@@ -2425,6 +2463,10 @@ export async function saveStudyPlanModules(
   modules: StudyPlanModule[],
   options?: {
     skipPostSync?: boolean;
+    /** Bulk upload already classified modules; skip per-save reconcile. */
+    skipDegreeReconcile?: boolean;
+    /** Reuse settings/metadata across a bulk upload batch. */
+    batch?: StudyPlanSaveBatchOptions;
   }
 ): Promise<StudyPlanStudent> {
   const moduleMissingCodeEarly = modules.find(
@@ -2437,8 +2479,11 @@ export async function saveStudyPlanModules(
     );
   }
 
-  const studentInput = await attachProgrammeTypeToStudent(student);
-  const settings = await getStudyPlanSettings();
+  const studentInput = student.programmeType
+    ? student
+    : await attachProgrammeTypeToStudent(student);
+  const settings =
+    options?.batch?.settings ?? (await getStudyPlanSettingsCached());
 
   const intakeTerm = studentInput.intakeTerm || getEarliestStudyTerm(modules);
   const intakeYear = deriveIntakeYearFromTerm(intakeTerm);
@@ -2470,27 +2515,34 @@ export async function saveStudyPlanModules(
 
   const savedStudentId = savedStudent.id;
 
-  const studentWithType = await attachProgrammeTypeToStudent({
-    ...savedStudent,
-    programmeType: studentInput.programmeType ?? savedStudent.programmeType,
-  });
+  const mergedProgrammeType =
+    studentInput.programmeType ?? savedStudent.programmeType;
 
-  const reconciledModules = await reconcileDegreeStudyPlanModules(
-    studentWithType,
-    modules
-  );
+  const studentWithType = mergedProgrammeType
+    ? { ...savedStudent, programmeType: mergedProgrammeType }
+    : await attachProgrammeTypeToStudent({
+        ...savedStudent,
+        programmeType: mergedProgrammeType,
+      });
 
-  const moduleMetadataMap = await loadModuleMetadataForPlan(
-    studentWithType.programmeCode,
-    studentWithType.programmeStream,
-    reconciledModules.map((module) => ({
-      moduleCode: module.moduleCode,
-      programmeCode: module.programmeCode || studentWithType.programmeCode,
-      programmeStream: module.programmeStream || studentWithType.programmeStream,
-      moduleTerm: module.moduleTerm,
-      moduleTermPattern: module.moduleTermPattern,
-    }))
-  );
+  const reconciledModules = options?.skipDegreeReconcile
+    ? modules
+    : await reconcileDegreeStudyPlanModules(studentWithType, modules);
+
+  const moduleMetadataMap =
+    options?.batch?.moduleMetadataMap ??
+    (await loadModuleMetadataForPlan(
+      studentWithType.programmeCode,
+      studentWithType.programmeStream,
+      reconciledModules.map((module) => ({
+        moduleCode: module.moduleCode,
+        programmeCode: module.programmeCode || studentWithType.programmeCode,
+        programmeStream:
+          module.programmeStream || studentWithType.programmeStream,
+        moduleTerm: module.moduleTerm,
+        moduleTermPattern: module.moduleTermPattern,
+      }))
+    ));
 
   const enrichedModules = reconciledModules.map((module) =>
     enrichStudyPlanModuleWithMetadata(
@@ -2532,7 +2584,8 @@ export async function saveStudyPlanModules(
   await persistStudyPlanModulesForStudent(
     studentWithType,
     savedStudentId,
-    modulesReadyToSave
+    modulesReadyToSave,
+    { isDegreeProgramme: options?.batch?.isDegreeProgramme }
   );
 
   if (!options?.skipPostSync) {
@@ -2558,6 +2611,8 @@ export async function saveStudyPlan(
   modules: StudyPlanModule[],
   options?: {
     skipPostSync?: boolean;
+    skipDegreeReconcile?: boolean;
+    batch?: StudyPlanSaveBatchOptions;
   }
 ) {
   return saveStudyPlanModules(student, modules, options);
@@ -2770,16 +2825,6 @@ export async function loadProgrammeModules(
     new Set([stream, "nil"].map((value) => cleanStream(value)).filter(Boolean))
   );
 
-  console.log("[StudyPlanService] Loading modules from modules table:", {
-    programmeCode: code,
-    programmeStream: stream,
-    includedStreams: streamValues,
-    query: {
-      programme_code: code,
-      stream_code_in: streamValues,
-    },
-  });
-
   const { data, error } = await supabase
     .from("modules")
     .select(
@@ -2803,8 +2848,6 @@ export async function loadProgrammeModules(
     console.error("[StudyPlanService] Failed to load modules:", error);
     throw error;
   }
-
-  console.log("[StudyPlanService] Raw modules loaded:", data);
 
   /**
    * De-duplicate by:
@@ -2838,11 +2881,6 @@ export async function loadProgrammeModules(
   }
 
   const sortedRows = sortModuleRowsForDisplay(Array.from(moduleMap.values()));
-
-  console.log(
-    "[StudyPlanService] Modules after identity de-duplicate and sort:",
-    sortedRows
-  );
 
   return sortedRows.map((row: any): StudyPlanModule => {
     const moduleTerm = row.module_term ?? undefined;
@@ -2889,6 +2927,16 @@ export async function getStudyPlanSettings(): Promise<StudyPlanSettings> {
     currentAcademicYear,
     currentStudyTerm,
   };
+}
+
+export async function getStudyPlanSettingsCached(): Promise<StudyPlanSettings> {
+  if (cachedStudyPlanSettings) {
+    return cachedStudyPlanSettings;
+  }
+
+  cachedStudyPlanSettings = await getStudyPlanSettings();
+
+  return cachedStudyPlanSettings;
 }
 
 export async function updateStudyPlanSettings(
@@ -3558,10 +3606,14 @@ export async function loadBridgingModuleOptionsForDegree(params: {
     return [];
   }
 
-  console.log("[StudyPlanService] Loading bridging options for Degree:", {
-    degreeProgrammeCode,
-    degreeProgrammeStream: params.degreeProgrammeStream,
-  });
+  const cacheKey = `${degreeProgrammeCode}|${normalizeStream(
+    params.degreeProgrammeStream
+  )}`;
+  const cached = bridgingModuleOptionsCache.get(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
 
   /**
    * Step 1:
@@ -3619,11 +3671,6 @@ export async function loadBridgingModuleOptionsForDegree(params: {
       })
     );
 
-  console.log("[StudyPlanService] Articulation sources found:", {
-    degreeProgrammeCode,
-    articulationSources,
-  });
-
   if (articulationSources.length === 0) {
     console.warn("[StudyPlanService] No articulation source rows found.", {
       degreeProgrammeCode,
@@ -3657,13 +3704,6 @@ export async function loadBridgingModuleOptionsForDegree(params: {
       )
     );
 
-    console.log("[StudyPlanService] Querying source HD modules:", {
-      degreeProgrammeCode,
-      sourceProgrammeCode,
-      sourceProgrammeStream,
-      streamValues,
-    });
-
     const { data: moduleRows, error: moduleError } = await supabase
       .from("modules")
       .select(
@@ -3694,15 +3734,6 @@ export async function loadBridgingModuleOptionsForDegree(params: {
 
       throw moduleError;
     }
-
-    console.log("[StudyPlanService] Source HD modules loaded:", {
-      degreeProgrammeCode,
-      sourceProgrammeCode,
-      sourceProgrammeStream,
-      streamValues,
-      count: moduleRows?.length ?? 0,
-      moduleRows,
-    });
 
     collectedRows.push(...(moduleRows ?? []));
   }
@@ -3786,11 +3817,7 @@ export async function loadBridgingModuleOptionsForDegree(params: {
     };
   });
 
-  console.log("[StudyPlanService] Final bridging module options:", {
-    degreeProgrammeCode,
-    count: result.length,
-    result,
-  });
+  bridgingModuleOptionsCache.set(cacheKey, result);
 
   return result;
 }
