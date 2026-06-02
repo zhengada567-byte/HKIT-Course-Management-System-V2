@@ -7,7 +7,6 @@ export type Step =
   | "student_numbers"
   | "combine"
   | "split"
-  | "assignment"
   | "schedule";
 
 export const modeOptions: TeachingMode[] = ["Day", "Night", "Saturday"];

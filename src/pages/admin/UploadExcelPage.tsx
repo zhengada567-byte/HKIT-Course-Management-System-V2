@@ -14,7 +14,10 @@ import {
   type ModuleDefaultAssignmentInput,
 } from "../../services/moduleDefaultAssignmentService";
 import { upsertModuleEnrollments } from "../../services/moduleEnrollmentService";
-import { upsertModule } from "../../services/moduleService";
+import {
+  normalizeUsesComputerFlag,
+  upsertModule,
+} from "../../services/moduleService";
 import { upsertProgramme } from "../../services/programmeService";
 import { upsertTeacher } from "../../services/teacherService";
 import type { ModuleTerm } from "../../types";
@@ -215,6 +218,15 @@ async function uploadModuleRows(params: {
       ])
     );
 
+    const usesComputer = normalizeUsesComputerFlag(
+      getText(row, "Uses Computer", [
+        "uses computer",
+        "uses_computer",
+        "computer room",
+        "computer",
+      ])
+    );
+
     await upsertModule({
       module_code: moduleCode,
       module_name: moduleName,
@@ -222,6 +234,7 @@ async function uploadModuleRows(params: {
       module_term: moduleTerm,
       programme_code: programmeCode,
       stream_code: streamCode,
+      uses_computer: usesComputer,
     });
 
     moduleCount += 1;
@@ -310,6 +323,7 @@ export function UploadExcelPage() {
 
       if (uploadType === "programme") {
         let processedCount = 0;
+        const uniqueProgrammeKeys = new Set<string>();
 
         for (const row of rows) {
           const programmeCode = getText(row, "Programme Code", [
@@ -326,6 +340,22 @@ export function UploadExcelPage() {
             continue;
           }
 
+          const programmeStream = normalizeUploadStream(
+            getText(row, "Programme Stream", [
+              "programme stream",
+              "programme_stream",
+              "program stream",
+              "program_stream",
+              "stream",
+              "stream code",
+              "stream_code",
+            ])
+          );
+
+          uniqueProgrammeKeys.add(
+            `${programmeCode.trim().toUpperCase()}|${programmeStream}`
+          );
+
           await upsertProgramme({
             programme_type: getText(row, "Programme Type", [
               "programme type",
@@ -340,17 +370,7 @@ export function UploadExcelPage() {
               "program name",
               "program_name",
             ]),
-            programme_stream: normalizeUploadStream(
-              getText(row, "Programme Stream", [
-                "programme stream",
-                "programme_stream",
-                "program stream",
-                "program_stream",
-                "stream",
-                "stream code",
-                "stream_code",
-              ])
-            ),
+            programme_stream: programmeStream,
             stream_abbr: getText(row, "Stream Abbr", [
               "stream abbr",
               "stream_abbr",
@@ -391,7 +411,10 @@ export function UploadExcelPage() {
         }
 
         setMessage(
-          `Upload completed. ${processedCount} programme rows processed.`
+          `Upload completed. ${processedCount} Excel row(s) processed; ` +
+            `${uniqueProgrammeKeys.size} unique programme + stream record(s) in the programmes table ` +
+            `(duplicates merge on programme_code + programme_stream). ` +
+            `This upload does not add rows to the modules table — use Upload type "Module" for modules.`
         );
       }
 

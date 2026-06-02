@@ -342,15 +342,15 @@ export async function updateTeacherLoading(
 
   const monitor = await getAssignmentConfirmationMonitor(params.academicYear);
 
-  if (!monitor.summary.allConfirmed) {
+  if (!monitor.summary.allSplitComplete) {
     throw new Error(
-      `Cannot update teacher loading. ${monitor.summary.pendingModules} module(s) are still pending assignment confirmation.`
+      `Cannot update teacher loading. ${monitor.summary.pendingSplitModules} planning module(s) have not completed split yet.`
     );
   }
 
   if (monitor.summary.modulesWithTbcTeacher > 0) {
     throw new Error(
-      `Cannot update teacher loading. ${monitor.summary.modulesWithTbcTeacher} confirmed module(s) still have TBC or empty teacher.`
+      `Cannot update teacher loading. ${monitor.summary.modulesWithTbcTeacher} split-confirmed module(s) still have TBC or empty teacher.`
     );
   }
 

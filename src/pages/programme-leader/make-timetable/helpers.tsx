@@ -18,6 +18,10 @@ export function normalizeCompareText(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+import { dedupeJoinedModuleName } from "../../../lib/moduleDisplay";
+
+export { dedupeJoinedModuleName };
+
 export function renderModuleCodeAndName(row: {
   module_code?: string | null;
   module_name?: string | null;
@@ -25,7 +29,9 @@ export function renderModuleCodeAndName(row: {
   return (
     <div>
       <div className="font-medium">{row.module_code ?? "-"}</div>
-      <div className="text-xs text-slate-500">{row.module_name ?? "-"}</div>
+      <div className="text-xs text-slate-500">
+        {dedupeJoinedModuleName(row.module_name) || "-"}
+      </div>
     </div>
   );
 }
@@ -37,7 +43,9 @@ export function renderModuleInstanceAndName(row: {
   return (
     <div>
       <div className="font-medium">{row.module_instance_code ?? "-"}</div>
-      <div className="text-xs text-slate-500">{row.module_name ?? "-"}</div>
+      <div className="text-xs text-slate-500">
+        {dedupeJoinedModuleName(row.module_name) || "-"}
+      </div>
     </div>
   );
 }

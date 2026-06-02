@@ -21,12 +21,16 @@ import {
   listManualCombineGroups,
   type ManualCombineGroupWithDetails,
 } from "../../services/manualCombineService";
+import { applyProgrammeIntraStreamAutoCombine } from "../../services/programmeIntraStreamCombineService";
 import { listProgrammes } from "../../services/programmeService";
 import {
   createCombinedTimetableModules,
   createNoSplitSingleModule,
   createSplitSingleModule,
   getPlanningModulesForCombineGroup,
+  splitStudentNumberConservingTotal,
+  syncAssignmentTeachersForTimetableModules,
+  undoTimetableDecisionsForSources,
   undoTimetableModuleDecision,
 } from "../../services/splitClassService";
 import {
@@ -47,8 +51,15 @@ import {
   listAllPlanningModulesWithStudentNumbers,
   listPlanningModulesWithStudentNumbers,
   listTimetableModules,
+  listTimetableModulesBySourceIds,
   type PlanningModuleWithStudentNumber,
 } from "../../services/timetableService";
+import {
+  ensureInstancesForTimetableModules,
+  listTimetableModuleInstances,
+  upsertTimetableModuleInstances,
+  type TimetableModuleInstanceRow,
+} from "../../services/timetableModuleInstanceService";
 import type {
   CombineGroupRow,
   ProgrammeRow,
@@ -60,10 +71,13 @@ import type {
   TimetablePlanningModuleRow,
 } from "../../types";
 
+import { InstanceTeacherSelect } from "./make-timetable/components/InstanceTeacherSelect";
 import { SplitAction } from "./make-timetable/components/SplitAction";
 import { StepTabs } from "./make-timetable/components/StepTabs";
 import { StudentNumberStep } from "./make-timetable/components/StudentNumberStep";
 import { ScheduleStep } from "./make-timetable/components/ScheduleStep";
+import { resolveCombinedDefaultTeacherForGroupDetails } from "../../lib/combinedDefaultTeacher";
+import { dedupeJoinedModuleName } from "../../lib/moduleDisplay";
 import {
   displayStream,
   normalizeCompareText,
@@ -74,6 +88,28 @@ import type { Step } from "./make-timetable/types";
 
 const modeOptions: TeachingMode[] = ["Day", "Night", "Saturday"];
 const teachingStatusOptions: TeachingStatus[] = ["FT", "PT"];
+
+/** Prefer page-loaded defaults (already shown in Split UI) when splitting combined groups. */
+function mergeRelatedPlanningModulesForCombineGroup(params: {
+  details: Array<{ planning_module_id: string }>;
+  planningModules: PlanningModuleWithStudentNumber[];
+  fetched: TimetablePlanningModuleRow[];
+}): TimetablePlanningModuleRow[] {
+  const byId = new Map(params.fetched.map((module) => [module.id, module]));
+
+  for (const detail of params.details) {
+    const fromPage = params.planningModules.find(
+      (module) => module.id === detail.planning_module_id
+    );
+    if (fromPage) {
+      byId.set(fromPage.id, fromPage);
+    }
+  }
+
+  return params.details
+    .map((detail) => byId.get(detail.planning_module_id))
+    .filter((module): module is TimetablePlanningModuleRow => Boolean(module));
+}
 
 function isSameStudentNumberRow(
   row: StudentNumberInputRow,
@@ -111,7 +147,6 @@ export function MakeTimetablePage() {
   const [step, setStep] = useState<Step>("student_numbers");
   const [programmes, setProgrammes] = useState<ProgrammeRow[]>([]);
   const [programmeCode, setProgrammeCode] = useState("");
-  const [streamCode, setStreamCode] = useState("");
 
   const [planningModules, setPlanningModules] = useState<
     PlanningModuleWithStudentNumber[]
@@ -136,6 +171,12 @@ export function MakeTimetablePage() {
   const [timetableModules, setTimetableModules] = useState<TimetableModuleRow[]>(
     []
   );
+  const [sourceTimetableModules, setSourceTimetableModules] = useState<
+    TimetableModuleRow[]
+  >([]);
+  const [timetableInstances, setTimetableInstances] = useState<
+    TimetableModuleInstanceRow[]
+  >([]);
 
   const [teachers, setTeachers] = useState<TeacherRow[]>([]);
   const [assignments, setAssignments] = useState<TeachingAssignmentRow[]>([]);
@@ -148,13 +189,32 @@ export function MakeTimetablePage() {
     [programmes]
   );
 
-  const streamOptions = useMemo(
-    () =>
-      programmes
-        .filter((p) => !programmeCode || p.programme_code === programmeCode)
-        .map((p) => p.programme_stream),
-    [programmes, programmeCode]
-  );
+  const scheduleInstances = useMemo(() => {
+    const planningIdSet = new Set(planningModules.map((m) => m.id));
+    const combineIdSet = new Set(manualGroups.map((g) => g.id));
+    const instanceCodesOnPage = new Set(
+      sourceTimetableModules.map((m) => m.module_instance_code)
+    );
+
+    return timetableInstances.filter((row) => {
+      if (instanceCodesOnPage.has(row.module_instance_code)) {
+        return true;
+      }
+      if (
+        row.source_planning_module_id &&
+        planningIdSet.has(row.source_planning_module_id)
+      ) {
+        return true;
+      }
+      if (
+        row.source_combine_group_id &&
+        combineIdSet.has(row.source_combine_group_id)
+      ) {
+        return true;
+      }
+      return false;
+    });
+  }, [timetableInstances, planningModules, manualGroups, sourceTimetableModules]);
 
   async function init() {
     const data = await listProgrammes();
@@ -169,7 +229,6 @@ export function MakeTimetablePage() {
     const data = await listPlanningModulesWithStudentNumbers({
       academicYear,
       programmeCode: programmeCode || undefined,
-      streamCode: streamCode || undefined,
     });
 
     setPlanningModules(data);
@@ -182,7 +241,6 @@ export function MakeTimetablePage() {
     const data = await getStudentNumberInputRows({
       academicYear,
       planningModules: planning,
-      selectedStreamCode: streamCode || undefined,
     });
 
     setStudentRows(data);
@@ -195,44 +253,81 @@ export function MakeTimetablePage() {
     return { planning, rows };
   }
 
-  async function refreshCombineGroups(filters?: {
-    programmeCode?: string;
-    streamCode?: string;
-  }) {
+  async function refreshCombineGroups(filters?: { programmeCode?: string }) {
     const selectedProgrammeCode =
       filters?.programmeCode !== undefined
         ? filters.programmeCode
         : programmeCode;
 
-    const selectedStreamCode =
-      filters?.streamCode !== undefined ? filters.streamCode : streamCode;
+    if (user?.id && selectedProgrammeCode) {
+      try {
+        await applyProgrammeIntraStreamAutoCombine({
+          academicYear,
+          programmeCode: selectedProgrammeCode,
+          createdBy: user.id,
+        });
+      } catch (error) {
+        console.error(
+          "[MakeTimetablePage] Programme intra-stream auto combine failed:",
+          error
+        );
+      }
+    }
 
     const manual = await listManualCombineGroups({
       academicYear,
       programmeCode: selectedProgrammeCode || undefined,
-      streamCode: selectedStreamCode || undefined,
     });
 
     setManualGroups(manual);
   }
 
+  async function refreshSourceTimetableModules(
+    groups: ManualCombineGroupWithDetails[] = manualGroups,
+    planning: PlanningModuleWithStudentNumber[] = planningModules
+  ) {
+    const manuallyCombinedPlanningModuleIds = new Set(
+      groups.flatMap((group) =>
+        group.details.map((detail) => detail.planning_module_id)
+      )
+    );
+
+    const pagePlanningIds = planning
+      .filter(
+        (module) =>
+          !module.manual_combine_group_id &&
+          !manuallyCombinedPlanningModuleIds.has(module.id)
+      )
+      .map((module) => module.id);
+
+    const pageCombineGroupIds = groups.map((group) => group.id);
+
+    if (pagePlanningIds.length === 0 && pageCombineGroupIds.length === 0) {
+      setSourceTimetableModules([]);
+      return;
+    }
+
+    const modules = await listTimetableModulesBySourceIds({
+      academicYear,
+      planningModuleIds: pagePlanningIds,
+      combineGroupIds: pageCombineGroupIds,
+    });
+
+    setSourceTimetableModules(modules);
+  }
+
   async function refreshTimetableAndAssignments(filters?: {
     programmeCode?: string;
-    streamCode?: string;
   }) {
     const selectedProgrammeCode =
       filters?.programmeCode !== undefined
         ? filters.programmeCode
         : programmeCode;
 
-    const selectedStreamCode =
-      filters?.streamCode !== undefined ? filters.streamCode : streamCode;
-
     const [modules, teacherRows, assignmentRows] = await Promise.all([
       listTimetableModules({
         academicYear,
         programmeCode: selectedProgrammeCode || undefined,
-        streamCode: selectedStreamCode || undefined,
       }),
       listTeachers(academicYear),
       listAssignments(academicYear),
@@ -247,7 +342,44 @@ export function MakeTimetablePage() {
     setTimetableModules(modules);
     setTeachers(teacherRows);
     setAssignments(filteredAssignments);
+
+    try {
+      const instances = await listTimetableModuleInstances({
+        academicYear,
+      });
+      setTimetableInstances(instances);
+    } catch {
+      // Instance table may not exist yet in local DB.
+      setTimetableInstances([]);
+    }
+
+    if (step === "split" || step === "schedule") {
+      try {
+        const [latestManual, latestPlanning] = await Promise.all([
+          listManualCombineGroups({
+            academicYear,
+            programmeCode: selectedProgrammeCode || undefined,
+          }),
+          listPlanningModulesWithStudentNumbers({
+            academicYear,
+            programmeCode: selectedProgrammeCode || undefined,
+          }),
+        ]);
+
+        await refreshSourceTimetableModules(latestManual, latestPlanning);
+      } catch (error) {
+        console.error(
+          "[MakeTimetablePage] Refresh source timetable modules failed:",
+          error
+        );
+        setSourceTimetableModules([]);
+      }
+    }
   }
+
+  // Intentionally no "ensure all instances" here.
+  // Instances should be created only for the module/group the user just split,
+  // while "Confirm All Split Decisions" can do a full pass.
 
   async function handleSyncFromStudyPlan() {
     if (!user) {
@@ -279,7 +411,6 @@ export function MakeTimetablePage() {
       const result = await syncStudyPlanStudentNumbersToTimetable({
         academicYear,
         programmeCode: programmeCode || undefined,
-        streamCode: streamCode || undefined,
         createdBy: user.id,
       });
 
@@ -330,7 +461,6 @@ export function MakeTimetablePage() {
 
       await refreshCombineGroups({
         programmeCode,
-        streamCode,
       });
 
       setStep("combine");
@@ -426,7 +556,6 @@ export function MakeTimetablePage() {
 
       await refreshCombineGroups({
         programmeCode,
-        streamCode,
       });
 
       setMessage("Manual combine group created.");
@@ -444,7 +573,6 @@ export function MakeTimetablePage() {
 
       await refreshCombineGroups({
         programmeCode,
-        streamCode,
       });
 
       setMessage("Manual combine undone. Modules can be combined again.");
@@ -453,6 +581,131 @@ export function MakeTimetablePage() {
       setMessage(
         error instanceof Error ? error.message : "Undo manual combine failed"
       );
+    }
+  }
+
+  async function handleUndoCombinedGroup(groupId: string) {
+    if (!user) {
+      setMessage("Please login before undo.");
+      return;
+    }
+
+    // Safety: once a split/no-split decision exists, undo must be done in Split page.
+    // Otherwise it can invalidate split results unexpectedly.
+    try {
+      const existing = await listTimetableModulesBySourceIds({
+        academicYear,
+        combineGroupIds: [groupId],
+      });
+      if (existing.length > 0) {
+        setMessage(
+          "This combined group has already been split/no-split decided. Please undo it in the Split page."
+        );
+        return;
+      }
+    } catch (error) {
+      console.error("[MakeTimetablePage] Check combined undo status failed:", error);
+      setMessage(
+        error instanceof Error ? error.message : "Failed to check combined status."
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Undo this combined group? If it was already split, this will also remove generated timetable modules, related draft assignments, and module instances."
+    );
+    if (!confirmed) return;
+
+    setLoading(true);
+    setMessage("Undoing combined group...");
+
+    try {
+      await deleteManualCombineGroup(groupId);
+
+      await refreshPlanning();
+      await refreshCombineGroups({ programmeCode });
+
+      // In case user is already in Split/Schedule, keep UI consistent.
+      if (step === "split" || step === "schedule") {
+        await refreshTimetableAndAssignments({ programmeCode });
+      }
+
+      setMessage("Combined group undone.");
+    } catch (error) {
+      console.error("[MakeTimetablePage] Undo combined group failed:", error);
+      setMessage(error instanceof Error ? error.message : "Undo failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleUndoAllCombinedGroupsOnPage() {
+    if (!user) {
+      setMessage("Please login before undo.");
+      return;
+    }
+
+    if (manualGroups.length === 0) {
+      setMessage("No manual combine groups to undo on this page.");
+      return;
+    }
+
+    // Safety: do not allow undoing any groups that already have split decisions.
+    // Those must be undone in Split page to avoid inconsistent state.
+    try {
+      const groupIds = manualGroups.map((g) => g.id);
+      const decided = await listTimetableModulesBySourceIds({
+        academicYear,
+        combineGroupIds: groupIds,
+      });
+      const decidedGroupIds = new Set(
+        decided
+          .map((row) => row.combine_group_id)
+          .filter((id): id is string => Boolean(id))
+      );
+      if (decidedGroupIds.size > 0) {
+        setMessage(
+          "Some combined groups on this page have already been split/no-split decided. Please undo them in the Split page first."
+        );
+        return;
+      }
+    } catch (error) {
+      console.error("[MakeTimetablePage] Check combined undo-all status failed:", error);
+      setMessage(
+        error instanceof Error ? error.message : "Failed to check combined status."
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Undo ALL combined groups on this page? If any were already split, this will also remove generated timetable modules, related draft assignments, and module instances."
+    );
+    if (!confirmed) return;
+
+    setLoading(true);
+    setMessage("Undoing all combined groups on this page...");
+
+    try {
+      const groupIds = manualGroups.map((g) => g.id);
+
+      // Delete manual combine groups (sequential to keep error location clear).
+      for (const id of groupIds) {
+        await deleteManualCombineGroup(id);
+      }
+
+      await refreshPlanning();
+      await refreshCombineGroups({ programmeCode });
+
+      if (step === "split" || step === "schedule") {
+        await refreshTimetableAndAssignments({ programmeCode });
+      }
+
+      setMessage("All combined groups on this page have been undone.");
+    } catch (error) {
+      console.error("[MakeTimetablePage] Undo all combined groups failed:", error);
+      setMessage(error instanceof Error ? error.message : "Undo all failed");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -469,19 +722,16 @@ export function MakeTimetablePage() {
       const latestPlanningModules = await listPlanningModulesWithStudentNumbers({
         academicYear,
         programmeCode: programmeCode || undefined,
-        streamCode: streamCode || undefined,
       });
 
       const latestStudentRows = await getStudentNumberInputRows({
         academicYear,
         planningModules: latestPlanningModules,
-        selectedStreamCode: streamCode || undefined,
       });
 
       const latestManualGroups = await listManualCombineGroups({
         academicYear,
         programmeCode: programmeCode || undefined,
-        streamCode: streamCode || undefined,
       });
 
       setPlanningModules(latestPlanningModules);
@@ -490,7 +740,6 @@ export function MakeTimetablePage() {
 
       await refreshTimetableAndAssignments({
         programmeCode,
-        streamCode,
       });
 
       setStep("split");
@@ -518,27 +767,40 @@ export function MakeTimetablePage() {
     setMessage("Processing no split...");
 
     const student = studentRows.find((row) =>
-      isSameStudentNumberRow(row, module, streamCode)
+      isSameStudentNumberRow(row, module)
     );
 
     try {
-      await createNoSplitSingleModule({
+      const created = await createNoSplitSingleModule({
         planningModule: module,
         expectedStudentNumber: student?.expected_student_number ?? 0,
         actualStudentNumber: student?.actual_student_number ?? null,
         createdBy: user.id,
       });
 
+      try {
+        await ensureInstancesForTimetableModules({
+          academicYear,
+          programmeCode: programmeCode || undefined,
+          timetableModules: [created],
+          assignments: await listAssignments(academicYear),
+          createdBy: user.id,
+        });
+      } catch (error) {
+        console.error("[MakeTimetablePage] Ensure instances after no-split failed:", error);
+        setMessage(
+          "No-split confirmed, but instance table is not ready. Please run migration 014_timetable_module_instances.sql in Supabase, then refresh."
+        );
+      }
+
       await refreshPlanning();
 
       await refreshCombineGroups({
         programmeCode,
-        streamCode,
       });
 
       await refreshTimetableAndAssignments({
         programmeCode,
-        streamCode,
       });
 
       setMessage("No split confirmed. Default assignment has been created.");
@@ -568,11 +830,11 @@ export function MakeTimetablePage() {
     setMessage("Processing split...");
 
     const student = studentRows.find((row) =>
-      isSameStudentNumberRow(row, module, streamCode)
+      isSameStudentNumberRow(row, module)
     );
 
     try {
-      await createSplitSingleModule({
+      const created = await createSplitSingleModule({
         planningModule: module,
         expectedStudentNumber: student?.expected_student_number ?? 0,
         actualStudentNumber: student?.actual_student_number ?? null,
@@ -580,16 +842,29 @@ export function MakeTimetablePage() {
         createdBy: user.id,
       });
 
+      try {
+        await ensureInstancesForTimetableModules({
+          academicYear,
+          programmeCode: programmeCode || undefined,
+          timetableModules: created,
+          assignments: await listAssignments(academicYear),
+          createdBy: user.id,
+        });
+      } catch (error) {
+        console.error("[MakeTimetablePage] Ensure instances after split failed:", error);
+        setMessage(
+          "Split confirmed, but instance table is not ready. Please run migration 014_timetable_module_instances.sql in Supabase, then refresh."
+        );
+      }
+
       await refreshPlanning();
 
       await refreshCombineGroups({
         programmeCode,
-        streamCode,
       });
 
       await refreshTimetableAndAssignments({
         programmeCode,
-        streamCode,
       });
 
       setMessage("Split confirmed. Default assignments have been created.");
@@ -619,25 +894,69 @@ export function MakeTimetablePage() {
     setMessage("Processing combined split...");
 
     try {
-      const related = await getPlanningModulesForCombineGroup(group.id);
+      const fetched = await getPlanningModulesForCombineGroup(group.id);
+      const groupWithDetails = manualGroups.find((item) => item.id === group.id);
 
-      await createCombinedTimetableModules({
+      const allPlanningWithDefaults =
+        await listAllPlanningModulesWithStudentNumbers({
+          academicYear,
+        });
+
+      const related = groupWithDetails
+        ? mergeRelatedPlanningModulesForCombineGroup({
+            details: groupWithDetails.details,
+            planningModules: allPlanningWithDefaults,
+            fetched,
+          })
+        : fetched;
+
+      const preferredDefaultTeacher = groupWithDetails
+        ? resolveCombinedDefaultTeacherForGroupDetails(
+            groupWithDetails.details,
+            allPlanningWithDefaults
+          )
+        : undefined;
+
+      const created = await createCombinedTimetableModules({
         combineGroup: group,
         relatedPlanningModules: related,
         numberOfClasses,
         createdBy: user.id,
+        preferredDefaultTeacher,
       });
+
+      try {
+        await syncAssignmentTeachersForTimetableModules({
+          academicYear,
+          timetableModules: created,
+          updatedBy: user.id,
+        });
+
+        await ensureInstancesForTimetableModules({
+          academicYear,
+          programmeCode: programmeCode || undefined,
+          timetableModules: created,
+          assignments: await listAssignments(academicYear),
+          createdBy: user.id,
+        });
+      } catch (error) {
+        console.error(
+          "[MakeTimetablePage] Ensure instances after combined split failed:",
+          error
+        );
+        setMessage(
+          "Combined split confirmed, but instance table is not ready. Please run migration 014_timetable_module_instances.sql in Supabase, then refresh."
+        );
+      }
 
       await refreshPlanning();
 
       await refreshCombineGroups({
         programmeCode,
-        streamCode,
       });
 
       await refreshTimetableAndAssignments({
         programmeCode,
-        streamCode,
       });
 
       setMessage(
@@ -658,49 +977,23 @@ export function MakeTimetablePage() {
     }
 
     setLoading(true);
-    setMessage("Confirming all split decisions...");
+    setMessage("Confirming split decisions on this page...");
 
     try {
       const latestPlanningModules = await listPlanningModulesWithStudentNumbers({
         academicYear,
         programmeCode: programmeCode || undefined,
-        streamCode: streamCode || undefined,
       });
 
       const latestManualGroups = await listManualCombineGroups({
         academicYear,
         programmeCode: programmeCode || undefined,
-        streamCode: streamCode || undefined,
-      });
-
-      const latestTimetableModules = await listTimetableModules({
-        academicYear,
-        programmeCode: programmeCode || undefined,
-        streamCode: streamCode || undefined,
       });
 
       const latestStudentRows = await getStudentNumberInputRows({
         academicYear,
         planningModules: latestPlanningModules,
-        selectedStreamCode: streamCode || undefined,
       });
-
-      const decidedCombineGroupIds = new Set(
-        latestTimetableModules
-          .map((module) => module.combine_group_id)
-          .filter((id): id is string => Boolean(id))
-      );
-
-      const pendingCombinedGroups = latestManualGroups.filter(
-        (group) => !decidedCombineGroupIds.has(group.id)
-      );
-
-      if (pendingCombinedGroups.length > 0) {
-        setMessage(
-          `Please complete split decisions for ${pendingCombinedGroups.length} combined group(s) before confirming all split decisions.`
-        );
-        return;
-      }
 
       const manuallyCombinedPlanningModuleIds = new Set(
         latestManualGroups.flatMap((group) =>
@@ -708,10 +1001,36 @@ export function MakeTimetablePage() {
         )
       );
 
+      const pagePlanningIds = latestPlanningModules
+        .filter(
+          (module) =>
+            !module.manual_combine_group_id &&
+            !manuallyCombinedPlanningModuleIds.has(module.id)
+        )
+        .map((module) => module.id);
+
+      const pageCombineGroupIds = latestManualGroups.map((group) => group.id);
+
+      const sourceTimetableModules = await listTimetableModulesBySourceIds({
+        academicYear,
+        planningModuleIds: pagePlanningIds,
+        combineGroupIds: pageCombineGroupIds,
+      });
+
+      const decidedCombineGroupIds = new Set(
+        sourceTimetableModules
+          .map((module) => module.combine_group_id)
+          .filter((id): id is string => Boolean(id))
+      );
+
       const decidedPlanningModuleIds = new Set(
-        latestTimetableModules
+        sourceTimetableModules
           .map((module) => module.planning_module_id)
           .filter((id): id is string => Boolean(id))
+      );
+
+      const pendingCombinedGroups = latestManualGroups.filter(
+        (group) => !decidedCombineGroupIds.has(group.id)
       );
 
       const pendingSingleModules = latestPlanningModules.filter(
@@ -721,36 +1040,109 @@ export function MakeTimetablePage() {
           !decidedPlanningModuleIds.has(module.id)
       );
 
+      const createdModules: TimetableModuleRow[] = [];
+
+      const allPlanningWithDefaults =
+        await listAllPlanningModulesWithStudentNumbers({
+          academicYear,
+        });
+
+      for (const group of pendingCombinedGroups) {
+        const fetched = await getPlanningModulesForCombineGroup(group.id);
+        const groupWithDetails = latestManualGroups.find((item) => item.id === group.id);
+        const related = groupWithDetails
+          ? mergeRelatedPlanningModulesForCombineGroup({
+              details: groupWithDetails.details,
+              planningModules: allPlanningWithDefaults,
+              fetched,
+            })
+          : fetched;
+
+        const preferredDefaultTeacher = groupWithDetails
+          ? resolveCombinedDefaultTeacherForGroupDetails(
+              groupWithDetails.details,
+              allPlanningWithDefaults
+            )
+          : undefined;
+
+        const created = await createCombinedTimetableModules({
+          combineGroup: group,
+          relatedPlanningModules: related,
+          numberOfClasses: 1,
+          createdBy: user.id,
+          preferredDefaultTeacher,
+        });
+
+        createdModules.push(...created);
+      }
+
       for (const module of pendingSingleModules) {
         const student = latestStudentRows.find((row) =>
-          isSameStudentNumberRow(row, module, streamCode)
+          isSameStudentNumberRow(row, module)
         );
 
-        await createNoSplitSingleModule({
-          planningModule: module,
+        const planningModule =
+          allPlanningWithDefaults.find((row) => row.id === module.id) ?? module;
+
+        const created = await createNoSplitSingleModule({
+          planningModule,
           expectedStudentNumber: student?.expected_student_number ?? 0,
           actualStudentNumber: student?.actual_student_number ?? null,
           createdBy: user.id,
         });
+
+        createdModules.push(created);
+      }
+
+      // Sync instances for every module on this page that already has timetable_modules
+      // (including ones split earlier + ones just auto no-split), not only this batch.
+      const allSourceModules = await listTimetableModulesBySourceIds({
+        academicYear,
+        planningModuleIds: pagePlanningIds,
+        combineGroupIds: pageCombineGroupIds,
+      });
+
+      if (allSourceModules.length > 0) {
+        // Backfill TBC assignments from upload defaults before syncing instances.
+        await syncAssignmentTeachersForTimetableModules({
+          academicYear,
+          timetableModules: allSourceModules,
+          updatedBy: user.id,
+        });
+
+        const assignmentRows = await listAssignments(academicYear);
+
+        await ensureInstancesForTimetableModules({
+          academicYear,
+          programmeCode: programmeCode || undefined,
+          timetableModules: allSourceModules,
+          assignments: assignmentRows,
+          createdBy: user.id,
+        });
+        setSourceTimetableModules(allSourceModules);
+        const instances = await listTimetableModuleInstances({ academicYear });
+        setTimetableInstances(instances);
       }
 
       await refreshPlanning();
 
       await refreshCombineGroups({
         programmeCode,
-        streamCode,
       });
 
       await refreshTimetableAndAssignments({
         programmeCode,
-        streamCode,
       });
 
+      const scopeLabel = programmeCode ? programmeCode : "current page";
+
       setMessage(
-        `All split decisions confirmed. ${pendingSingleModules.length} pending single module(s) were marked as No Split.`
+        `Split decisions confirmed for ${scopeLabel}. ` +
+          `${pendingSingleModules.length} single module(s) and ${pendingCombinedGroups.length} combined group(s) were marked as No Split. ` +
+          `${allSourceModules.length} module instance row(s) are ready for scheduling.`
       );
 
-      setStep("assignment");
+      setStep("schedule");
     } catch (error) {
       console.error("[MakeTimetablePage] Confirm all split decisions failed:", error);
       setMessage(
@@ -787,18 +1179,76 @@ export function MakeTimetablePage() {
 
       await refreshCombineGroups({
         programmeCode,
-        streamCode,
       });
 
       await refreshTimetableAndAssignments({
         programmeCode,
-        streamCode,
       });
 
       setMessage("Split/no-split decision undone.");
     } catch (error) {
       console.error("[MakeTimetablePage] Undo split decision failed:", error);
       setMessage(error instanceof Error ? error.message : "Undo failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleUndoAllSplitDecisionsOnPage() {
+    if (!user) {
+      setMessage("Please login before undo.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Undo ALL split/no-split decisions on this page? This will remove generated timetable modules, related draft assignments, and module instances."
+    );
+    if (!confirmed) return;
+
+    setLoading(true);
+    setMessage("Undoing all split decisions on this page...");
+
+    try {
+      const planningIdSet = new Set(planningModules.map((m) => m.id));
+      const combineIdSet = new Set(manualGroups.map((g) => g.id));
+
+      // Derive source ids from existing modules/instances on this page.
+      const planningIds = Array.from(
+        new Set(
+          sourceTimetableModules
+            .map((m) => m.planning_module_id)
+            .filter((id): id is string => Boolean(id))
+            .filter((id) => planningIdSet.has(id))
+        )
+      );
+      const combineIds = Array.from(
+        new Set(
+          [
+            ...sourceTimetableModules
+              .map((m) => m.combine_group_id)
+              .filter((id): id is string => Boolean(id)),
+            ...timetableInstances
+              .filter((row) => row.source_type === "combine_group")
+              .map((row) => row.source_combine_group_id)
+              .filter((id): id is string => Boolean(id)),
+          ].filter((id) => combineIdSet.has(id))
+        )
+      );
+
+      await undoTimetableDecisionsForSources({
+        academicYear,
+        planningModuleIds: planningIds,
+        combineGroupIds: combineIds,
+      });
+
+      await refreshPlanning();
+      await refreshCombineGroups({ programmeCode });
+      await refreshTimetableAndAssignments({ programmeCode });
+
+      setMessage("All split/no-split decisions on this page have been undone.");
+    } catch (error) {
+      console.error("[MakeTimetablePage] Undo all split decisions failed:", error);
+      setMessage(error instanceof Error ? error.message : "Undo all failed");
     } finally {
       setLoading(false);
     }
@@ -838,7 +1288,6 @@ export function MakeTimetablePage() {
 
       await refreshTimetableAndAssignments({
         programmeCode,
-        streamCode,
       });
 
       setMessage("Assignment saved.");
@@ -865,7 +1314,6 @@ export function MakeTimetablePage() {
 
       await refreshTimetableAndAssignments({
         programmeCode,
-        streamCode,
       });
 
       setMessage(
@@ -890,7 +1338,6 @@ export function MakeTimetablePage() {
         academicYear,
         exportedBy: user.id,
         programmeCode: programmeCode || undefined,
-        streamCode: streamCode || undefined,
       });
     } catch (error) {
       console.error("[MakeTimetablePage] Export failed:", error);
@@ -917,7 +1364,6 @@ export function MakeTimetablePage() {
         await ensureTimetablePlanningModules({
           academicYear,
           programmeCode: programmeCode || undefined,
-          streamCode: streamCode || undefined,
           createdBy: user.id,
         });
 
@@ -926,7 +1372,6 @@ export function MakeTimetablePage() {
         const data = await listPlanningModulesWithStudentNumbers({
           academicYear,
           programmeCode: programmeCode || undefined,
-          streamCode: streamCode || undefined,
         });
 
         if (currentRequest !== requestId) return;
@@ -936,7 +1381,6 @@ export function MakeTimetablePage() {
         const studentData = await getStudentNumberInputRows({
           academicYear,
           planningModules: data,
-          selectedStreamCode: streamCode || undefined,
         });
 
         if (currentRequest !== requestId) return;
@@ -946,16 +1390,14 @@ export function MakeTimetablePage() {
         if (step === "combine" || step === "split") {
           await refreshCombineGroups({
             programmeCode,
-            streamCode,
           });
         }
 
         if (currentRequest !== requestId) return;
 
-        if (step === "split" || step === "assignment") {
+        if (step === "split" || step === "schedule") {
           await refreshTimetableAndAssignments({
             programmeCode,
-            streamCode,
           });
         }
       } catch (error) {
@@ -977,7 +1419,7 @@ export function MakeTimetablePage() {
     return () => {
       requestId += 1;
     };
-  }, [academicYear, programmeCode, streamCode, user]);
+  }, [academicYear, programmeCode, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -985,23 +1427,88 @@ export function MakeTimetablePage() {
     if (step === "combine" || step === "split") {
       void refreshCombineGroups({
         programmeCode,
-        streamCode,
       });
     }
 
-    if (step === "split" || step === "assignment") {
+    if (step === "split" || step === "schedule") {
       void refreshTimetableAndAssignments({
         programmeCode,
-        streamCode,
       });
     }
-  }, [step, user, programmeCode, streamCode, academicYear]);
+  }, [step, user, programmeCode, academicYear]);
+
+  useEffect(() => {
+    if (!user || (step !== "split" && step !== "schedule")) return;
+
+    void refreshSourceTimetableModules().catch((error) => {
+      console.error("[MakeTimetablePage] Load source timetable modules failed:", error);
+      setSourceTimetableModules([]);
+    });
+  }, [step, user, academicYear, planningModules, manualGroups]);
+
+  // If user opens Schedule before Confirm All (or ensure failed), backfill instances
+  // for any timetable_modules already on this page.
+  useEffect(() => {
+    if (!user?.id || step !== "schedule") return;
+    if (sourceTimetableModules.length === 0) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      const existingCodes = new Set(
+        timetableInstances.map((row) => row.module_instance_code)
+      );
+      const missingModules = sourceTimetableModules.filter(
+        (module) =>
+          module.module_instance_code &&
+          !existingCodes.has(module.module_instance_code)
+      );
+
+      if (missingModules.length === 0) return;
+
+      try {
+        const assignmentRows = await listAssignments(academicYear);
+        await ensureInstancesForTimetableModules({
+          academicYear,
+          programmeCode: programmeCode || undefined,
+          timetableModules: missingModules,
+          assignments: assignmentRows,
+          createdBy: user.id,
+        });
+        if (cancelled) return;
+        await refreshTimetableAndAssignments({
+          programmeCode,
+        });
+      } catch (error) {
+        console.error(
+          "[MakeTimetablePage] Sync missing schedule instances failed:",
+          error
+        );
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "Some module instances could not be created for scheduling."
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    step,
+    user?.id,
+    academicYear,
+    programmeCode,
+    sourceTimetableModules,
+    timetableInstances,
+  ]);
 
   return (
     <div className="page-container">
       <PageHeader
         title={t.makeTimetable}
-        description="Workflow: sync student numbers → manual combine → split → assignment."
+        description="Workflow: sync student numbers → auto/manual combine → split → schedule."
         actions={
           <button type="button" className="btn btn-primary" onClick={handleExportExcel}>
             {t.downloadTimetableExcel}
@@ -1016,7 +1523,7 @@ export function MakeTimetablePage() {
       )}
 
       <div className="card mb-4">
-        <div className="card-body grid gap-3 md:grid-cols-4">
+        <div className="card-body grid gap-3 md:grid-cols-3">
           <div>
             <label className="form-label">{t.academicYear}</label>
             <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
@@ -1029,9 +1536,9 @@ export function MakeTimetablePage() {
             <select
               className="form-select"
               value={programmeCode}
+              title="Programme"
               onChange={(event) => {
                 setProgrammeCode(event.target.value);
-                setStreamCode("");
                 setStep("student_numbers");
               }}
             >
@@ -1044,28 +1551,11 @@ export function MakeTimetablePage() {
             </select>
           </div>
 
-          <div>
-            <label className="form-label">{t.programmeStream}</label>
-            <select
-              className="form-select"
-              value={streamCode}
-              onChange={(event) => {
-                setStreamCode(event.target.value);
-                setStep("student_numbers");
-              }}
-            >
-              <option value="">All Streams</option>
-              {[...new Set(streamOptions)].map((stream) => (
-                <option key={stream} value={stream}>
-                  {stream}
-                </option>
-              ))}
-            </select>
-          </div>
-
           <div className="flex items-end">
             <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              Select a programme to sync student numbers from study plan.
+              Select a programme (all streams). Student numbers and combine are
+              programme-wide; streams are combined automatically when the same
+              module code applies.
             </div>
           </div>
         </div>
@@ -1102,6 +1592,8 @@ export function MakeTimetablePage() {
               manualGroups={manualGroups}
               openManualCombineDialog={openManualCombineDialog}
               onDeleteManualCombine={handleDeleteManualCombine}
+              onUndoCombinedGroup={handleUndoCombinedGroup}
+              onUndoAllCombinedGroupsOnPage={handleUndoAllCombinedGroupsOnPage}
               onConfirmAllModulesCombined={handleConfirmAllModulesCombined}
             />
           )}
@@ -1112,30 +1604,32 @@ export function MakeTimetablePage() {
               studentRows={studentRows}
               manualGroups={manualGroups}
               timetableModules={timetableModules}
+              sourceTimetableModules={sourceTimetableModules}
+              timetableInstances={timetableInstances}
               assignments={assignments}
-              selectedStreamCode={streamCode}
+              teachers={teachers}
+              programmeCode={programmeCode}
               onNoSplitSingle={handleNoSplitSingle}
               onSplitSingle={handleSplitSingle}
               onCombinedSplit={handleCreateCombinedSplit}
               onUndoTimetableModule={handleUndoTimetableModule}
+              onUndoAllSplitDecisionsOnPage={handleUndoAllSplitDecisionsOnPage}
               onConfirmAllSplitDecisions={handleConfirmAllSplitDecisions}
-            />
-          )}
-
-          {step === "assignment" && (
-            <AssignmentStep
-              timetableModules={timetableModules}
-              teachers={teachers}
-              assignments={assignments}
-              onSave={handleSaveAssignment}
-              onConfirm={handleConfirmAssignments}
+              onSaveInstanceEdits={async (rows) => {
+                await upsertTimetableModuleInstances(rows);
+                await refreshTimetableAndAssignments({
+                  programmeCode,
+                });
+              }}
             />
           )}
 
           {step === "schedule" && (
             <ScheduleStep
-              timetableModules={timetableModules}
-              assignments={assignments}
+              academicYear={academicYear}
+              timetableInstances={scheduleInstances}
+              programmeCode={programmeCode || undefined}
+              sourceTimetableModuleCount={sourceTimetableModules.length}
             />
           )}
         </>
@@ -1164,12 +1658,16 @@ function CombineStep({
   manualGroups,
   openManualCombineDialog,
   onDeleteManualCombine,
+  onUndoCombinedGroup,
+  onUndoAllCombinedGroupsOnPage,
   onConfirmAllModulesCombined,
 }: {
   planningModules: PlanningModuleWithStudentNumber[];
   manualGroups: ManualCombineGroupWithDetails[];
   openManualCombineDialog: (module: PlanningModuleWithStudentNumber) => void;
   onDeleteManualCombine: (groupId: string) => void;
+  onUndoCombinedGroup: (groupId: string) => void;
+  onUndoAllCombinedGroupsOnPage: () => void;
   onConfirmAllModulesCombined: () => void;
 }) {
   const [selectedManualGroup, setSelectedManualGroup] =
@@ -1197,25 +1695,40 @@ function CombineStep({
             </div>
 
             <div className="text-sm text-blue-700">
-              Review manual combine groups. When all modules are ready,
-              continue to Split page. Single modules will remain as individual
-              modules; combined groups will be handled as combined modules in
-              Split page.
+              Same programme, same module code across different streams are
+              combined automatically (combined code = module code). Use manual
+              combine only for cross-programme or different module codes. When
+              ready, continue to Split.
             </div>
 
             <div className="mt-1 text-xs text-blue-600">
-              Manual combine groups: {manualGroups.length}. Uncombined eligible
-              modules: {manualEligibleModules.length}.
+              Combined groups: {manualGroups.length}. Manual-only eligible:{" "}
+              {manualEligibleModules.length}.
             </div>
           </div>
 
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onConfirmAllModulesCombined}
-          >
-            Confirm All Modules Are Combined
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onUndoAllCombinedGroupsOnPage}
+              disabled={manualGroups.length === 0}
+              title={
+                manualGroups.length === 0
+                  ? "No manual combine groups to undo."
+                  : "Undo all manual combine groups on this page."
+              }
+            >
+              Undo All Combined Groups (this page)
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={onConfirmAllModulesCombined}
+            >
+              Confirm All Modules Are Combined
+            </button>
+          </div>
         </div>
 
         <div className="card">
@@ -1324,6 +1837,19 @@ function CombineStep({
                     header: "Status",
                     render: (row) => <StatusBadge status={row.status} />,
                   },
+                  {
+                    key: "undo",
+                    header: "Undo",
+                    render: (row) => (
+                      <button
+                        type="button"
+                        className="btn btn-secondary py-1 text-xs"
+                        onClick={() => onUndoCombinedGroup(row.id)}
+                      >
+                        Undo
+                      </button>
+                    ),
+                  },
                 ]}
               />
             )}
@@ -1420,6 +1946,7 @@ function ManualCombineDialog({
                       type="checkbox"
                       checked={selectedCandidateIds.includes(row.id)}
                       onChange={() => toggleCandidate(row.id)}
+                      aria-label={`Select ${row.module_code}`}
                     />
                   ),
                 },
@@ -1595,19 +2122,29 @@ function SplitStep({
   studentRows,
   manualGroups,
   timetableModules,
+  sourceTimetableModules,
+  timetableInstances,
   assignments,
+  teachers,
+  programmeCode,
   selectedStreamCode,
   onNoSplitSingle,
   onSplitSingle,
   onCombinedSplit,
   onUndoTimetableModule,
+  onUndoAllSplitDecisionsOnPage = () => {},
   onConfirmAllSplitDecisions,
+  onSaveInstanceEdits,
 }: {
   planningModules: PlanningModuleWithStudentNumber[];
   studentRows: StudentNumberInputRow[];
   manualGroups: ManualCombineGroupWithDetails[];
   timetableModules: TimetableModuleRow[];
+  sourceTimetableModules: TimetableModuleRow[];
+  timetableInstances: TimetableModuleInstanceRow[];
   assignments: TeachingAssignmentRow[];
+  teachers: TeacherRow[];
+  programmeCode?: string;
   selectedStreamCode?: string;
   onNoSplitSingle: (module: TimetablePlanningModuleRow) => void;
   onSplitSingle: (
@@ -1616,11 +2153,39 @@ function SplitStep({
   ) => void;
   onCombinedSplit: (group: CombineGroupRow, numberOfClasses: number) => void;
   onUndoTimetableModule: (row: TimetableModuleRow) => void;
+  onUndoAllSplitDecisionsOnPage: () => void;
   onConfirmAllSplitDecisions: () => void;
+  onSaveInstanceEdits: (
+    rows: Array<Pick<TimetableModuleInstanceRow, "id"> &
+      Partial<
+        Pick<
+          TimetableModuleInstanceRow,
+          | "instance_expected_size"
+          | "instance_teacher_name"
+          | "instance_actual_size"
+          | "instance_mode"
+        >
+      >>
+  ) => Promise<void>;
 }) {
   const assignmentMap = new Map(
     assignments.map((assignment) => [assignment.timetable_module_id, assignment])
   );
+
+  const planningModuleById = useMemo(() => {
+    const map = new Map<string, PlanningModuleWithStudentNumber>();
+    for (const row of planningModules) {
+      map.set(row.id, row);
+    }
+    return map;
+  }, [planningModules]);
+
+  function getCombinedGroupDefaultTeacher(group: ManualCombineGroupWithDetails) {
+    return resolveCombinedDefaultTeacherForGroupDetails(
+      group.details,
+      planningModules
+    );
+  }
 
   const manuallyCombinedPlanningModuleIds = new Set(
     manualGroups.flatMap((group) =>
@@ -1629,16 +2194,33 @@ function SplitStep({
   );
 
   const decidedPlanningModuleIds = new Set(
-    timetableModules
+    sourceTimetableModules
       .map((module) => module.planning_module_id)
       .filter((id): id is string => Boolean(id))
   );
 
-  const decidedCombineGroupIds = new Set(
-    timetableModules
-      .map((module) => module.combine_group_id)
-      .filter((id): id is string => Boolean(id))
-  );
+  const pageCombineGroupIdSet = new Set(manualGroups.map((group) => group.id));
+
+  const decidedCombineGroupIds = new Set<string>();
+
+  for (const module of sourceTimetableModules) {
+    if (
+      module.combine_group_id &&
+      pageCombineGroupIdSet.has(module.combine_group_id)
+    ) {
+      decidedCombineGroupIds.add(module.combine_group_id);
+    }
+  }
+
+  for (const instance of timetableInstances) {
+    if (
+      instance.source_type === "combine_group" &&
+      instance.source_combine_group_id &&
+      pageCombineGroupIdSet.has(instance.source_combine_group_id)
+    ) {
+      decidedCombineGroupIds.add(instance.source_combine_group_id);
+    }
+  }
 
   const singleModules = planningModules.filter(
     (module) =>
@@ -1651,56 +2233,325 @@ function SplitStep({
     (group) => !decidedCombineGroupIds.has(group.id)
   );
 
+  const sourceModuleByInstanceCode = useMemo(() => {
+    const map = new Map<string, TimetableModuleRow>();
+    for (const row of sourceTimetableModules) {
+      if (!row.module_instance_code) continue;
+      map.set(row.module_instance_code, row);
+    }
+    return map;
+  }, [sourceTimetableModules]);
+
+  const visibleInstanceIds = useMemo(() => {
+    const planningIdSet = new Set(planningModules.map((m) => m.id));
+    const combineIdSet = new Set(manualGroups.map((g) => g.id));
+
+    return new Set(
+      timetableInstances
+        .filter((row) => {
+          if (
+            row.source_type === "planning_module" &&
+            row.source_planning_module_id &&
+            planningIdSet.has(row.source_planning_module_id)
+          ) {
+            return decidedPlanningModuleIds.has(row.source_planning_module_id);
+          }
+
+          if (
+            row.source_type === "combine_group" &&
+            row.source_combine_group_id &&
+            combineIdSet.has(row.source_combine_group_id)
+          ) {
+            return decidedCombineGroupIds.has(row.source_combine_group_id);
+          }
+
+          const sourceModule = sourceModuleByInstanceCode.get(row.module_instance_code);
+          if (!sourceModule) return false;
+
+          if (
+            sourceModule.planning_module_id &&
+            planningIdSet.has(sourceModule.planning_module_id)
+          ) {
+            return decidedPlanningModuleIds.has(sourceModule.planning_module_id);
+          }
+
+          if (
+            sourceModule.combine_group_id &&
+            combineIdSet.has(sourceModule.combine_group_id)
+          ) {
+            return decidedCombineGroupIds.has(sourceModule.combine_group_id);
+          }
+
+          return false;
+        })
+        .map((row) => row.id)
+    );
+  }, [
+    planningModules,
+    manualGroups,
+    timetableInstances,
+    decidedPlanningModuleIds,
+    decidedCombineGroupIds,
+    sourceModuleByInstanceCode,
+  ]);
+
+  const visibleInstances = useMemo(
+    () => timetableInstances.filter((row) => visibleInstanceIds.has(row.id)),
+    [timetableInstances, visibleInstanceIds]
+  );
+
+  const [instanceEdits, setInstanceEdits] = useState<
+    Record<
+      string,
+      {
+        instance_expected_size?: number;
+        instance_actual_size?: number | null;
+        instance_teacher_name?: string | null;
+        instance_mode?: string | null;
+      }
+    >
+  >({});
+
+  const instanceRowsForValidation = useMemo(() => {
+    return visibleInstances.map((row) => {
+      const edit = instanceEdits[row.id];
+      return {
+        ...row,
+        instance_expected_size:
+          edit?.instance_expected_size ?? row.instance_expected_size ?? 0,
+        instance_actual_size:
+          edit?.instance_actual_size ?? row.instance_actual_size ?? null,
+        instance_teacher_name:
+          edit?.instance_teacher_name ?? row.instance_teacher_name ?? null,
+        instance_mode: edit?.instance_mode ?? (row as any).instance_mode ?? null,
+      };
+    });
+  }, [visibleInstances, instanceEdits]);
+
+  const conservationIssues = useMemo(() => {
+    const issues: Array<{
+      key: string;
+      label: string;
+      expectedTotal: number;
+      sumOfInstances: number;
+    }> = [];
+
+    const combineById = new Map(manualGroups.map((g) => [g.id, g]));
+    const planningById = new Map(planningModules.map((m) => [m.id, m]));
+
+    const groupSums = new Map<string, number>();
+    for (const row of instanceRowsForValidation) {
+      const groupKey = row.source_type === "combine_group"
+        ? `combine_group:${row.source_combine_group_id ?? ""}`
+        : `planning_module:${row.source_planning_module_id ?? ""}`;
+      groupSums.set(groupKey, (groupSums.get(groupKey) ?? 0) + (row.instance_expected_size ?? 0));
+    }
+
+    for (const [groupKey, sum] of groupSums) {
+      const [type, id] = groupKey.split(":");
+      if (!id) continue;
+
+      if (type === "combine_group") {
+        if (!decidedCombineGroupIds.has(id)) continue;
+        const group = combineById.get(id);
+        if (!group) continue;
+        const expected = group.total_expected_student_number ?? 0;
+        if (sum !== expected) {
+          issues.push({
+            key: groupKey,
+            label: `${group.combined_code} (combined group)`,
+            expectedTotal: expected,
+            sumOfInstances: sum,
+          });
+        }
+      } else if (type === "planning_module") {
+        if (!decidedPlanningModuleIds.has(id)) continue;
+        const pm = planningById.get(id);
+        if (!pm) continue;
+        const student = studentRows.find((s) =>
+          isSameStudentNumberRow(s, pm, selectedStreamCode)
+        );
+        const expected = student?.expected_student_number ?? 0;
+        if (sum !== expected) {
+          issues.push({
+            key: groupKey,
+            label: `${pm.module_code} (single module)`,
+            expectedTotal: expected,
+            sumOfInstances: sum,
+          });
+        }
+      }
+    }
+
+    return issues;
+  }, [
+    instanceRowsForValidation,
+    manualGroups,
+    planningModules,
+    studentRows,
+    selectedStreamCode,
+    decidedPlanningModuleIds,
+    decidedCombineGroupIds,
+  ]);
+
+  const hasUnsavedInstanceEdits = useMemo(
+    () => Object.keys(instanceEdits).length > 0,
+    [instanceEdits]
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="font-medium text-blue-900">
-            Confirm all split decisions
+            Confirm all split decisions (this page only)
           </div>
           <div className="text-sm text-blue-700">
-            Pending single modules: {singleModules.length}. Pending combined
-            groups: {pendingManualGroups.length}. Remaining single modules will
-            be marked as No Split.
+            Scope: {programmeCode || "All programmes"}
+            . Pending
+            single modules: {singleModules.length}. Pending combined groups:{" "}
+            {pendingManualGroups.length}. Remaining items on this page will be
+            marked as No Split (1 class).
           </div>
         </div>
 
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={onConfirmAllSplitDecisions}
-        >
-          Confirm All Split Decisions
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={onUndoAllSplitDecisionsOnPage}
+          >
+            Undo All (this page)
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onConfirmAllSplitDecisions}
+          >
+            Confirm All Split Decisions
+          </button>
+        </div>
       </div>
 
       <div className="card">
-        <div className="card-header font-semibold">
-          Generated Timetable Modules
+        <div className="card-header flex flex-col gap-1 font-semibold md:flex-row md:items-center md:justify-between">
+          <div>Module Instances (editable)</div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={async () => {
+              const rows = Object.entries(instanceEdits).map(([id, edit]) => ({
+                id,
+                ...edit,
+              }));
+              await onSaveInstanceEdits(rows);
+              setInstanceEdits({});
+            }}
+            disabled={
+              !hasUnsavedInstanceEdits || conservationIssues.length > 0
+            }
+            title={
+              conservationIssues.length > 0
+                ? "Size conservation failed. Fix totals before saving."
+                : undefined
+            }
+          >
+            Save instance edits
+          </button>
         </div>
 
-        <div className="card-body">
-          {timetableModules.length === 0 ? (
-            <EmptyState message="No timetable modules generated yet. Confirm split/no-split decisions below." />
+        <div className="card-body space-y-3">
+          {conservationIssues.length > 0 && (
+            <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="font-medium">Size conservation failed</div>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setInstanceEdits((prev) => {
+                      const next = { ...prev };
+
+                      for (const issue of conservationIssues) {
+                        const [type, id] = issue.key.split(":");
+                        if (!id) continue;
+
+                        const groupRows = instanceRowsForValidation
+                          .filter((row) => {
+                            if (type === "combine_group") {
+                              return (
+                                row.source_type === "combine_group" &&
+                                row.source_combine_group_id === id
+                              );
+                            }
+                            return (
+                              row.source_type === "planning_module" &&
+                              row.source_planning_module_id === id
+                            );
+                          })
+                          .slice()
+                          .sort((a, b) =>
+                            String(a.module_instance_code).localeCompare(
+                              String(b.module_instance_code)
+                            )
+                          );
+
+                        if (groupRows.length === 0) continue;
+
+                        const sizes =
+                          splitStudentNumberConservingTotal(
+                            issue.expectedTotal,
+                            groupRows.length
+                          ) ?? [];
+
+                        groupRows.forEach((row, index) => {
+                          const size = sizes[index];
+                          if (size === undefined) return;
+                          next[row.id] = {
+                            ...(next[row.id] ?? {}),
+                            instance_expected_size: size,
+                          };
+                        });
+                      }
+
+                      return next;
+                    });
+                  }}
+                >
+                  Auto-balance
+                </button>
+              </div>
+
+              <div className="mt-1 space-y-1 text-xs">
+                {conservationIssues.slice(0, 20).map((issue) => (
+                  <div key={issue.key}>
+                    {issue.label}: instances sum {issue.sumOfInstances} ≠ expected{" "}
+                    {issue.expectedTotal}
+                  </div>
+                ))}
+                {conservationIssues.length > 20 ? "…" : null}
+              </div>
+            </div>
+          )}
+
+          {visibleInstances.length === 0 ? (
+            <EmptyState message="No instances yet. If you already clicked Split/No Split, please make sure migration 014_timetable_module_instances.sql has been applied, then refresh the page (or run Confirm All Split Decisions once)." />
           ) : (
             <DataTable
-              rows={timetableModules}
+              rows={instanceRowsForValidation}
               rowKey={(row) => row.id}
               columns={[
                 {
-                  key: "module",
-                  header: "Module Instance",
-                  render: (row) => renderModuleInstanceAndName(row),
-                },
-                {
-                  key: "programme",
-                  header: "Programme",
-                  render: (row) => row.programme_code ?? "-",
-                },
-                {
-                  key: "stream",
-                  header: "Stream",
-                  render: (row) => displayStream(row.stream_code),
+                  key: "instance",
+                  header: "Instance",
+                  render: (row) => (
+                    <div className="space-y-0.5">
+                      <div className="font-medium">{row.module_instance_code}</div>
+                      <div className="text-xs text-slate-600">
+                        {dedupeJoinedModuleName(row.module_name)}
+                      </div>
+                    </div>
+                  ),
                 },
                 {
                   key: "term",
@@ -1708,46 +2559,105 @@ function SplitStep({
                   render: (row) => row.module_term,
                 },
                 {
-                  key: "students",
-                  header: "Students",
+                  key: "mode",
+                  header: "Mode (editable)",
                   render: (row) => (
-                    <span>
-                      Expected: {row.expected_student_number ?? 0}
-                      {row.actual_student_number != null
-                        ? ` / Actual: ${row.actual_student_number}`
-                        : ""}
-                    </span>
+                    <select
+                      className="form-select min-w-28"
+                      value={(row as any).instance_mode ?? ""}
+                      title="Mode"
+                      onChange={(e) => {
+                        setInstanceEdits((prev) => ({
+                          ...prev,
+                          [row.id]: {
+                            ...(prev[row.id] ?? {}),
+                            instance_mode: e.target.value || null,
+                          },
+                        }));
+                      }}
+                    >
+                      <option value="">(empty)</option>
+                      {modeOptions.map((mode) => (
+                        <option key={mode} value={mode}>
+                          {mode}
+                        </option>
+                      ))}
+                    </select>
                   ),
                 },
                 {
                   key: "teacher",
-                  header: "Default Teacher",
-                  render: (row) => {
-                    const assignment = assignmentMap.get(row.id);
-                    return assignment?.teacher_name ?? "TBC";
-                  },
-                },
-                {
-                  key: "status",
-                  header: "Status",
+                  header: "Teacher (editable)",
                   render: (row) => (
-                    <StatusBadge
-                      status={row.split_confirmed ? "confirmed" : "draft"}
+                    <InstanceTeacherSelect
+                      value={row.instance_teacher_name}
+                      teachers={teachers}
+                      onChange={(teacherName) => {
+                        setInstanceEdits((prev) => ({
+                          ...prev,
+                          [row.id]: {
+                            ...(prev[row.id] ?? {}),
+                            instance_teacher_name: teacherName,
+                          },
+                        }));
+                      }}
                     />
                   ),
                 },
                 {
-                  key: "action",
-                  header: "Action",
+                  key: "expected",
+                  header: "Size (editable)",
                   render: (row) => (
-                    <button
-                      type="button"
-                      className="rounded-lg bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700"
-                      onClick={() => onUndoTimetableModule(row)}
-                    >
-                      Undo
-                    </button>
+                    <input
+                      className="form-input w-28"
+                      value={row.instance_expected_size ?? 0}
+                      title="Instance size"
+                      placeholder="0"
+                      onChange={(e) => {
+                        const next = Number(e.target.value);
+                        setInstanceEdits((prev) => ({
+                          ...prev,
+                          [row.id]: {
+                            ...(prev[row.id] ?? {}),
+                            instance_expected_size: Number.isFinite(next) ? next : 0,
+                          },
+                        }));
+                      }}
+                    />
                   ),
+                },
+                {
+                  key: "source",
+                  header: "Source",
+                  render: (row) =>
+                    row.source_type === "combine_group"
+                      ? `Combine: ${row.source_combine_group_id ?? "-"}`
+                      : `Single: ${row.source_planning_module_id ?? "-"}`,
+                },
+                {
+                  key: "undo",
+                  header: "Undo",
+                  render: (row) => {
+                    const tm = sourceModuleByInstanceCode.get(row.module_instance_code);
+                    return (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={!tm}
+                        title={
+                          tm
+                            ? "Undo split/no-split decision for this source."
+                            : "Cannot resolve timetable module row for undo."
+                        }
+                        onClick={() => {
+                          if (!tm) return;
+                          onUndoTimetableModule(tm);
+                        }}
+                      >
+                        Undo
+                      </button>
+                    );
+                  },
                 },
               ]}
             />
@@ -1762,7 +2672,7 @@ function SplitStep({
 
         <div className="card-body">
           {pendingManualGroups.length === 0 ? (
-            <EmptyState message="No pending manual combined groups. Generated combined modules appear above." />
+            <EmptyState message="No pending combined groups on this page. Groups already split are hidden." />
           ) : (
             <DataTable
               rows={pendingManualGroups}
@@ -1787,6 +2697,11 @@ function SplitStep({
                   key: "actual",
                   header: "Actual",
                   render: (row) => row.total_actual_student_number ?? "-",
+                },
+                {
+                  key: "defaultTeacher",
+                  header: "Default Teacher",
+                  render: (row) => getCombinedGroupDefaultTeacher(row),
                 },
                 {
                   key: "action",
@@ -1930,6 +2845,7 @@ function AssignmentStep({
                 className="form-select min-w-28"
                 defaultValue={row.mode ?? "Night"}
                 id={`mode-${row.id}`}
+                title="Mode"
               >
                 {modeOptions.map((mode) => (
                   <option key={mode} value={mode}>
@@ -1957,6 +2873,7 @@ function AssignmentStep({
                         )?.id ?? "TBC"
                   }
                   id={`teacher-${row.id}`}
+                  title="Teacher"
                 >
                   <option value="TBC">TBC</option>
                   {teachers.map((teacher) => (
@@ -1979,6 +2896,7 @@ function AssignmentStep({
                   className="form-select min-w-24"
                   defaultValue={existing?.teaching_status ?? "FT"}
                   id={`teaching-status-${row.id}`}
+                  title="Teaching status"
                 >
                   {teachingStatusOptions.map((status) => (
                     <option key={status} value={status}>

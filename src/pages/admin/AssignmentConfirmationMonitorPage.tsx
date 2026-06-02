@@ -20,6 +20,7 @@ import {
   type PipelineStageStatus,
   type ProgrammePipelineProgress,
 } from "../../services/adminAssignmentMonitorService";
+import { confirmReadyAssignments } from "../../services/assignmentService";
 import {
   hasCompletedTeacherLoadingRun,
   updateTeacherLoading,
@@ -57,18 +58,18 @@ function StageBadge({ status }: { status: PipelineStageStatus }) {
   );
 }
 
-function StatusBadge({ confirmed }: { confirmed: boolean }) {
-  if (confirmed) {
+function StatusBadge({ splitComplete }: { splitComplete: boolean }) {
+  if (splitComplete) {
     return (
       <span className="inline-flex rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
-        Confirmed
+        已完成分班
       </span>
     );
   }
 
   return (
     <span className="inline-flex rounded-full bg-yellow-100 px-2.5 py-1 text-xs font-medium text-yellow-800">
-      Pending
+      待分班
     </span>
   );
 }
@@ -77,14 +78,14 @@ function TeacherBadge({ hasTbcTeacher }: { hasTbcTeacher: boolean }) {
   if (hasTbcTeacher) {
     return (
       <span className="inline-flex rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700">
-        TBC / Empty
+        TBC / 未指定
       </span>
     );
   }
 
   return (
     <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700">
-      Assigned
+      已指定
     </span>
   );
 }
@@ -97,7 +98,7 @@ function ProgrammeProgressTable({
   if (rows.length === 0) {
     return (
       <div className="rounded-lg border bg-white px-5 py-8 text-sm text-slate-500">
-        No programme planning data for this academic year.
+        此學年尚無課程規劃資料。
       </div>
     );
   }
@@ -108,19 +109,16 @@ function ProgrammeProgressTable({
         <thead className="bg-slate-50">
           <tr>
             <th className="p-3 text-left">Programme</th>
-            <th className="p-3 text-left">Stream</th>
             <th className="p-3 text-left">Planning Modules</th>
-            <th className="p-3 text-left">學生人數</th>
-            <th className="p-3 text-left">合班</th>
-            <th className="p-3 text-left">分班</th>
-            <th className="p-3 text-left">分配確認</th>
+            <th className="p-3 text-left">1. 學生人數</th>
+            <th className="p-3 text-left">2. 合班</th>
+            <th className="p-3 text-left">3. 分班</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={`${row.programmeCode}|${row.streamCode}`} className="border-t">
+            <tr key={row.programmeCode} className="border-t">
               <td className="p-3 font-medium">{row.programmeCode}</td>
-              <td className="p-3">{row.streamCode}</td>
               <td className="p-3">{row.planningModuleCount}</td>
               <td className="p-3">
                 <div className="flex items-center gap-2">
@@ -131,21 +129,18 @@ function ProgrammeProgressTable({
                 </div>
               </td>
               <td className="p-3">
-                <StageBadge status={row.combineStatus} />
+                <div className="flex items-center gap-2">
+                  <StageBadge status={row.combineStatus} />
+                  <span className="text-xs text-slate-500">
+                    {row.combineReadyCount}/{row.planningModuleCount}
+                  </span>
+                </div>
               </td>
               <td className="p-3">
                 <div className="flex items-center gap-2">
                   <StageBadge status={row.splitStatus} />
                   <span className="text-xs text-slate-500">
                     {row.splitReadyCount}/{row.planningModuleCount}
-                  </span>
-                </div>
-              </td>
-              <td className="p-3">
-                <div className="flex items-center gap-2">
-                  <StageBadge status={row.assignmentStatus} />
-                  <span className="text-xs text-slate-500">
-                    {row.confirmedAssignmentCount}/{row.timetableModuleCount}
                   </span>
                 </div>
               </td>
@@ -192,19 +187,26 @@ function ModuleTable({
                   Stream
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-slate-600">
-                  Teacher
+                  教師
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-slate-600">
-                  Status
+                  分班狀態
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-slate-600">
-                  Teacher Check
+                  教師狀態
                 </th>
               </tr>
             </thead>
             <tbody>
               {modules.map((module) => (
-                <tr key={module.timetable_module_id} className="border-t">
+                <tr
+                  key={
+                    module.timetable_module_id ??
+                    module.planning_module_id ??
+                    `${module.programme_code}|${module.module_code}`
+                  }
+                  className="border-t"
+                >
                   <td className="px-4 py-3">
                     <div className="font-medium text-slate-900">
                       {module.module_code ?? "-"}
@@ -218,7 +220,7 @@ function ModuleTable({
                   <td className="px-4 py-3">{module.stream_code ?? "-"}</td>
                   <td className="px-4 py-3">{getTeacherText(module)}</td>
                   <td className="px-4 py-3">
-                    <StatusBadge confirmed={module.assignment_confirmed} />
+                    <StatusBadge splitComplete={module.split_complete} />
                   </td>
                   <td className="px-4 py-3">
                     <TeacherBadge hasTbcTeacher={module.has_tbc_teacher} />
@@ -259,6 +261,18 @@ export function AssignmentConfirmationMonitorPage() {
       setLoading(true);
       setErrorMessage(null);
       setSuccessMessage(null);
+
+      if (user) {
+        await confirmReadyAssignments({
+          academicYear,
+          confirmedBy: user.id,
+        }).catch((confirmError) => {
+          console.warn(
+            "[AssignmentConfirmationMonitorPage] Auto-confirm ready assignments skipped:",
+            confirmError
+          );
+        });
+      }
 
       const monitorResult = await getAssignmentConfirmationMonitor(academicYear);
       setMonitor(monitorResult);
@@ -341,7 +355,7 @@ export function AssignmentConfirmationMonitorPage() {
     <div className="page-container space-y-6">
       <PageHeader
         title="教學分配進度"
-        description="Review programme pipeline progress and assignment confirmation status before generating teacher loading."
+        description="按課程檢視 Make Timetable 三步流程（同步學生人數、合班、分班）。Programme Leader 完成 Confirm All Split 即代表該課程完成；下方「已分配教師模組」列出已完成分班的 timetable 實例。"
         actions={
           <div className="flex flex-wrap gap-2">
             <button
@@ -399,7 +413,7 @@ export function AssignmentConfirmationMonitorPage() {
         <>
           <section className="space-y-3">
             <h2 className="text-base font-semibold text-slate-900">
-              Programme Progress
+              課程進度
             </h2>
             <ProgrammeProgressTable rows={programmeProgress} />
           </section>
@@ -408,28 +422,28 @@ export function AssignmentConfirmationMonitorPage() {
             <>
               <section className="grid gap-4 md:grid-cols-5">
                 <div className="rounded-lg border bg-white px-5 py-4">
-                  <div className="text-sm text-slate-500">Total Modules</div>
+                  <div className="text-sm text-slate-500">Planning Modules</div>
                   <div className="mt-2 text-2xl font-bold text-slate-900">
-                    {monitor.summary.totalModules}
+                    {monitor.summary.totalPlanningModules}
                   </div>
                 </div>
 
                 <div className="rounded-lg border bg-white px-5 py-4">
-                  <div className="text-sm text-slate-500">Confirmed</div>
+                  <div className="text-sm text-slate-500">已完成分班</div>
                   <div className="mt-2 text-2xl font-bold text-green-600">
-                    {monitor.summary.confirmedModules}
+                    {monitor.summary.splitCompleteModules}
                   </div>
                 </div>
 
                 <div className="rounded-lg border bg-white px-5 py-4">
-                  <div className="text-sm text-slate-500">Pending</div>
+                  <div className="text-sm text-slate-500">待分班</div>
                   <div className="mt-2 text-2xl font-bold text-yellow-600">
-                    {monitor.summary.pendingModules}
+                    {monitor.summary.pendingSplitModules}
                   </div>
                 </div>
 
                 <div className="rounded-lg border bg-white px-5 py-4">
-                  <div className="text-sm text-slate-500">TBC / Empty Teacher</div>
+                  <div className="text-sm text-slate-500">TBC 模組</div>
                   <div className="mt-2 text-2xl font-bold text-red-600">
                     {monitor.summary.modulesWithTbcTeacher}
                   </div>
@@ -449,21 +463,20 @@ export function AssignmentConfirmationMonitorPage() {
 
               {!monitor.summary.canUpdateTeacherLoading && (
                 <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-5 py-4 text-sm text-yellow-800">
-                  Teacher loading can only be updated when all modules are
-                  confirmed and no confirmed assignment has TBC / empty teacher.
+                  生成 Teacher Loading 須全部 planning 模組已完成分班，且已分班模組均有非 TBC 教師。
                 </div>
               )}
 
               <ModuleTable
-                title="Pending Modules"
-                modules={monitor.pendingModules}
-                emptyText="No pending modules."
+                title="待分班模組"
+                modules={monitor.pendingSplitModules}
+                emptyText="沒有待分班模組。"
               />
 
               <ModuleTable
-                title="Confirmed Modules"
-                modules={monitor.confirmedModules}
-                emptyText="No confirmed modules found."
+                title="已分配教師模組（已完成分班）"
+                modules={monitor.splitCompleteModules}
+                emptyText="沒有已完成分班的模組。"
               />
             </>
           )}

@@ -16,18 +16,6 @@ export function SplitAction({
 
   return (
     <div className="flex items-center gap-2">
-      <button
-        type="button"
-        className="btn btn-secondary py-1 text-xs"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onNoSplit();
-        }}
-      >
-        No Split
-      </button>
-
       {allowSplit && (
         <>
           <input
@@ -52,6 +40,18 @@ export function SplitAction({
           </button>
         </>
       )}
+
+      <button
+        type="button"
+        className="btn btn-secondary py-1 text-xs"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onNoSplit();
+        }}
+      >
+        No Split
+      </button>
     </div>
   );
 }

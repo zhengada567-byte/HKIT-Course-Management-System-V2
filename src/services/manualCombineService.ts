@@ -351,6 +351,29 @@ export function validateManualCombineSelection(
     };
   }
 
+  const moduleCodes = uniqueSorted(
+    selectedModules.map((module) => module.module_code)
+  );
+  const programmeCodes = uniqueSorted(
+    selectedModules.map((module) => module.programme_code)
+  );
+
+  if (moduleCodes.length === 1 && programmeCodes.length === 1) {
+    const distinctStreams = new Set(
+      selectedModules
+        .map((module) => normalizeStreamKey(module.stream_code))
+        .filter((stream) => !isCommonStream(stream))
+    );
+
+    if (distinctStreams.size > 1) {
+      return {
+        valid: false,
+        message:
+          "Same programme and module code across different streams are combined automatically on the combine step.",
+      };
+    }
+  }
+
   return {
     valid: true,
     message: "",
@@ -367,14 +390,28 @@ function calculateManualCombineTotals(params: {
     moduleEnrollments: params.moduleEnrollments,
   });
 
-  const relatedStudentNumbers = params.selectedModules
-    .map((module) =>
-      getStudentNumberForModule({
-        module,
-        studentNumberMap,
-      })
-    )
-    .filter(Boolean) as StudentNumberLikeRow[];
+  const seenStudentNumberKeys = new Set<string>();
+  const relatedStudentNumbers: StudentNumberLikeRow[] = [];
+
+  for (const module of params.selectedModules) {
+    const studentNumber = getStudentNumberForModule({
+      module,
+      studentNumberMap,
+    });
+
+    if (!studentNumber) continue;
+
+    const dedupeKey = buildStudentNumberKey({
+      academicYear: studentNumber.academic_year,
+      moduleCode: studentNumber.module_code,
+      programmeCode: studentNumber.programme_code,
+    });
+
+    if (seenStudentNumberKeys.has(dedupeKey)) continue;
+
+    seenStudentNumberKeys.add(dedupeKey);
+    relatedStudentNumbers.push(studentNumber);
+  }
 
   const totalExpected = relatedStudentNumbers.reduce(
     (sum, row) => sum + Number(row.expected_student_number ?? 0),
@@ -382,7 +419,7 @@ function calculateManualCombineTotals(params: {
   );
 
   const allActualComplete =
-    relatedStudentNumbers.length === params.selectedModules.length &&
+    relatedStudentNumbers.length > 0 &&
     relatedStudentNumbers.every((row) => row.actual_student_number !== null);
 
   const totalActual = allActualComplete
@@ -402,6 +439,11 @@ function calculateManualCombineTotals(params: {
 export async function createManualCombineGroup(params: {
   selectedModules: TimetablePlanningModuleRow[];
   createdBy: string;
+  /**
+   * Programme intra-stream auto combine: combined_code = module code only
+   * (no stream/programme suffix, no term suffix). Term stays in module_term column.
+   */
+  combinedCodeBase?: string;
 }) {
   const validation = validateManualCombineSelection(params.selectedModules);
 
@@ -425,16 +467,12 @@ export async function createManualCombineGroup(params: {
 
     Term is appended at the end.
   */
-  const streamAbbrMap = await getStreamAbbrMapForModules(params.selectedModules);
-
-  const baseCombinedCode = generateManualCombinedCodeFromModules({
-    selectedModules: params.selectedModules,
-    streamAbbrMap,
-  });
-
-  const combinedCode = `${baseCombinedCode}_${normalizeCodePart(
-    first.module_term
-  )}`;
+  const combinedCode = params.combinedCodeBase
+    ? normalizeCodePart(params.combinedCodeBase)
+    : `${generateManualCombinedCodeFromModules({
+        selectedModules: params.selectedModules,
+        streamAbbrMap: await getStreamAbbrMapForModules(params.selectedModules),
+      })}_${normalizeCodePart(first.module_term)}`;
 
   const selectedPlanningModuleIds = params.selectedModules.map(
     (module) => module.id

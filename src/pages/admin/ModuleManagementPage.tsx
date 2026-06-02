@@ -11,7 +11,8 @@ import {
   upsertModule,
   type ModuleInput,
 } from "../../services/moduleService";
-import type { ModuleRow, ModuleTerm } from "../../types";
+import type { ModuleRow, ModuleTerm, ModuleUsesComputerFlag } from "../../types";
+import { normalizeUsesComputerFlag } from "../../services/moduleService";
 
 const emptyForm: ModuleInput = {
   module_code: "",
@@ -20,6 +21,7 @@ const emptyForm: ModuleInput = {
   module_term: "Sep",
   programme_code: "",
   stream_code: "nil",
+  uses_computer: "N",
 };
 
 export function ModuleManagementPage() {
@@ -140,6 +142,7 @@ export function ModuleManagementPage() {
       module_term: row.module_term,
       programme_code: row.programme_code ?? "",
       stream_code: row.stream_code ?? "nil",
+      uses_computer: normalizeUsesComputerFlag(row.uses_computer),
     });
 
     setMessage(`Editing module: ${row.module_code}`);
@@ -190,7 +193,7 @@ export function ModuleManagementPage() {
               </button>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-7">
+            <div className="grid gap-3 md:grid-cols-8">
               <div>
                 <label className="form-label">{t.moduleCode}</label>
                 <input
@@ -284,6 +287,24 @@ export function ModuleManagementPage() {
                 />
               </div>
 
+              <div>
+                <label className="form-label">Uses computer room</label>
+                <select
+                  className="form-select"
+                  value={form.uses_computer ?? "N"}
+                  title="Uses computer room"
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      uses_computer: event.target.value as ModuleUsesComputerFlag,
+                    }))
+                  }
+                >
+                  <option value="N">N — No</option>
+                  <option value="Y">Y — Yes</option>
+                </select>
+              </div>
+
               <div className="flex items-end gap-2">
                 <button
                   className="btn btn-primary"
@@ -370,6 +391,15 @@ export function ModuleManagementPage() {
               render: (row) => (
                 <span className="block w-[55px] whitespace-nowrap">
                   {row.module_term}
+                </span>
+              ),
+            },
+            {
+              key: "computer",
+              header: "Computer",
+              render: (row) => (
+                <span className="block w-[40px] whitespace-nowrap font-medium">
+                  {normalizeUsesComputerFlag(row.uses_computer)}
                 </span>
               ),
             },

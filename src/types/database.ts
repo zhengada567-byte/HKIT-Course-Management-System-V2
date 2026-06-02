@@ -65,6 +65,9 @@ export interface TeacherRow {
   updated_at: string;
 }
 
+/** Y = needs computer room for timetable; N = not required. */
+export type ModuleUsesComputerFlag = "Y" | "N";
+
 export interface ModuleRow {
   id: string;
   module_code: string;
@@ -73,6 +76,7 @@ export interface ModuleRow {
   module_term: ModuleTerm;
   programme_code: string;
   stream_code: string;
+  uses_computer: ModuleUsesComputerFlag;
   created_at: string;
   updated_at: string;
 }

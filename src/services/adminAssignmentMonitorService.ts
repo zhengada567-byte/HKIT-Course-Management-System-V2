@@ -2,35 +2,38 @@
 
 import { supabase } from "../lib/supabase";
 import { normalizeStream } from "../lib/utils";
+import type { TimetablePlanningModuleRow } from "../types";
+import { detectProgrammeIntraStreamCombineCandidates } from "./programmeIntraStreamCombineService";
 
 export type AssignmentMonitorModule = {
-  timetable_module_id: string;
+  timetable_module_id: string | null;
+  planning_module_id: string | null;
   module_code: string | null;
   module_name: string | null;
   module_term: string | null;
   programme_code: string | null;
   stream_code: string | null;
   academic_year: string;
-  assignment_confirmed: boolean;
+  split_complete: boolean;
   assigned_teacher_names: string[];
   has_tbc_teacher: boolean;
-  assignment_count: number;
 };
 
 export type AssignmentMonitorSummary = {
   academicYear: string;
-  totalModules: number;
-  confirmedModules: number;
-  pendingModules: number;
+  totalPlanningModules: number;
+  splitCompleteModules: number;
+  pendingSplitModules: number;
+  splitTimetableInstanceCount: number;
   modulesWithTbcTeacher: number;
-  allConfirmed: boolean;
+  allSplitComplete: boolean;
   canUpdateTeacherLoading: boolean;
 };
 
 export type AssignmentMonitorResult = {
   summary: AssignmentMonitorSummary;
-  confirmedModules: AssignmentMonitorModule[];
-  pendingModules: AssignmentMonitorModule[];
+  splitCompleteModules: AssignmentMonitorModule[];
+  pendingSplitModules: AssignmentMonitorModule[];
 };
 
 type TimetableModuleMonitorRow = {
@@ -43,15 +46,50 @@ type TimetableModuleMonitorRow = {
   stream_code: string | null;
   academic_year: string;
   assignment_confirmed: boolean | null;
+  split_confirmed: boolean | null;
+  planning_module_id: string | null;
+};
+
+type PlanningModuleMonitorRow = {
+  id: string;
+  module_code: string | null;
+  module_name: string | null;
+  module_term: string | null;
+  programme_code: string | null;
+  stream_code: string | null;
+  academic_year: string;
+  split_status: string | null;
 };
 
 type TeachingAssignmentMonitorRow = {
   id: string;
   timetable_module_id: string;
   teacher_name: string | null;
+  teaching_status: string | null;
   confirmed: boolean | null;
   assignment_version: number | null;
 };
+
+function buildLatestMonitorAssignmentMap(
+  assignmentRows: TeachingAssignmentMonitorRow[]
+) {
+  const latestAssignmentByModuleId = new Map<
+    string,
+    TeachingAssignmentMonitorRow
+  >();
+
+  for (const assignment of assignmentRows) {
+    const existing = latestAssignmentByModuleId.get(assignment.timetable_module_id);
+    const version = Number(assignment.assignment_version ?? 0);
+    const existingVersion = Number(existing?.assignment_version ?? 0);
+
+    if (!existing || version >= existingVersion) {
+      latestAssignmentByModuleId.set(assignment.timetable_module_id, assignment);
+    }
+  }
+
+  return latestAssignmentByModuleId;
+}
 
 function normalizeTeacherName(name: string | null | undefined): string {
   return (name ?? "").trim();
@@ -70,44 +108,85 @@ export async function getAssignmentConfirmationMonitor(
     throw new Error("Academic year is required.");
   }
 
-  const { data: modules, error: modulesError } = await supabase
-    .from("timetable_modules")
-    .select(
+  const [
+    { data: planningRows, error: planningError },
+    { data: modules, error: modulesError },
+  ] = await Promise.all([
+    supabase
+      .from("timetable_planning_modules")
+      .select(
+        "id, module_code, module_name, module_term, programme_code, stream_code, academic_year, split_status"
+      )
+      .eq("academic_year", academicYear)
+      .order("module_term", { ascending: true })
+      .order("module_code", { ascending: true }),
+    supabase
+      .from("timetable_modules")
+      .select(
+        `
+        id,
+        base_module_code,
+        module_instance_code,
+        module_name,
+        module_term,
+        programme_code,
+        stream_code,
+        academic_year,
+        assignment_confirmed,
+        split_confirmed,
+        planning_module_id
       `
-      id,
-      base_module_code,
-      module_instance_code,
-      module_name,
-      module_term,
-      programme_code,
-      stream_code,
-      academic_year,
-      assignment_confirmed
-    `
-    )
-    .eq("academic_year", academicYear)
-    .order("module_term", { ascending: true })
-    .order("base_module_code", { ascending: true });
+      )
+      .eq("academic_year", academicYear)
+      .eq("split_confirmed", true)
+      .order("module_term", { ascending: true })
+      .order("base_module_code", { ascending: true }),
+  ]);
 
-  if (modulesError) {
-    throw modulesError;
-  }
+  if (planningError) throw planningError;
+  if (modulesError) throw modulesError;
 
+  const planningModuleRows = (planningRows ?? []) as PlanningModuleMonitorRow[];
   const moduleRows = (modules ?? []) as TimetableModuleMonitorRow[];
+
+  const pendingPlanningRows = planningModuleRows.filter(
+    (row) => !row.split_status || row.split_status === "not_started"
+  );
+
+  const splitCompletePlanningCount =
+    planningModuleRows.length - pendingPlanningRows.length;
+
+  const pendingSplitModules: AssignmentMonitorModule[] = pendingPlanningRows.map(
+    (row) => ({
+      timetable_module_id: null,
+      planning_module_id: row.id,
+      module_code: row.module_code,
+      module_name: row.module_name,
+      module_term: row.module_term,
+      programme_code: row.programme_code,
+      stream_code: row.stream_code,
+      academic_year: row.academic_year,
+      split_complete: false,
+      assigned_teacher_names: [],
+      has_tbc_teacher: true,
+    })
+  );
 
   if (moduleRows.length === 0) {
     return {
       summary: {
         academicYear,
-        totalModules: 0,
-        confirmedModules: 0,
-        pendingModules: 0,
+        totalPlanningModules: planningModuleRows.length,
+        splitCompleteModules: splitCompletePlanningCount,
+        pendingSplitModules: pendingPlanningRows.length,
+        splitTimetableInstanceCount: 0,
         modulesWithTbcTeacher: 0,
-        allConfirmed: false,
+        allSplitComplete:
+          planningModuleRows.length > 0 && pendingPlanningRows.length === 0,
         canUpdateTeacherLoading: false,
       },
-      confirmedModules: [],
-      pendingModules: [],
+      splitCompleteModules: [],
+      pendingSplitModules,
     };
   }
 
@@ -120,94 +199,77 @@ export async function getAssignmentConfirmationMonitor(
       id,
       timetable_module_id,
       teacher_name,
+      teaching_status,
       confirmed,
       assignment_version
     `
     )
     .in("timetable_module_id", moduleIds)
-    .eq("confirmed", true);
+    .order("assignment_version", { ascending: false });
 
   if (assignmentsError) {
     throw assignmentsError;
   }
 
-  const assignmentRows =
-    (assignments ?? []) as TeachingAssignmentMonitorRow[];
-
-  const assignmentsByModuleId = new Map<
-    string,
-    TeachingAssignmentMonitorRow[]
-  >();
-
-  for (const assignment of assignmentRows) {
-    const current =
-      assignmentsByModuleId.get(assignment.timetable_module_id) ?? [];
-
-    current.push(assignment);
-    assignmentsByModuleId.set(assignment.timetable_module_id, current);
-  }
-
-  const monitorModules: AssignmentMonitorModule[] = moduleRows.map((module) => {
-    const moduleAssignments = assignmentsByModuleId.get(module.id) ?? [];
-
-    const assignedTeacherNames = Array.from(
-      new Set(
-        moduleAssignments
-          .map((assignment) => normalizeTeacherName(assignment.teacher_name))
-          .filter(Boolean)
-      )
-    );
-
-    const hasTbcTeacher =
-      moduleAssignments.length === 0 ||
-      moduleAssignments.some((assignment) =>
-        isTbcTeacher(assignment.teacher_name)
-      );
-
-    return {
-      timetable_module_id: module.id,
-      module_code: module.base_module_code ?? module.module_instance_code,
-      module_name: module.module_name,
-      module_term: module.module_term,
-      programme_code: module.programme_code,
-      stream_code: module.stream_code,
-      academic_year: module.academic_year,
-      assignment_confirmed: Boolean(module.assignment_confirmed),
-      assigned_teacher_names: assignedTeacherNames,
-      has_tbc_teacher: hasTbcTeacher,
-      assignment_count: moduleAssignments.length,
-    };
-  });
-
-  const confirmedModules = monitorModules.filter(
-    (module) => module.assignment_confirmed
+  const latestAssignmentByModuleId = buildLatestMonitorAssignmentMap(
+    (assignments ?? []) as TeachingAssignmentMonitorRow[]
   );
 
-  const pendingModules = monitorModules.filter(
-    (module) => !module.assignment_confirmed
+  const splitCompleteModules: AssignmentMonitorModule[] = moduleRows.map(
+    (module) => {
+      const latestAssignment = latestAssignmentByModuleId.get(module.id);
+      const assignedTeacherNames = latestAssignment?.teacher_name
+        ? [normalizeTeacherName(latestAssignment.teacher_name)].filter(Boolean)
+        : [];
+
+      const hasTbcTeacher =
+        assignedTeacherNames.length === 0 ||
+        assignedTeacherNames.some((name) => isTbcTeacher(name));
+
+      return {
+        timetable_module_id: module.id,
+        planning_module_id: module.planning_module_id,
+        module_code: module.base_module_code ?? module.module_instance_code,
+        module_name: module.module_name,
+        module_term: module.module_term,
+        programme_code: module.programme_code,
+        stream_code: module.stream_code,
+        academic_year: module.academic_year,
+        split_complete: true,
+        assigned_teacher_names: assignedTeacherNames,
+        has_tbc_teacher: hasTbcTeacher,
+      };
+    }
   );
 
-  const modulesWithTbcTeacher = confirmedModules.filter(
+  const modulesWithTbcTeacher = splitCompleteModules.filter(
     (module) => module.has_tbc_teacher
+  ).length;
+
+  const dbConfirmedCount = moduleRows.filter(
+    (module) => module.assignment_confirmed
   ).length;
 
   const summary: AssignmentMonitorSummary = {
     academicYear,
-    totalModules: monitorModules.length,
-    confirmedModules: confirmedModules.length,
-    pendingModules: pendingModules.length,
+    totalPlanningModules: planningModuleRows.length,
+    splitCompleteModules: splitCompletePlanningCount,
+    pendingSplitModules: pendingPlanningRows.length,
+    splitTimetableInstanceCount: splitCompleteModules.length,
     modulesWithTbcTeacher,
-    allConfirmed: monitorModules.length > 0 && pendingModules.length === 0,
+    allSplitComplete:
+      planningModuleRows.length > 0 && pendingPlanningRows.length === 0,
     canUpdateTeacherLoading:
-      monitorModules.length > 0 &&
-      pendingModules.length === 0 &&
+      moduleRows.length > 0 &&
+      pendingPlanningRows.length === 0 &&
+      dbConfirmedCount === moduleRows.length &&
       modulesWithTbcTeacher === 0,
   };
 
   return {
     summary,
-    confirmedModules,
-    pendingModules,
+    splitCompleteModules,
+    pendingSplitModules,
   };
 }
 
@@ -215,17 +277,53 @@ export type PipelineStageStatus = "pending" | "in_progress" | "complete";
 
 export type ProgrammePipelineProgress = {
   programmeCode: string;
-  streamCode: string;
   planningModuleCount: number;
   studentNumbersStatus: PipelineStageStatus;
   studentNumbersReadyCount: number;
   combineStatus: PipelineStageStatus;
+  combineReadyCount: number;
   splitStatus: PipelineStageStatus;
   splitReadyCount: number;
-  assignmentStatus: PipelineStageStatus;
-  timetableModuleCount: number;
-  confirmedAssignmentCount: number;
 };
+
+function buildProgrammeNilStudentKey(
+  programmeCode: string,
+  moduleCode: string | null | undefined
+) {
+  return [programmeCode, "nil", moduleCode].join("|");
+}
+
+function emptyProgrammeProgress(programmeCode: string): ProgrammePipelineProgress {
+  return {
+    programmeCode,
+    planningModuleCount: 0,
+    studentNumbersStatus: "pending",
+    studentNumbersReadyCount: 0,
+    combineStatus: "pending",
+    combineReadyCount: 0,
+    splitStatus: "pending",
+    splitReadyCount: 0,
+  };
+}
+
+function resolveCombineMetrics(
+  planningRows: TimetablePlanningModuleRow[]
+): { combineReadyCount: number; combineStatus: PipelineStageStatus } {
+  const pendingCombineIds = new Set(
+    detectProgrammeIntraStreamCombineCandidates(planningRows).flatMap(
+      (candidate) => candidate.modules.map((module) => module.id)
+    )
+  );
+
+  const combineReadyCount = planningRows.filter(
+    (row) => !pendingCombineIds.has(row.id)
+  ).length;
+
+  return {
+    combineReadyCount,
+    combineStatus: stageFromCounts(combineReadyCount, planningRows.length),
+  };
+}
 
 function stageFromCounts(ready: number, total: number): PipelineStageStatus {
   if (total === 0) return "pending";
@@ -245,11 +343,12 @@ export async function getProgrammePipelineProgress(
   const [
     { data: planningRows, error: planningError },
     { data: studentNumberRows, error: studentNumberError },
-    { data: timetableRows, error: timetableError },
   ] = await Promise.all([
     supabase
       .from("timetable_planning_modules")
-      .select("id, programme_code, stream_code, split_status, module_code, module_term")
+      .select(
+        "id, programme_code, stream_code, split_status, module_code, module_term, manual_combine_group_id, academic_year"
+      )
       .eq("academic_year", academicYear),
     supabase
       .from("timetable_student_numbers")
@@ -257,15 +356,10 @@ export async function getProgrammePipelineProgress(
         "module_code, programme_code, programme_stream, study_term, actual_student_number, academic_year"
       )
       .eq("academic_year", academicYear),
-    supabase
-      .from("timetable_modules")
-      .select("id, programme_code, stream_code, assignment_confirmed, planning_module_id")
-      .eq("academic_year", academicYear),
   ]);
 
   if (planningError) throw planningError;
   if (studentNumberError) throw studentNumberError;
-  if (timetableError) throw timetableError;
 
   const studentNumberReadyKeys = new Set<string>();
 
@@ -274,120 +368,74 @@ export async function getProgrammePipelineProgress(
       continue;
     }
 
+    if (normalizeStream(row.programme_stream) !== "nil") {
+      continue;
+    }
+
     studentNumberReadyKeys.add(
-      [
-        row.programme_code,
-        normalizeStream(row.programme_stream),
-        row.module_code,
-      ].join("|")
+      buildProgrammeNilStudentKey(
+        String(row.programme_code ?? "").trim(),
+        row.module_code
+      )
     );
+  }
+
+  const planningByProgramme = new Map<string, TimetablePlanningModuleRow[]>();
+
+  for (const planning of (planningRows ?? []) as TimetablePlanningModuleRow[]) {
+    const programmeCode = String(planning.programme_code ?? "").trim();
+
+    if (!programmeCode) continue;
+
+    const bucket = planningByProgramme.get(programmeCode) ?? [];
+    bucket.push(planning);
+    planningByProgramme.set(programmeCode, bucket);
   }
 
   const grouped = new Map<string, ProgrammePipelineProgress>();
 
-  for (const planning of planningRows ?? []) {
-    const programmeCode = String(planning.programme_code ?? "").trim();
-    const streamCode = String(planning.stream_code ?? "nil").trim() || "nil";
-    const groupKey = `${programmeCode}|${streamCode}`;
+  for (const [programmeCode, programmePlanning] of planningByProgramme) {
+    const row = emptyProgrammeProgress(programmeCode);
 
-    const existing = grouped.get(groupKey) ?? {
-      programmeCode,
-      streamCode,
-      planningModuleCount: 0,
-      studentNumbersStatus: "pending" as PipelineStageStatus,
-      studentNumbersReadyCount: 0,
-      combineStatus: "pending" as PipelineStageStatus,
-      splitStatus: "pending" as PipelineStageStatus,
-      splitReadyCount: 0,
-      assignmentStatus: "pending" as PipelineStageStatus,
-      timetableModuleCount: 0,
-      confirmedAssignmentCount: 0,
-    };
+    row.planningModuleCount = programmePlanning.length;
 
-    existing.planningModuleCount += 1;
+    for (const planning of programmePlanning) {
+      const studentKey = buildProgrammeNilStudentKey(
+        programmeCode,
+        planning.module_code
+      );
 
-    const studentKey = [
-      programmeCode,
-      normalizeStream(streamCode),
-      planning.module_code,
-    ].join("|");
+      if (studentNumberReadyKeys.has(studentKey)) {
+        row.studentNumbersReadyCount += 1;
+      }
 
-    if (studentNumberReadyKeys.has(studentKey)) {
-      existing.studentNumbersReadyCount += 1;
+      if (planning.split_status && planning.split_status !== "not_started") {
+        row.splitReadyCount += 1;
+      }
     }
 
-    if (planning.split_status && planning.split_status !== "not_started") {
-      existing.splitReadyCount += 1;
-    }
+    const { combineReadyCount, combineStatus: rawCombineStatus } =
+      resolveCombineMetrics(programmePlanning);
 
-    grouped.set(groupKey, existing);
+    row.combineReadyCount = combineReadyCount;
+
+    const studentNumbersStatus = stageFromCounts(
+      row.studentNumbersReadyCount,
+      row.planningModuleCount
+    );
+
+    row.studentNumbersStatus = studentNumbersStatus;
+    row.combineStatus =
+      studentNumbersStatus === "complete" ? rawCombineStatus : "pending";
+    row.splitStatus = stageFromCounts(
+      row.splitReadyCount,
+      row.planningModuleCount
+    );
+
+    grouped.set(programmeCode, row);
   }
 
-  for (const timetable of timetableRows ?? []) {
-    const programmeCode = String(timetable.programme_code ?? "").trim();
-    const streamCode = String(timetable.stream_code ?? "nil").trim() || "nil";
-    const groupKey = `${programmeCode}|${streamCode}`;
-
-    const existing = grouped.get(groupKey) ?? {
-      programmeCode,
-      streamCode,
-      planningModuleCount: 0,
-      studentNumbersStatus: "pending" as PipelineStageStatus,
-      studentNumbersReadyCount: 0,
-      combineStatus: "pending" as PipelineStageStatus,
-      splitStatus: "pending" as PipelineStageStatus,
-      splitReadyCount: 0,
-      assignmentStatus: "pending" as PipelineStageStatus,
-      timetableModuleCount: 0,
-      confirmedAssignmentCount: 0,
-    };
-
-    existing.timetableModuleCount += 1;
-
-    if (timetable.assignment_confirmed) {
-      existing.confirmedAssignmentCount += 1;
-    }
-
-    grouped.set(groupKey, existing);
-  }
-
-  return Array.from(grouped.values())
-    .map((row) => {
-      const studentNumbersStatus = stageFromCounts(
-        row.studentNumbersReadyCount,
-        row.planningModuleCount
-      );
-
-      const combineStatus: PipelineStageStatus =
-        row.timetableModuleCount > 0
-          ? "complete"
-          : studentNumbersStatus === "complete"
-            ? "in_progress"
-            : "pending";
-
-      const splitStatus = stageFromCounts(
-        row.splitReadyCount,
-        row.planningModuleCount
-      );
-
-      const assignmentStatus = stageFromCounts(
-        row.confirmedAssignmentCount,
-        row.timetableModuleCount
-      );
-
-      return {
-        ...row,
-        studentNumbersStatus,
-        combineStatus,
-        splitStatus,
-        assignmentStatus,
-      };
-    })
-    .sort((a, b) => {
-      const codeDiff = a.programmeCode.localeCompare(b.programmeCode);
-
-      if (codeDiff !== 0) return codeDiff;
-
-      return a.streamCode.localeCompare(b.streamCode);
-    });
+  return Array.from(grouped.values()).sort((a, b) =>
+    a.programmeCode.localeCompare(b.programmeCode)
+  );
 }

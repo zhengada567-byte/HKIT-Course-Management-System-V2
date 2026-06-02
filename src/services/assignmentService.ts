@@ -299,6 +299,183 @@ export async function ensureAssignmentsForAllTimetableModules(params: {
   };
 }
 
+export function hasValidTeacherAssignment(
+  assignment:
+    | {
+        teacher_name?: string | null;
+        teaching_status?: string | null;
+      }
+    | undefined
+) {
+  const teacherName = normalizeText(assignment?.teacher_name);
+
+  return Boolean(teacherName) && !isTBC(teacherName) && Boolean(assignment?.teaching_status);
+}
+
+export function buildLatestAssignmentByModuleId(
+  assignmentRows: TeachingAssignmentRow[]
+) {
+  const latestAssignmentByModule = new Map<string, TeachingAssignmentRow>();
+
+  for (const assignment of assignmentRows) {
+    const existing = latestAssignmentByModule.get(assignment.timetable_module_id);
+
+    if (
+      !existing ||
+      assignment.assignment_version > existing.assignment_version
+    ) {
+      latestAssignmentByModule.set(assignment.timetable_module_id, assignment);
+    }
+  }
+
+  return latestAssignmentByModule;
+}
+
+async function confirmAssignmentsForTimetableModules(params: {
+  timetableModules: TimetableModuleRow[];
+  latestAssignments: TeachingAssignmentRow[];
+  confirmedBy: string;
+}) {
+  if (params.timetableModules.length === 0) {
+    return { confirmedVersion: 0 };
+  }
+
+  const timetableModuleIds = params.timetableModules.map((module) => module.id);
+
+  const nextVersion =
+    Math.max(
+      0,
+      ...params.timetableModules.map((module) =>
+        Number(module.confirmed_version ?? 0)
+      )
+    ) + 1;
+
+  const now = new Date().toISOString();
+  const assignmentIds = params.latestAssignments.map((assignment) => assignment.id);
+
+  const { error: resetError } = await supabase
+    .from("teaching_assignments")
+    .update({
+      confirmed: false,
+    })
+    .in("timetable_module_id", timetableModuleIds);
+
+  if (resetError) throw resetError;
+
+  const { error: confirmAssignmentError } = await supabase
+    .from("teaching_assignments")
+    .update({
+      assignment_version: nextVersion,
+      confirmed: true,
+      confirmed_at: now,
+      confirmed_by: params.confirmedBy,
+      updated_by: params.confirmedBy,
+    })
+    .in("id", assignmentIds);
+
+  if (confirmAssignmentError) throw confirmAssignmentError;
+
+  const { error: moduleUpdateError } = await supabase
+    .from("timetable_modules")
+    .update({
+      assignment_confirmed: true,
+      confirmed_version: nextVersion,
+    })
+    .in("id", timetableModuleIds);
+
+  if (moduleUpdateError) throw moduleUpdateError;
+
+  const planningModuleIds = params.timetableModules
+    .map((module) => module.planning_module_id)
+    .filter((id): id is string => Boolean(id));
+
+  if (planningModuleIds.length > 0) {
+    const { error: planningUpdateError } = await supabase
+      .from("timetable_planning_modules")
+      .update({
+        assignment_status: "confirmed",
+      })
+      .in("id", planningModuleIds);
+
+    if (planningUpdateError) throw planningUpdateError;
+  }
+
+  return {
+    confirmedVersion: nextVersion,
+  };
+}
+
+/**
+ * Confirms only split-confirmed modules that already have a real (non-TBC) teacher.
+ * Used after Confirm All Split / teacher sync so Admin monitor matches PL workflow.
+ */
+export async function confirmReadyAssignments(params: {
+  academicYear: string;
+  confirmedBy: string;
+  programmeCode?: string;
+  streamCode?: string;
+  timetableModuleIds?: string[];
+}) {
+  let timetableModules = await listSplitConfirmedTimetableModulesForAssignment({
+    academicYear: params.academicYear,
+    programmeCode: params.programmeCode,
+    streamCode: params.streamCode,
+  });
+
+  if (params.timetableModuleIds?.length) {
+    const idSet = new Set(params.timetableModuleIds);
+
+    timetableModules = timetableModules.filter((module) => idSet.has(module.id));
+  }
+
+  timetableModules = timetableModules.filter((module) => !module.assignment_confirmed);
+
+  if (timetableModules.length === 0) {
+    return { confirmedCount: 0, skippedCount: 0 };
+  }
+
+  const timetableModuleIds = timetableModules.map((module) => module.id);
+
+  const { data: assignments, error: assignmentError } = await supabase
+    .from("teaching_assignments")
+    .select("*")
+    .eq("academic_year", params.academicYear)
+    .in("timetable_module_id", timetableModuleIds)
+    .order("assignment_version", { ascending: false });
+
+  if (assignmentError) throw assignmentError;
+
+  const latestAssignmentByModule = buildLatestAssignmentByModuleId(
+    (assignments ?? []) as TeachingAssignmentRow[]
+  );
+
+  const readyModules = timetableModules.filter((module) =>
+    hasValidTeacherAssignment(latestAssignmentByModule.get(module.id))
+  );
+
+  if (readyModules.length === 0) {
+    return {
+      confirmedCount: 0,
+      skippedCount: timetableModules.length,
+    };
+  }
+
+  const latestAssignments = readyModules.map(
+    (module) => latestAssignmentByModule.get(module.id)!
+  );
+
+  await confirmAssignmentsForTimetableModules({
+    timetableModules: readyModules,
+    latestAssignments,
+    confirmedBy: params.confirmedBy,
+  });
+
+  return {
+    confirmedCount: readyModules.length,
+    skippedCount: timetableModules.length - readyModules.length,
+  };
+}
+
 /**
  * Programme Leader confirms assignments.
  *
@@ -346,18 +523,9 @@ export async function confirmAssignments(params: {
 
   if (assignmentError) throw assignmentError;
 
-  const assignmentRows = (assignments ?? []) as TeachingAssignmentRow[];
-
-  const latestAssignmentByModule = new Map<string, TeachingAssignmentRow>();
-
-  for (const assignment of assignmentRows) {
-    if (!latestAssignmentByModule.has(assignment.timetable_module_id)) {
-      latestAssignmentByModule.set(
-        assignment.timetable_module_id,
-        assignment
-      );
-    }
-  }
+  const latestAssignmentByModule = buildLatestAssignmentByModuleId(
+    (assignments ?? []) as TeachingAssignmentRow[]
+  );
 
   const missing = timetableModules.filter(
     (module) => !latestAssignmentByModule.has(module.id)
@@ -375,78 +543,19 @@ export async function confirmAssignments(params: {
     return latestAssignmentByModule.get(module.id)!;
   });
 
-  const missingRequired = latestAssignments.filter((assignment) => {
-    return !assignment.teacher_name || !assignment.teaching_status;
-  });
+  const missingRequired = latestAssignments.filter(
+    (assignment) => !hasValidTeacherAssignment(assignment)
+  );
 
   if (missingRequired.length > 0) {
     throw new Error("Some assignments are missing required fields.");
   }
 
-  const nextVersion =
-    Math.max(
-      0,
-      ...timetableModules.map((module) => Number(module.confirmed_version ?? 0))
-    ) + 1;
-
-  const now = new Date().toISOString();
-
-  const assignmentIds = latestAssignments.map((assignment) => assignment.id);
-
-  /*
-    Reset only assignments under the current selected split-confirmed timetable modules.
-    Do not reset unrelated modules in the same academic year.
-  */
-  const { error: resetError } = await supabase
-    .from("teaching_assignments")
-    .update({
-      confirmed: false,
-    })
-    .in("timetable_module_id", timetableModuleIds);
-
-  if (resetError) throw resetError;
-
-  const { error: confirmAssignmentError } = await supabase
-    .from("teaching_assignments")
-    .update({
-      assignment_version: nextVersion,
-      confirmed: true,
-      confirmed_at: now,
-      confirmed_by: params.confirmedBy,
-      updated_by: params.confirmedBy,
-    })
-    .in("id", assignmentIds);
-
-  if (confirmAssignmentError) throw confirmAssignmentError;
-
-  const { error: moduleUpdateError } = await supabase
-    .from("timetable_modules")
-    .update({
-      assignment_confirmed: true,
-      confirmed_version: nextVersion,
-    })
-    .in("id", timetableModuleIds);
-
-  if (moduleUpdateError) throw moduleUpdateError;
-
-  const planningModuleIds = timetableModules
-    .map((module) => module.planning_module_id)
-    .filter((id): id is string => Boolean(id));
-
-  if (planningModuleIds.length > 0) {
-    const { error: planningUpdateError } = await supabase
-      .from("timetable_planning_modules")
-      .update({
-        assignment_status: "confirmed",
-      })
-      .in("id", planningModuleIds);
-
-    if (planningUpdateError) throw planningUpdateError;
-  }
-
-  return {
-    confirmedVersion: nextVersion,
-  };
+  return confirmAssignmentsForTimetableModules({
+    timetableModules,
+    latestAssignments,
+    confirmedBy: params.confirmedBy,
+  });
 }
 
 export function buildAssignmentDraftFromTeacher(params: {

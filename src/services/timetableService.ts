@@ -90,6 +90,21 @@ function buildSimpleKey(params: {
   ].join("|");
 }
 
+/** Matches module_default_assignments unique (academic_year, module_code, programme_code, stream_code). */
+export function buildModuleIdentityKey(params: {
+  academicYear: string;
+  moduleCode: string;
+  programmeCode: string;
+  programmeStream?: string | null;
+}) {
+  return [
+    normalizeAcademicYear(params.academicYear).toLowerCase(),
+    normalizeCodePart(params.moduleCode),
+    normalizeCodePart(params.programmeCode),
+    normalizeStream(params.programmeStream).toLowerCase(),
+  ].join("|");
+}
+
 function getOptionalModuleTerm(row: {
   module_term?: string | null;
   moduleTerm?: string | null;
@@ -429,17 +444,11 @@ async function attachStudentNumbersAndDefaults(params: {
   const defaultAssignmentMap = new Map<string, ModuleDefaultAssignmentRow>();
 
   for (const row of (defaultsResult.data ?? []) as ModuleDefaultAssignmentRow[]) {
-    const studyTerm = offeredTermToStudyTerm(
-      params.academicYear,
-      getOptionalModuleTerm(row) ?? ""
-    );
-
-    const key = buildSimpleKey({
+    const key = buildModuleIdentityKey({
       academicYear: params.academicYear,
       moduleCode: row.module_code,
       programmeCode: row.programme_code,
       programmeStream: row.stream_code,
-      studyTerm,
     });
 
     defaultAssignmentMap.set(key, row);
@@ -452,7 +461,7 @@ async function attachStudentNumbersAndDefaults(params: {
         module.module_term ?? ""
       );
 
-      const key = buildSimpleKey({
+      const termKey = buildSimpleKey({
         academicYear: module.academic_year,
         moduleCode: module.module_code,
         programmeCode: module.programme_code,
@@ -460,9 +469,16 @@ async function attachStudentNumbersAndDefaults(params: {
         studyTerm,
       });
 
-      const studentNumber = studentNumberMap.get(key);
-      const enrollment = enrollmentMap.get(key);
-      const defaultAssignment = defaultAssignmentMap.get(key);
+      const identityKey = buildModuleIdentityKey({
+        academicYear: module.academic_year,
+        moduleCode: module.module_code,
+        programmeCode: module.programme_code,
+        programmeStream: module.stream_code,
+      });
+
+      const studentNumber = studentNumberMap.get(termKey);
+      const enrollment = enrollmentMap.get(termKey);
+      const defaultAssignment = defaultAssignmentMap.get(identityKey);
 
       return {
         ...module,
@@ -504,6 +520,31 @@ export async function listAllPlanningModulesWithStudentNumbers(params: {
     .eq("academic_year", params.academicYear)
     .order("programme_code")
     .order("stream_code")
+    .order("module_code");
+
+  if (error) throw error;
+
+  const planningModules = (data ?? []) as TimetablePlanningModuleRow[];
+
+  return attachStudentNumbersAndDefaults({
+    academicYear: params.academicYear,
+    planningModules,
+  });
+}
+
+export async function listPlanningModulesByIdsWithStudentNumbers(params: {
+  academicYear: string;
+  planningModuleIds: string[];
+}) {
+  if (params.planningModuleIds.length === 0) return [];
+
+  // Load by id only — planning_module ids are globally unique. Do not filter by
+  // academic_year here; a strict year match can drop rows when year variants differ
+  // between combine_groups and timetable_planning_modules.
+  const { data, error } = await supabase
+    .from("timetable_planning_modules")
+    .select("*")
+    .in("id", params.planningModuleIds)
     .order("module_code");
 
   if (error) throw error;
@@ -586,6 +627,66 @@ export async function listTimetableModules(params: {
   return rows.filter((module) =>
     isModuleForSelectedStream(module.stream_code, params.streamCode)
   );
+}
+
+/**
+ * Load timetable modules for specific planning modules / combine groups
+ * without programme_code filtering (needed for MIXED combined splits).
+ */
+export async function listTimetableModulesBySourceIds(params: {
+  academicYear: string;
+  planningModuleIds?: string[];
+  combineGroupIds?: string[];
+}): Promise<TimetableModuleRow[]> {
+  const planningIds = params.planningModuleIds ?? [];
+  const combineIds = params.combineGroupIds ?? [];
+  const merged = new Map<string, TimetableModuleRow>();
+
+  if (planningIds.length > 0) {
+    const { data, error } = await supabase
+      .from("timetable_modules")
+      .select("*")
+      .eq("academic_year", params.academicYear)
+      .in("planning_module_id", planningIds);
+
+    if (error) throw error;
+
+    for (const row of (data ?? []) as TimetableModuleRow[]) {
+      merged.set(row.id, row);
+    }
+  }
+
+  if (combineIds.length > 0) {
+    const { data, error } = await supabase
+      .from("timetable_modules")
+      .select("*")
+      .eq("academic_year", params.academicYear)
+      .in("combine_group_id", combineIds);
+
+    if (error) throw error;
+
+    for (const row of (data ?? []) as TimetableModuleRow[]) {
+      merged.set(row.id, row);
+    }
+  }
+
+  return Array.from(merged.values());
+}
+
+export async function listTimetableModulesByInstanceCodes(params: {
+  academicYear: string;
+  moduleInstanceCodes: string[];
+}): Promise<TimetableModuleRow[]> {
+  if (params.moduleInstanceCodes.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("timetable_modules")
+    .select("*")
+    .eq("academic_year", params.academicYear)
+    .in("module_instance_code", params.moduleInstanceCodes);
+
+  if (error) throw error;
+  return (data ?? []) as TimetableModuleRow[];
 }
 
 export async function deleteTimetableModulesByAcademicYear(academicYear: string) {

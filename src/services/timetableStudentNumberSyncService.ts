@@ -270,7 +270,22 @@ export async function syncStudyPlanStudentNumbersToTimetable(params: {
 
   let zeroActualCount = 0;
 
-  const payload = planningModules.map((module) => {
+  const payloadMap = new Map<
+    string,
+    {
+      academic_year: string;
+      module_code: string;
+      module_term: string | null;
+      programme_code: string;
+      programme_stream: string;
+      study_term: string;
+      expected_student_number: number;
+      actual_student_number: number;
+      created_by: string;
+    }
+  >();
+
+  for (const module of planningModules) {
     const studyTerm = offeredTermToStudyTerm(
       module.academic_year,
       module.module_term
@@ -295,10 +310,6 @@ export async function syncStudyPlanStudentNumbersToTimetable(params: {
       studyTerm,
     });
 
-    if (actual === 0) {
-      zeroActualCount += 1;
-    }
-
     const expected = resolveExpectedStudentNumberOnSync({
       existingExpected:
         existing?.expected_student_number ??
@@ -309,18 +320,36 @@ export async function syncStudyPlanStudentNumbersToTimetable(params: {
       newActual: actual,
     });
 
-    return {
-      academic_year: canonicalYear,
-      module_code: module.module_code,
-      module_term: module.module_term,
-      programme_code: module.programme_code,
-      programme_stream: timetableStream,
-      study_term: studyTerm,
-      expected_student_number: expected,
-      actual_student_number: actual,
-      created_by: params.createdBy,
-    };
-  });
+    const previous = payloadMap.get(key);
+
+    if (!previous) {
+      payloadMap.set(key, {
+        academic_year: canonicalYear,
+        module_code: module.module_code,
+        module_term: module.module_term,
+        programme_code: module.programme_code,
+        programme_stream: timetableStream,
+        study_term: studyTerm,
+        expected_student_number: expected,
+        actual_student_number: actual,
+        created_by: params.createdBy,
+      });
+      continue;
+    }
+
+    // De-duplicate within the same upsert batch.
+    // This commonly happens when "All Streams" is selected but planning modules
+    // are present per-stream in the source table(s).
+    payloadMap.set(key, {
+      ...previous,
+      expected_student_number: Math.max(previous.expected_student_number, expected),
+      actual_student_number: Math.max(previous.actual_student_number, actual),
+    });
+  }
+
+  const payload = Array.from(payloadMap.values());
+
+  zeroActualCount = payload.filter((row) => row.actual_student_number === 0).length;
 
   const { error: upsertError } = await supabase
     .from("timetable_student_numbers")

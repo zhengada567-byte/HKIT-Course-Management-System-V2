@@ -11,8 +11,7 @@ export function StepTabs({
     { key: "student_numbers", label: "1. 同步學生人數" },
     { key: "combine", label: "2. 合班" },
     { key: "split", label: "3. 分班" },
-    { key: "assignment", label: "4. 分配教師" },
-    { key: "schedule", label: "5. 排課（教室/日期）" },
+    { key: "schedule", label: "4. 排課（教室/日期）" },
   ];
 
   return (

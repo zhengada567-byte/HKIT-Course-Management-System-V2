@@ -21,6 +21,7 @@ export type {
   ProgrammeRow,
   TeacherRow,
   ModuleRow,
+  ModuleUsesComputerFlag,
   ModuleAdjustmentRow,
   ModuleEnrollmentRow,
   ModuleDefaultAssignmentRow,
