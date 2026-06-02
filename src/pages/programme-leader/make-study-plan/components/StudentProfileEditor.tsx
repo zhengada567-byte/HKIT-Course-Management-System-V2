@@ -9,9 +9,11 @@ import {
   buildStudyPlanModuleFieldsFromCode,
   buildStudyPlanModulePersistKey,
   deleteStudyPlanModuleById,
-  saveStudyPlan,
+  saveStudyPlanModules,
+  saveStudyPlanStudentProfile,
   sortModulesForStudyPlan,
   upsertStudyPlanModuleRow,
+  attachProgrammeTypeToStudent,
   formatStudyPlanSaveError,
   type ProgrammeOption,
 } from "../../../../services/studyPlanService";
@@ -25,11 +27,13 @@ import {
 
 import ModulePlanTable from "./ModulePlanTable";
 import StudyPlanSummaryPanel from "./StudyPlanSummaryPanel";
-import { isDegreeProgramme } from "../helpers";
+import { isDegreeProgramme, isHDProgramme } from "../helpers";
 
 interface Props {
   initialStudent: StudyPlanStudent;
   initialModules: StudyPlanModule[];
+  /** Only reload local state from props when this changes (open student / after Save). */
+  editorReloadVersion: number;
   onSaved: () => Promise<void>;
 }
 
@@ -98,12 +102,14 @@ function buildModuleOptionKey(module: StudyPlanModule): string {
 export default function StudentProfileEditor({
   initialStudent,
   initialModules,
+  editorReloadVersion,
   onSaved,
 }: Props) {
   const [student, setStudent] = useState<StudyPlanStudent>(initialStudent);
   const [modules, setModules] = useState<StudyPlanModule[]>(initialModules);
 
-  const [saving, setSaving] = useState(false);
+  const [savingModules, setSavingModules] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [rowActionIndex, setRowActionIndex] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
   const [loadingModules, setLoadingModules] = useState(false);
@@ -119,12 +125,12 @@ export default function StudentProfileEditor({
     createEmptyBridgingRows()
   );
 
-useEffect(() => {
-  setStudent(initialStudent);
-  setModules(initialModules);
-  setBridgingRows(createEmptyBridgingRows());
-  setBridgingOptions([]);
-}, [initialStudent, initialModules]);
+  useEffect(() => {
+    setStudent(initialStudent);
+    setModules(initialModules);
+    setBridgingRows(createEmptyBridgingRows());
+    setBridgingOptions([]);
+  }, [editorReloadVersion, initialStudent, initialModules]);
 
 
   const selectedProgrammeType = useMemo(() => {
@@ -135,6 +141,11 @@ useEffect(() => {
 
   const isDegree = useMemo(
     () => isDegreeProgramme(student.programmeCode, selectedProgrammeType),
+    [student.programmeCode, selectedProgrammeType]
+  );
+
+  const isHd = useMemo(
+    () => isHDProgramme(student.programmeCode, selectedProgrammeType),
     [student.programmeCode, selectedProgrammeType]
   );
 
@@ -668,7 +679,8 @@ useEffect(() => {
       return;
     }
 
-    const rowId = current.id;
+    const rowSnapshot = current;
+    const rowId = rowSnapshot.id;
     setRowActionIndex(index);
 
     try {
@@ -676,24 +688,25 @@ useEffect(() => {
         moduleCode: userModuleCode,
         programmeCode: student.programmeCode,
         programmeStream: student.programmeStream,
-        current,
+        current: rowSnapshot,
       });
 
       const merged: StudyPlanModule = {
-        ...current,
+        ...rowSnapshot,
         ...fields,
         moduleCode: userModuleCode,
-        status: current.status,
-        studyTerm: current.studyTerm,
-        isLocked: current.isLocked,
-        isExempted: current.isExempted,
-        isFailed: current.isFailed,
-        remark: current.remark,
-        planStage: current.planStage,
-        id: current.id,
+        status: rowSnapshot.status,
+        studyTerm: rowSnapshot.studyTerm,
+        isLocked: rowSnapshot.isLocked,
+        isExempted: rowSnapshot.isExempted,
+        isFailed: rowSnapshot.isFailed,
+        remark: rowSnapshot.remark,
+        planStage: rowSnapshot.planStage,
+        id: rowSnapshot.id,
       };
 
-      const savedId = await upsertStudyPlanModuleRow(student, merged);
+      const { id: savedId, module: savedModule } =
+        await upsertStudyPlanModuleRow(student, merged);
 
       setModules((prev) => {
         const resolvedIndex =
@@ -707,7 +720,17 @@ useEffect(() => {
 
         return prev.map((module, rowIndex) =>
           rowIndex === resolvedIndex
-            ? { ...merged, id: savedId, moduleCode: userModuleCode }
+            ? {
+                ...savedModule,
+                id: savedId,
+                moduleCode: userModuleCode,
+                status: rowSnapshot.status,
+                studyTerm: rowSnapshot.studyTerm,
+                isLocked: rowSnapshot.isLocked,
+                isExempted: rowSnapshot.isExempted,
+                isFailed: rowSnapshot.isFailed,
+                remark: rowSnapshot.remark,
+              }
             : module
         );
       });
@@ -759,29 +782,59 @@ useEffect(() => {
     }
   }
 
-  async function handleSave() {
+  function validateStudentProfileFields(): boolean {
     if (!student.studentId || !student.studentName || !student.programmeCode) {
       alert("Student ID, Student Name and Programme Code are required.");
-      return;
+      return false;
     }
 
     if (!student.programmeStream) {
       alert("Programme Stream is required.");
-      return;
+      return false;
     }
 
     if (!student.intakeTerm) {
       alert("Intake Term is required.");
+      return false;
+    }
+
+    return true;
+  }
+
+  async function handleSaveProfile() {
+    if (!validateStudentProfileFields()) {
       return;
     }
 
+    setSavingProfile(true);
+
+    try {
+      const studentWithType = await attachProgrammeTypeToStudent({
+        ...student,
+        programmeType: selectedProgrammeType ?? student.programmeType,
+      });
+
+      const saved = await saveStudyPlanStudentProfile(studentWithType);
+      setStudent(saved);
+      alert("學生檔案已保存。");
+    } catch (error) {
+      console.error("[StudyPlan] Failed to save student profile:", error);
+      alert(
+        `Failed to save student profile:\n\n${formatStudyPlanSaveError(error)}`
+      );
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  function validateStudyPlanModuleFields(): boolean {
     const emptyCode = modules.find(
       (module) => !String(module.moduleCode ?? "").trim()
     );
 
     if (emptyCode) {
       alert("Each module row must have a module code before saving.");
-      return;
+      return false;
     }
 
     const invalid = modules.find(
@@ -790,23 +843,41 @@ useEffect(() => {
 
     if (invalid) {
       alert(`Module ${invalid.moduleCode} is planned but has no study term.`);
+      return false;
+    }
+
+    return true;
+  }
+
+  async function handleSaveModules() {
+    if (!validateStudentProfileFields()) {
       return;
     }
 
-    setSaving(true);
+    if (!validateStudyPlanModuleFields()) {
+      return;
+    }
+
+    setSavingModules(true);
     setRowActionIndex(null);
 
     try {
-      await saveStudyPlan(student, modules);
+      const studentWithType = await attachProgrammeTypeToStudent({
+        ...student,
+        programmeType: selectedProgrammeType ?? student.programmeType,
+      });
+
+      const saved = await saveStudyPlanModules(studentWithType, modules);
+      setStudent(saved);
       await onSaved();
     } catch (error) {
-      console.error("[StudyPlan] Failed to save study plan:", error);
+      console.error("[StudyPlan] Failed to save study plan modules:", error);
 
-      const message = formatStudyPlanSaveError(error);
-
-      alert(`Failed to save study plan:\n\n${message}`);
+      alert(
+        `Failed to save study plan:\n\n${formatStudyPlanSaveError(error)}`
+      );
     } finally {
-      setSaving(false);
+      setSavingModules(false);
     }
   }
 
@@ -991,6 +1062,47 @@ useEffect(() => {
               ))}
             </select>
           </label>
+
+          {isHd && (
+            <label className="space-y-1">
+              <span className="text-sm font-medium">
+                原校升學{" "}
+                <span className="font-normal text-muted-foreground">
+                  Articulation
+                </span>
+              </span>
+              <select
+                className="w-full border rounded-md px-3 py-2"
+                value={student.okToArticulate !== false ? "yes" : "no"}
+                onChange={(event) =>
+                  updateStudent(
+                    "okToArticulate",
+                    event.target.value === "yes"
+                  )
+                }
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                No 時不計入 Degree 新入學報表（原校升學人數）；不影響修課計劃與其他匯出。
+              </p>
+            </label>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+          <button
+            type="button"
+            className="px-4 py-2 rounded-md bg-slate-700 text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleSaveProfile}
+            disabled={savingProfile || savingModules}
+          >
+            {savingProfile ? "保存中..." : "保存學生檔案"}
+          </button>
+          <p className="text-xs text-muted-foreground">
+            僅保存上方學生資料；修改修課表後請用下方「保存修課計劃」。
+          </p>
         </div>
 
         {isDegree && (
@@ -1179,14 +1291,6 @@ useEffect(() => {
             {exporting ? "Exporting..." : "Export CSV"}
           </button>
 
-          <button
-            type="button"
-            className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={handleSave}
-            disabled={saving}
-          >
-            {saving ? "Saving..." : "Save Study Plan"}
-          </button>
         </div>
       </div>
 
@@ -1200,8 +1304,22 @@ useEffect(() => {
         onUpdateRow={handleUpdateModuleRow}
         onDeleteRow={handleDeleteModuleRow}
         rowActionIndex={rowActionIndex}
-        saving={saving}
+        saving={savingModules || savingProfile}
       />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={handleSaveModules}
+          disabled={savingModules || savingProfile}
+        >
+          {savingModules ? "保存中..." : "保存修課計劃"}
+        </button>
+        <p className="text-xs text-muted-foreground">
+          保存模組列表並依模組重算學習狀態；亦會寫入目前畫面上的學生資料。只改檔案時用「保存學生檔案」即可。
+        </p>
+      </div>
     </div>
   );
 }

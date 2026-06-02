@@ -17,6 +17,7 @@ import {
 import { fetchAllPaginatedRows } from "../lib/supabasePagination";
 import {
   getProgrammeTypeByCode,
+  isOkToArticulateForReport,
   parseArticulatedDegreeCodes,
 } from "./studyPlanService";
 
@@ -410,18 +411,23 @@ async function computeNewIntake(params: {
       student_name: string | null;
       study_mode: string | null;
       programme_stream: string | null;
+      ok_to_articulate: boolean | null;
     }>({
       fetchPage: ({ from, to }) =>
         supabase
           .from("study_plan_students")
-          .select("id,student_id,student_name,study_mode,programme_stream")
+          .select(
+            "id,student_id,student_name,study_mode,programme_stream,ok_to_articulate"
+          )
           .eq("programme_code", source.programmeCode)
           .order("id", { ascending: true })
           .range(from, to),
     });
 
     const filteredStudents = students.filter(
-      (row) => normalizeStream(row.programme_stream) === sourceStream
+      (row) =>
+        normalizeStream(row.programme_stream) === sourceStream &&
+        isOkToArticulateForReport(row.ok_to_articulate)
     );
 
     const studentsById = new Map<

@@ -36,6 +36,12 @@ export interface StudyPlanStudent {
   studentStatus?: StudentStatus;
   intakeTerm?: string;
   graduateTerm?: string;
+
+  /**
+   * HD only: include this profile in Degree new intake report (articulated HD source).
+   * Default true. PL can set false to exclude from report counts only.
+   */
+  okToArticulate?: boolean;
 }
 
 export interface StudyPlanModule {

@@ -582,7 +582,27 @@ export function formatStudyPlanSaveError(
     return error.message;
   }
 
-  return "Unknown error while saving study plan.";
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Unknown error while saving study plan.";
+  }
+}
+
+function isMissingOkToArticulateColumn(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const err = error as { message?: string; details?: string; code?: string };
+  const combined = [err.message, err.details, err.code].filter(Boolean).join(" ");
+
+  return (
+    combined.includes("ok_to_articulate") &&
+    (combined.includes("schema cache") ||
+      combined.includes("PGRST204") ||
+      combined.includes("42703"))
+  );
 }
 
 function enrichStudyPlanModuleWithMetadata(
@@ -785,8 +805,16 @@ function toStudentRow(student: StudyPlanStudent) {
     student_status: student.studentStatus ?? "potential",
     intake_term: student.intakeTerm ?? null,
     graduate_term: student.graduateTerm ?? null,
+    ok_to_articulate: isOkToArticulateForReport(student.okToArticulate),
     updated_at: new Date().toISOString(),
   };
+}
+
+/** Null/undefined counts as yes (legacy rows). */
+export function isOkToArticulateForReport(
+  value: boolean | null | undefined
+): boolean {
+  return value !== false;
 }
 
 function fromStudentRow(row: any): StudyPlanStudent {
@@ -803,6 +831,7 @@ function fromStudentRow(row: any): StudyPlanStudent {
     studentStatus: row.student_status,
     intakeTerm: row.intake_term ?? undefined,
     graduateTerm: row.graduate_term ?? undefined,
+    okToArticulate: isOkToArticulateForReport(row.ok_to_articulate),
   };
 }
 
@@ -2200,7 +2229,20 @@ export async function upsertStudyPlanStudent(student: StudyPlanStudent) {
     .select("*")
     .single();
 
-  if (error) throw error;
+  if (error) {
+    if (isMissingOkToArticulateColumn(error)) {
+      throw new Error(
+        [
+          "数据库尚未添加 ok_to_articulate 字段，无法保存「原校升學 / Articulation」。",
+          "请在 Supabase SQL Editor 执行：",
+          "supabase/migrations/012_study_plan_ok_to_articulate.sql",
+          "执行后刷新页面再保存。",
+        ].join("\n")
+      );
+    }
+
+    throw error;
+  }
 
   return fromStudentRow(data);
 }
@@ -2217,13 +2259,174 @@ export async function deleteStudyPlanStudent(profileId: string) {
   await syncActualStudentNumbersToTimetable();
 }
 
-export async function saveStudyPlan(
+/**
+ * Save student profile fields only (no module writes).
+ * Recomputes student_status / graduate_term from modules already in DB when present.
+ */
+export async function saveStudyPlanStudentProfile(
+  student: StudyPlanStudent
+): Promise<StudyPlanStudent> {
+  const studentInput = await attachProgrammeTypeToStudent(student);
+  const intakeTerm = String(studentInput.intakeTerm ?? "").trim();
+
+  if (!intakeTerm) {
+    throw new Error("Intake Term is required.");
+  }
+
+  const settings = await getStudyPlanSettings();
+  let dbModules: StudyPlanModule[] = [];
+
+  if (studentInput.id) {
+    const { data, error } = await supabase
+      .from("study_plan_modules")
+      .select("*")
+      .eq("student_profile_id", studentInput.id);
+
+    if (error) {
+      throw error;
+    }
+
+    dbModules = (data ?? []).map(fromModuleRow);
+  }
+
+  let graduateTerm = studentInput.graduateTerm;
+  let studentStatus = studentInput.studentStatus ?? "potential";
+
+  if (dbModules.length > 0) {
+    graduateTerm = getLatestStudyTerm(dbModules) ?? graduateTerm;
+    studentStatus = calculateStudentStatus(
+      dbModules,
+      settings.currentStudyTerm,
+      studentInput.programmeType
+    );
+  }
+
+  return upsertStudyPlanStudent({
+    ...studentInput,
+    intakeYear: deriveIntakeYearFromTerm(intakeTerm),
+    intakeLevel: getDefaultIntakeLevel(
+      studentInput.programmeCode,
+      studentInput.intakeLevel,
+      studentInput.programmeType
+    ),
+    intakeTerm,
+    graduateTerm,
+    studentStatus,
+  });
+}
+
+async function persistStudyPlanModulesForStudent(
+  studentWithType: StudyPlanStudent,
+  savedStudentId: string,
+  modulesReadyToSave: StudyPlanModule[]
+) {
+  const modulesWithId = modulesReadyToSave.filter((module) => module.id);
+  const modulesWithoutId = modulesReadyToSave.filter((module) => !module.id);
+
+  if (modulesWithId.length > 0) {
+    const { error: updateError } = await supabase
+      .from("study_plan_modules")
+      .upsert(
+        modulesWithId.map((module) =>
+          toModuleRow(module, studentWithType, savedStudentId)
+        ),
+        { onConflict: "id" }
+      );
+
+    if (updateError) throw updateError;
+  }
+
+  const insertedModuleIds: string[] = [];
+
+  if (modulesWithoutId.length > 0) {
+    const { data: insertedRows, error: insertError } = await supabase
+      .from("study_plan_modules")
+      .upsert(
+        modulesWithoutId.map((module) =>
+          toModuleRow(module, studentWithType, savedStudentId)
+        ),
+        { onConflict: STUDY_PLAN_MODULE_ROW_UNIQUE_CONFLICT }
+      )
+      .select("id");
+
+    if (insertError) throw insertError;
+
+    for (const row of insertedRows ?? []) {
+      const id = String(row.id ?? "").trim();
+
+      if (id) {
+        insertedModuleIds.push(id);
+      }
+    }
+  }
+
+  const keptModuleIds = [
+    ...modulesWithId
+      .map((module) => module.id)
+      .filter((id): id is string => Boolean(id)),
+    ...insertedModuleIds,
+  ];
+
+  let deleteOrphansQuery = supabase
+    .from("study_plan_modules")
+    .delete()
+    .eq("student_profile_id", savedStudentId);
+
+  if (keptModuleIds.length > 0) {
+    deleteOrphansQuery = deleteOrphansQuery.not(
+      "id",
+      "in",
+      `(${keptModuleIds.join(",")})`
+    );
+  }
+
+  const { error: deleteOrphansError } = await deleteOrphansQuery;
+
+  if (deleteOrphansError) throw deleteOrphansError;
+
+  if (await isDegreeProgrammeByCode(studentWithType.programmeCode)) {
+    const bridgingModuleCodes = Array.from(
+      new Set(
+        modulesReadyToSave
+          .filter((module) => module.planStage === "bridging")
+          .flatMap((module) => {
+            const raw = String(module.moduleCode ?? "").trim();
+
+            if (!raw) {
+              return [];
+            }
+
+            const base = getBaseModuleCode(raw);
+
+            return base && base !== raw ? [raw, base] : [raw];
+          })
+      )
+    );
+
+    if (bridgingModuleCodes.length > 0) {
+      const { error: cleanupError } = await supabase
+        .from("study_plan_modules")
+        .delete()
+        .eq("student_profile_id", savedStudentId)
+        .eq("plan_stage", "programme")
+        .eq("programme_code", studentWithType.programmeCode)
+        .in("module_code", bridgingModuleCodes);
+
+      if (cleanupError) throw cleanupError;
+    }
+  }
+}
+
+/**
+ * Save module rows and sync derived student fields from the editor module list.
+ */
+export async function saveStudyPlanModules(
   student: StudyPlanStudent,
   modules: StudyPlanModule[],
   options?: {
     skipPostSync?: boolean;
   }
-) {
+): Promise<StudyPlanStudent> {
   const moduleMissingCodeEarly = modules.find(
     (module) => !String(module.moduleCode ?? "").trim()
   );
@@ -2326,101 +2529,11 @@ export async function saveStudyPlan(
     studentWithType
   );
 
-  const modulesWithId = modulesReadyToSave.filter((module) => module.id);
-  const modulesWithoutId = modulesReadyToSave.filter((module) => !module.id);
-
-  if (modulesWithId.length > 0) {
-    const { error: updateError } = await supabase
-      .from("study_plan_modules")
-      .upsert(
-        modulesWithId.map((module) =>
-          toModuleRow(module, studentWithType, savedStudentId)
-        ),
-        { onConflict: "id" }
-      );
-
-    if (updateError) throw updateError;
-  }
-
-  const insertedModuleIds: string[] = [];
-
-  if (modulesWithoutId.length > 0) {
-    const { data: insertedRows, error: insertError } = await supabase
-      .from("study_plan_modules")
-      .upsert(
-        modulesWithoutId.map((module) =>
-          toModuleRow(module, studentWithType, savedStudentId)
-        ),
-        { onConflict: STUDY_PLAN_MODULE_ROW_UNIQUE_CONFLICT }
-      )
-      .select("id");
-
-    if (insertError) throw insertError;
-
-    for (const row of insertedRows ?? []) {
-      const id = String(row.id ?? "").trim();
-
-      if (id) {
-        insertedModuleIds.push(id);
-      }
-    }
-  }
-
-  const keptModuleIds = [
-    ...modulesWithId
-      .map((module) => module.id)
-      .filter((id): id is string => Boolean(id)),
-    ...insertedModuleIds,
-  ];
-
-  let deleteOrphansQuery = supabase
-    .from("study_plan_modules")
-    .delete()
-    .eq("student_profile_id", savedStudentId);
-
-  if (keptModuleIds.length > 0) {
-    deleteOrphansQuery = deleteOrphansQuery.not(
-      "id",
-      "in",
-      `(${keptModuleIds.join(",")})`
-    );
-  }
-
-  const { error: deleteOrphansError } = await deleteOrphansQuery;
-
-  if (deleteOrphansError) throw deleteOrphansError;
-
-  if (await isDegreeProgrammeByCode(studentWithType.programmeCode)) {
-    const bridgingModuleCodes = Array.from(
-      new Set(
-        modulesReadyToSave
-          .filter((module) => module.planStage === "bridging")
-          .flatMap((module) => {
-            const raw = String(module.moduleCode ?? "").trim();
-
-            if (!raw) {
-              return [];
-            }
-
-            const base = getBaseModuleCode(raw);
-
-            return base && base !== raw ? [raw, base] : [raw];
-          })
-      )
-    );
-
-    if (bridgingModuleCodes.length > 0) {
-      const { error: cleanupError } = await supabase
-        .from("study_plan_modules")
-        .delete()
-        .eq("student_profile_id", savedStudent.id)
-        .eq("plan_stage", "programme")
-        .eq("programme_code", studentWithType.programmeCode)
-        .in("module_code", bridgingModuleCodes);
-
-      if (cleanupError) throw cleanupError;
-    }
-  }
+  await persistStudyPlanModulesForStudent(
+    studentWithType,
+    savedStudentId,
+    modulesReadyToSave
+  );
 
   if (!options?.skipPostSync) {
     try {
@@ -2437,6 +2550,17 @@ export async function saveStudyPlan(
   }
 
   return savedStudent;
+}
+
+/** Saves profile + modules (bulk upload and legacy callers). */
+export async function saveStudyPlan(
+  student: StudyPlanStudent,
+  modules: StudyPlanModule[],
+  options?: {
+    skipPostSync?: boolean;
+  }
+) {
+  return saveStudyPlanModules(student, modules, options);
 }
 
 export async function syncStudyPlanPostSave() {
@@ -2511,7 +2635,7 @@ export async function deleteStudyPlanModuleById(moduleId: string): Promise<void>
 export async function upsertStudyPlanModuleRow(
   student: StudyPlanStudent,
   module: StudyPlanModule
-): Promise<string> {
+): Promise<{ id: string; module: StudyPlanModule }> {
   const studentWithType = await attachProgrammeTypeToStudent(student);
 
   if (!studentWithType.id) {
@@ -2574,24 +2698,45 @@ export async function upsertStudyPlanModuleRow(
     studentWithType.id
   );
 
+  let savedId = String(module.id ?? "").trim();
+
   if (module.id) {
     const { error } = await supabase
       .from("study_plan_modules")
       .upsert(row, { onConflict: "id" });
 
     if (error) throw error;
-    return module.id;
+  } else {
+    const { data, error } = await supabase
+      .from("study_plan_modules")
+      .upsert(row, { onConflict: STUDY_PLAN_MODULE_ROW_UNIQUE_CONFLICT })
+      .select("id")
+      .single();
+
+    if (error) throw error;
+
+    savedId = String(data.id ?? "").trim();
   }
 
-  const { data, error } = await supabase
+  if (!savedId) {
+    throw new Error("Failed to save module row (no id returned).");
+  }
+
+  const { data: savedRow, error: readError } = await supabase
     .from("study_plan_modules")
-    .insert(row)
-    .select("id")
+    .select("*")
+    .eq("id", savedId)
     .single();
 
-  if (error) throw error;
+  if (readError) throw readError;
 
-  return String(data.id);
+  return {
+    id: savedId,
+    module: {
+      ...fromModuleRow(savedRow),
+      moduleCode: userModuleCode,
+    },
+  };
 }
 
 /**

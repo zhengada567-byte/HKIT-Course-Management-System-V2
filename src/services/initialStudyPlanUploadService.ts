@@ -486,6 +486,7 @@ function buildStudentFromRow(
       : optionalText(intakeLevel),
     intakeTerm: optionalText(intakeTerm),
     studentStatus: "potential",
+    okToArticulate: true,
   } as StudyPlanStudent;
 
   return student;

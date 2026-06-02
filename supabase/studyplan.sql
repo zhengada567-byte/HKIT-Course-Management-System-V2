@@ -20,6 +20,8 @@ create table if not exists public.study_plan_students (
   intake_term text,
   graduate_term text,
 
+  ok_to_articulate boolean not null default true,
+
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
 

@@ -29,6 +29,8 @@ export default function MakeStudyPlanPage() {
   const [selectedModules, setSelectedModules] = useState<StudyPlanModule[]>(
     []
   );
+  /** Bumped when opening editor or after full save — avoids resetting modules mid-edit. */
+  const [editorReloadVersion, setEditorReloadVersion] = useState(0);
   const [loading, setLoading] = useState(false);
 
   async function refreshStudents() {
@@ -62,6 +64,7 @@ export default function MakeStudyPlanPage() {
       setEditorOrigin(origin);
       setSelectedStudent(result.student);
       setSelectedModules(result.modules);
+      setEditorReloadVersion((version) => version + 1);
       setActiveTab("editor");
     } finally {
       setLoading(false);
@@ -91,6 +94,7 @@ export default function MakeStudyPlanPage() {
       setEditorOrigin("search");
       setSelectedStudent(result.student);
       setSelectedModules(result.modules);
+      setEditorReloadVersion((version) => version + 1);
       setActiveTab("editor");
     } finally {
       setLoading(false);
@@ -109,9 +113,11 @@ export default function MakeStudyPlanPage() {
       programmeCode: "",
       programmeStream: "",
       studentStatus: "potential",
+      okToArticulate: true,
     });
 
     setSelectedModules([]);
+    setEditorReloadVersion((version) => version + 1);
     setActiveTab("editor");
   }
 
@@ -134,6 +140,7 @@ export default function MakeStudyPlanPage() {
         const result = await getStudyPlanStudent(profileId);
         setSelectedStudent(result.student);
         setSelectedModules(result.modules);
+        setEditorReloadVersion((version) => version + 1);
       }
 
       alert("已保存");
@@ -303,6 +310,7 @@ export default function MakeStudyPlanPage() {
           <StudentProfileEditor
             initialStudent={selectedStudent}
             initialModules={selectedModules}
+            editorReloadVersion={editorReloadVersion}
             onSaved={handleEditorSaved}
           />
         </div>

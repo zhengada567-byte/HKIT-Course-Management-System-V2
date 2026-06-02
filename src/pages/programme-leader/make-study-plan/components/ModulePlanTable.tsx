@@ -1,4 +1,10 @@
-import { useRef, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 
 import { getBaseModuleCode } from "../../../../lib/studyPlanModuleCode";
 import { lookupStudyPlanModuleMetadataByCode } from "../../../../services/studyPlanService";
@@ -90,6 +96,14 @@ export default function ModulePlanTable({
   const [resolvingIndex, setResolvingIndex] = useState<number | null>(null);
   const resolveGenerationRef = useRef(0);
 
+  /** Cancel in-flight blur lookups when a row Update/Delete or full Save starts. */
+  useEffect(() => {
+    if (rowActionIndex !== null || saving) {
+      resolveGenerationRef.current += 1;
+      setResolvingIndex(null);
+    }
+  }, [rowActionIndex, saving]);
+
   function mergeModulePatch(
     row: StudyPlanModule,
     patch: Partial<StudyPlanModule>
@@ -172,10 +186,7 @@ export default function ModulePlanTable({
 
       const patchValue = typeof patch === "function" ? patch(row) : patch;
       const next = [...prev];
-      next[resolvedIndex] = mergeModulePatch(row, {
-        ...patchValue,
-        moduleCode: normalizedExpected,
-      });
+      next[resolvedIndex] = mergeModulePatch(row, patchValue);
       return next;
     });
   }
@@ -225,6 +236,7 @@ export default function ModulePlanTable({
 
       if (!metadata) {
         updateModuleIfRowMatches(index, rowId, storedCode, {
+          moduleCode: storedCode,
           moduleName: "",
           moduleYear: undefined,
           moduleTerm: undefined,
@@ -235,6 +247,7 @@ export default function ModulePlanTable({
       }
 
       updateModuleIfRowMatches(index, rowId, storedCode, (current) => ({
+        moduleCode: storedCode,
         moduleName: metadata!.moduleName,
         moduleYear: metadata!.moduleYear,
         moduleTerm: metadata!.moduleTerm,
