@@ -772,6 +772,7 @@ function toModuleRow(
   const moduleTerm = module.moduleTerm || module.moduleTermPattern || null;
 
   return {
+    ...(module.id ? { id: module.id } : {}),
     student_id: student.studentId,
     student_profile_id: profileId,
 
@@ -781,7 +782,7 @@ function toModuleRow(
     programme_code: programmeCode,
     programme_stream: programmeStream,
 
-    module_code: module.moduleCode,
+    module_code: String(module.moduleCode ?? "").trim().toUpperCase(),
     module_name: module.moduleName,
     module_year: module.moduleYear ?? null,
 
@@ -1034,76 +1035,201 @@ function buildBridgingCatalogByModuleCode(options: StudyPlanModule[]) {
   return map;
 }
 
-async function lookupHdModuleMetadataByCode(
-  moduleCode: string
-): Promise<StudyPlanModule | null> {
-  const normalizedCode = getBaseModuleCode(moduleCode);
+type ModuleCatalogRow = {
+  id: string;
+  module_code: string | null;
+  module_name: string | null;
+  module_year: string | null;
+  module_term: string | null;
+  programme_code: string | null;
+  stream_code: string | null;
+  delivery_mode: string | null;
+};
 
-  if (!normalizedCode) {
-    return null;
+function pickBestModuleCatalogRow(
+  rows: ModuleCatalogRow[],
+  params: {
+    programmeCode?: string;
+    programmeStream?: string;
+    preferHdProgramme?: boolean;
+    hdProgrammeCodes?: Set<string>;
+  }
+): ModuleCatalogRow {
+  const targetProgramme = String(params.programmeCode ?? "").trim();
+  const targetStream = normalizeStream(params.programmeStream);
+
+  let best = rows[0]!;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const row of rows) {
+    let score = 0;
+    const rowProgramme = String(row.programme_code ?? "").trim();
+    const rowStream = normalizeStream(row.stream_code);
+
+    if (targetProgramme && rowProgramme === targetProgramme) {
+      score += 100;
+    }
+
+    if (targetStream && rowStream === targetStream) {
+      score += 50;
+    } else if (targetStream && rowStream === "nil") {
+      score += 20;
+    }
+
+    if (
+      params.preferHdProgramme &&
+      params.hdProgrammeCodes?.has(rowProgramme)
+    ) {
+      score += 30;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = row;
+    }
   }
 
+  return best;
+}
+
+export interface StudyPlanModuleMetadataLookup {
+  moduleCode: string;
+  moduleName: string;
+  moduleYear?: string;
+  moduleTerm?: string;
+  moduleTermPattern?: string;
+  programmeCode?: string;
+  programmeStream?: string;
+  sourceModuleId?: string;
+  deliveryMode?: string;
+}
+
+async function loadModuleCatalogRowsByCode(
+  moduleCode: string
+): Promise<ModuleCatalogRow[]> {
   const { data: moduleRows, error: moduleError } = await supabase
     .from("modules")
     .select(
-      "id, module_code, module_name, module_year, module_term, programme_code, stream_code"
+      "id, module_code, module_name, module_year, module_term, programme_code, stream_code, delivery_mode"
     )
-    .eq("module_code", normalizedCode)
-    .limit(20);
+    .eq("module_code", moduleCode)
+    .limit(50);
 
   if (moduleError) {
     console.error(
-      "[StudyPlanService] Failed to lookup HD module metadata:",
+      "[StudyPlanService] Failed to lookup module metadata:",
       moduleError
     );
+    return [];
+  }
+
+  return (moduleRows ?? []) as ModuleCatalogRow[];
+}
+
+export async function lookupStudyPlanModuleMetadataByCode(params: {
+  moduleCode: string;
+  programmeCode?: string;
+  programmeStream?: string;
+}): Promise<StudyPlanModuleMetadataLookup | null> {
+  const rawCode = String(params.moduleCode ?? "")
+    .trim()
+    .toUpperCase();
+
+  if (!rawCode) {
     return null;
   }
 
-  if (!moduleRows?.length) {
+  const lookupCodes = Array.from(
+    new Set([rawCode, getBaseModuleCode(rawCode)].filter(Boolean))
+  );
+
+  let rows: ModuleCatalogRow[] = [];
+
+  for (const lookupCode of lookupCodes) {
+    const matches = await loadModuleCatalogRowsByCode(lookupCode);
+    if (matches.length > 0) {
+      rows = matches;
+      break;
+    }
+  }
+
+  if (!rows.length) {
     return null;
   }
 
+  const catalogCode = rows[0]?.module_code ?? rawCode;
   const programmeCodes = Array.from(
     new Set(
-      moduleRows
-        .map((row) => String(row.programme_code ?? "").trim())
-        .filter(Boolean)
+      rows.map((row) => String(row.programme_code ?? "").trim()).filter(Boolean)
     )
   );
 
-  const { data: programmeRows, error: programmeError } = await supabase
-    .from("programmes")
-    .select("programme_code, programme_type")
-    .in("programme_code", programmeCodes);
+  let hdProgrammeCodes: Set<string> | undefined;
 
-  if (programmeError) {
-    console.error(
-      "[StudyPlanService] Failed to lookup programme type for HD module:",
-      programmeError
-    );
+  if (programmeCodes.length > 0) {
+    const { data: programmeRows, error: programmeError } = await supabase
+      .from("programmes")
+      .select("programme_code, programme_type")
+      .in("programme_code", programmeCodes);
+
+    if (programmeError) {
+      console.error(
+        "[StudyPlanService] Failed to lookup programme type for module:",
+        programmeError
+      );
+    } else {
+      hdProgrammeCodes = new Set(
+        (programmeRows ?? [])
+          .filter((row) => isHDProgrammeType(String(row.programme_type ?? "")))
+          .map((row) => String(row.programme_code ?? "").trim())
+          .filter(Boolean)
+      );
+    }
   }
 
-  const hdProgrammeCodes = new Set(
-    (programmeRows ?? [])
-      .filter((row) => isHDProgrammeType(String(row.programme_type ?? "")))
-      .map((row) => String(row.programme_code ?? "").trim())
-      .filter(Boolean)
-  );
+  const matchedRow = pickBestModuleCatalogRow(rows, {
+    programmeCode: params.programmeCode,
+    programmeStream: params.programmeStream,
+    preferHdProgramme: true,
+    hdProgrammeCodes,
+  });
 
-  const matchedRow =
-    moduleRows.find((row) =>
-      hdProgrammeCodes.has(String(row.programme_code ?? "").trim())
-    ) ?? moduleRows[0];
+  const moduleTerm = matchedRow.module_term ?? undefined;
 
   return {
-    moduleCode: String(matchedRow.module_code ?? normalizedCode).trim(),
-    moduleName: String(matchedRow.module_name ?? normalizedCode).trim(),
+    moduleCode: String(matchedRow.module_code ?? catalogCode).trim(),
+    moduleName: String(matchedRow.module_name ?? "").trim(),
     moduleYear: matchedRow.module_year ?? undefined,
-    moduleTerm: matchedRow.module_term ?? undefined,
-    moduleTermPattern: matchedRow.module_term ?? undefined,
-    programmeCode: String(matchedRow.programme_code ?? "").trim(),
+    moduleTerm,
+    moduleTermPattern: moduleTerm,
+    programmeCode: String(matchedRow.programme_code ?? "").trim() || undefined,
     programmeStream: normalizeStream(matchedRow.stream_code),
     sourceModuleId: matchedRow.id ?? undefined,
+    deliveryMode: matchedRow.delivery_mode ?? undefined,
+  };
+}
+
+async function lookupHdModuleMetadataByCode(
+  moduleCode: string
+): Promise<StudyPlanModule | null> {
+  const metadata = await lookupStudyPlanModuleMetadataByCode({
+    moduleCode,
+  });
+
+  if (!metadata) {
+    return null;
+  }
+
+  return {
+    moduleCode: metadata.moduleCode,
+    moduleName: metadata.moduleName || metadata.moduleCode,
+    moduleYear: metadata.moduleYear,
+    moduleTerm: metadata.moduleTerm,
+    moduleTermPattern: metadata.moduleTermPattern ?? metadata.moduleTerm,
+    programmeCode: metadata.programmeCode ?? "",
+    programmeStream: metadata.programmeStream,
+    sourceModuleId: metadata.sourceModuleId,
+    deliveryMode: metadata.deliveryMode,
     planStage: "bridging",
     status: "planned",
     isExempted: false,
@@ -1984,6 +2110,16 @@ export async function saveStudyPlan(
     skipPostSync?: boolean;
   }
 ) {
+  const moduleMissingCodeEarly = modules.find(
+    (module) => !String(module.moduleCode ?? "").trim()
+  );
+
+  if (moduleMissingCodeEarly) {
+    throw new Error(
+      "Each module row must have a module code before saving the study plan."
+    );
+  }
+
   const studentInput = await attachProgrammeTypeToStudent(student);
   const settings = await getStudyPlanSettings();
 
@@ -2055,32 +2191,95 @@ export async function saveStudyPlan(
     )
   );
 
-  const rows = enrichedModules.map((module) =>
-    toModuleRow(
-      module,
-      studentWithType,
-      savedStudentId
-    )
+  const moduleMissingCode = enrichedModules.find(
+    (module) => !String(module.moduleCode ?? "").trim()
   );
 
-  if (rows.length > 0) {
-    const { error } = await supabase
-      .from("study_plan_modules")
-      .upsert(rows, {
-        onConflict:
-          "student_profile_id,module_code,programme_code,programme_stream,plan_stage",
-      });
-
-    if (error) throw error;
+  if (moduleMissingCode) {
+    throw new Error(
+      "Each module row must have a module code before saving the study plan."
+    );
   }
+
+  const modulesWithId = enrichedModules.filter((module) => module.id);
+  const modulesWithoutId = enrichedModules.filter((module) => !module.id);
+
+  if (modulesWithId.length > 0) {
+    const { error: updateError } = await supabase
+      .from("study_plan_modules")
+      .upsert(
+        modulesWithId.map((module) =>
+          toModuleRow(module, studentWithType, savedStudentId)
+        ),
+        { onConflict: "id" }
+      );
+
+    if (updateError) throw updateError;
+  }
+
+  const insertedModuleIds: string[] = [];
+
+  if (modulesWithoutId.length > 0) {
+    const { data: insertedRows, error: insertError } = await supabase
+      .from("study_plan_modules")
+      .insert(
+        modulesWithoutId.map((module) =>
+          toModuleRow(module, studentWithType, savedStudentId)
+        )
+      )
+      .select("id");
+
+    if (insertError) throw insertError;
+
+    for (const row of insertedRows ?? []) {
+      const id = String(row.id ?? "").trim();
+
+      if (id) {
+        insertedModuleIds.push(id);
+      }
+    }
+  }
+
+  const keptModuleIds = [
+    ...modulesWithId
+      .map((module) => module.id)
+      .filter((id): id is string => Boolean(id)),
+    ...insertedModuleIds,
+  ];
+
+  let deleteOrphansQuery = supabase
+    .from("study_plan_modules")
+    .delete()
+    .eq("student_profile_id", savedStudentId);
+
+  if (keptModuleIds.length > 0) {
+    deleteOrphansQuery = deleteOrphansQuery.not(
+      "id",
+      "in",
+      `(${keptModuleIds.join(",")})`
+    );
+  }
+
+  const { error: deleteOrphansError } = await deleteOrphansQuery;
+
+  if (deleteOrphansError) throw deleteOrphansError;
 
   if (await isDegreeProgrammeByCode(studentWithType.programmeCode)) {
     const bridgingModuleCodes = Array.from(
       new Set(
         enrichedModules
           .filter((module) => module.planStage === "bridging")
-          .map((module) => String(module.moduleCode ?? "").trim())
-          .filter(Boolean)
+          .flatMap((module) => {
+            const raw = String(module.moduleCode ?? "").trim();
+
+            if (!raw) {
+              return [];
+            }
+
+            const base = getBaseModuleCode(raw);
+
+            return base && base !== raw ? [raw, base] : [raw];
+          })
       )
     );
 
@@ -2117,6 +2316,156 @@ export async function saveStudyPlan(
 export async function syncStudyPlanPostSave() {
   await recalculateActualStudentNumbers();
   await syncActualStudentNumbersToTimetable();
+}
+
+export async function buildStudyPlanModuleFieldsFromCode(params: {
+  moduleCode: string;
+  programmeCode?: string;
+  programmeStream?: string;
+  current?: Partial<StudyPlanModule>;
+}): Promise<Partial<StudyPlanModule>> {
+  const storedCode = String(params.moduleCode ?? "").trim().toUpperCase();
+
+  if (!storedCode) {
+    return {};
+  }
+
+  let metadata = await lookupStudyPlanModuleMetadataByCode({
+    moduleCode: storedCode,
+    programmeCode: params.programmeCode,
+    programmeStream: params.programmeStream,
+  });
+
+  if (!metadata) {
+    const baseCode = getBaseModuleCode(storedCode);
+    if (baseCode && baseCode !== storedCode) {
+      metadata = await lookupStudyPlanModuleMetadataByCode({
+        moduleCode: baseCode,
+        programmeCode: params.programmeCode,
+        programmeStream: params.programmeStream,
+      });
+    }
+  }
+
+  if (!metadata) {
+    return {
+      moduleCode: storedCode,
+      moduleName: "",
+      moduleYear: undefined,
+      moduleTerm: undefined,
+      moduleTermPattern: undefined,
+      sourceModuleId: undefined,
+    };
+  }
+
+  const current = params.current;
+
+  return {
+    moduleCode: storedCode,
+    moduleName: metadata.moduleName,
+    moduleYear: metadata.moduleYear,
+    moduleTerm: metadata.moduleTerm,
+    moduleTermPattern: metadata.moduleTermPattern ?? metadata.moduleTerm,
+    sourceModuleId: metadata.sourceModuleId,
+    deliveryMode: metadata.deliveryMode ?? current?.deliveryMode,
+    programmeCode: metadata.programmeCode ?? current?.programmeCode,
+    programmeStream: metadata.programmeStream ?? current?.programmeStream,
+  };
+}
+
+export async function deleteStudyPlanModuleById(moduleId: string): Promise<void> {
+  const { error } = await supabase
+    .from("study_plan_modules")
+    .delete()
+    .eq("id", moduleId);
+
+  if (error) throw error;
+}
+
+export async function upsertStudyPlanModuleRow(
+  student: StudyPlanStudent,
+  module: StudyPlanModule
+): Promise<string> {
+  const studentWithType = await attachProgrammeTypeToStudent(student);
+
+  if (!studentWithType.id) {
+    throw new Error("Save the student profile before updating a module row.");
+  }
+
+  if (!String(module.moduleCode ?? "").trim()) {
+    throw new Error("Module code is required.");
+  }
+
+  if (module.status === "planned" && !module.studyTerm) {
+    throw new Error(
+      `Module ${module.moduleCode} is planned but has no study term.`
+    );
+  }
+
+  const reconciledModules = await reconcileDegreeStudyPlanModules(
+    studentWithType,
+    [module]
+  );
+
+  const moduleToSave = reconciledModules[0] ?? module;
+  const userModuleCode = String(module.moduleCode ?? moduleToSave.moduleCode ?? "")
+    .trim()
+    .toUpperCase();
+
+  const moduleMetadataMap = await loadModuleMetadataForPlan(
+    studentWithType.programmeCode,
+    studentWithType.programmeStream,
+    [
+      {
+        moduleCode: moduleToSave.moduleCode,
+        programmeCode: moduleToSave.programmeCode || studentWithType.programmeCode,
+        programmeStream:
+          moduleToSave.programmeStream || studentWithType.programmeStream,
+        moduleTerm: moduleToSave.moduleTerm,
+        moduleTermPattern: moduleToSave.moduleTermPattern,
+      },
+    ]
+  );
+
+  const enrichedModule = enrichStudyPlanModuleWithMetadata(
+    {
+      ...moduleToSave,
+      moduleCode: userModuleCode,
+      programmeCode: moduleToSave.programmeCode || studentWithType.programmeCode,
+      programmeStream: normalizeStream(
+        moduleToSave.programmeStream || studentWithType.programmeStream
+      ),
+      moduleTerm: moduleToSave.moduleTerm || moduleToSave.moduleTermPattern,
+      moduleTermPattern: moduleToSave.moduleTerm || moduleToSave.moduleTermPattern,
+    },
+    studentWithType,
+    moduleMetadataMap
+  );
+
+  const row = toModuleRow(
+    { ...enrichedModule, moduleCode: userModuleCode },
+    studentWithType,
+    studentWithType.id
+  );
+
+  if (module.id) {
+    const { error } = await supabase
+      .from("study_plan_modules")
+      .upsert(row, { onConflict: "id" });
+
+    if (error) throw error;
+    return module.id;
+  }
+
+  const { data, error } = await supabase
+    .from("study_plan_modules")
+    .insert(row)
+    .select("id")
+    .single();
+
+  if (error) throw error;
+
+  return String(data.id);
 }
 
 /**

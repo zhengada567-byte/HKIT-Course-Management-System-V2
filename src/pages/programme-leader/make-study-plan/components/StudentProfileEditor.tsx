@@ -6,8 +6,11 @@ import {
   listProgrammeOptions,
   loadProgrammeModules,
   loadBridgingModuleOptionsForDegree,
+  buildStudyPlanModuleFieldsFromCode,
+  deleteStudyPlanModuleById,
   saveStudyPlan,
   sortModulesForStudyPlan,
+  upsertStudyPlanModuleRow,
   formatStudyPlanSaveError,
   type ProgrammeOption,
 } from "../../../../services/studyPlanService";
@@ -65,6 +68,7 @@ export default function StudentProfileEditor({
   const [modules, setModules] = useState<StudyPlanModule[]>(initialModules);
 
   const [saving, setSaving] = useState(false);
+  const [rowActionIndex, setRowActionIndex] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
   const [loadingModules, setLoadingModules] = useState(false);
 
@@ -567,6 +571,126 @@ useEffect(() => {
     }
   }
 
+  async function handleUpdateModuleRow(index: number) {
+    let current: StudyPlanModule | undefined;
+
+    setModules((prev) => {
+      current = prev[index];
+      return prev;
+    });
+
+    if (!current) return;
+
+    const userModuleCode = String(current.moduleCode ?? "")
+      .trim()
+      .toUpperCase();
+
+    if (!student.id) {
+      alert("Save the student profile before updating a module row.");
+      return;
+    }
+
+    if (!userModuleCode) {
+      alert("Module code is required.");
+      return;
+    }
+
+    if (current.status === "planned" && !current.studyTerm) {
+      alert(`Module ${userModuleCode} is planned but has no study term.`);
+      return;
+    }
+
+    const rowId = current.id;
+    setRowActionIndex(index);
+
+    try {
+      const fields = await buildStudyPlanModuleFieldsFromCode({
+        moduleCode: userModuleCode,
+        programmeCode: student.programmeCode,
+        programmeStream: student.programmeStream,
+        current,
+      });
+
+      const merged: StudyPlanModule = {
+        ...current,
+        ...fields,
+        moduleCode: userModuleCode,
+        status: current.status,
+        studyTerm: current.studyTerm,
+        isLocked: current.isLocked,
+        isExempted: current.isExempted,
+        isFailed: current.isFailed,
+        remark: current.remark,
+        planStage: current.planStage,
+        id: current.id,
+      };
+
+      const savedId = await upsertStudyPlanModuleRow(student, merged);
+
+      setModules((prev) => {
+        const resolvedIndex =
+          rowId !== undefined && rowId !== ""
+            ? prev.findIndex((module) => module.id === rowId)
+            : index;
+
+        if (resolvedIndex < 0) {
+          return prev;
+        }
+
+        return prev.map((module, rowIndex) =>
+          rowIndex === resolvedIndex
+            ? { ...merged, id: savedId, moduleCode: userModuleCode }
+            : module
+        );
+      });
+    } catch (error) {
+      console.error("[StudyPlan] Failed to update module row:", error);
+      alert(
+        `Failed to update module row:\n\n${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    } finally {
+      setRowActionIndex(null);
+    }
+  }
+
+  async function handleDeleteModuleRow(index: number) {
+    const current = modules[index];
+
+    if (!current) return;
+
+    if (current.isLocked) {
+      alert("Locked modules cannot be deleted.");
+      return;
+    }
+
+    const label = current.moduleCode || "this module";
+
+    if (!window.confirm(`Remove ${label} from this study plan?`)) {
+      return;
+    }
+
+    setRowActionIndex(index);
+
+    try {
+      if (current.id) {
+        await deleteStudyPlanModuleById(current.id);
+      }
+
+      setModules((prev) => prev.filter((_, rowIndex) => rowIndex !== index));
+    } catch (error) {
+      console.error("[StudyPlan] Failed to delete module row:", error);
+      alert(
+        `Failed to delete module row:\n\n${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    } finally {
+      setRowActionIndex(null);
+    }
+  }
+
   async function handleSave() {
     if (!student.studentId || !student.studentName || !student.programmeCode) {
       alert("Student ID, Student Name and Programme Code are required.");
@@ -583,6 +707,15 @@ useEffect(() => {
       return;
     }
 
+    const emptyCode = modules.find(
+      (module) => !String(module.moduleCode ?? "").trim()
+    );
+
+    if (emptyCode) {
+      alert("Each module row must have a module code before saving.");
+      return;
+    }
+
     const invalid = modules.find(
       (module) => module.status === "planned" && !module.studyTerm
     );
@@ -593,6 +726,7 @@ useEffect(() => {
     }
 
     setSaving(true);
+    setRowActionIndex(null);
 
     try {
       await saveStudyPlan(student, modules);
@@ -990,7 +1124,16 @@ useEffect(() => {
 
       <StudyPlanSummaryPanel student={student} modules={modules} />
 
-      <ModulePlanTable modules={modules} onChange={setModules} />
+      <ModulePlanTable
+        modules={modules}
+        onChange={setModules}
+        programmeCode={student.programmeCode}
+        programmeStream={student.programmeStream}
+        onUpdateRow={handleUpdateModuleRow}
+        onDeleteRow={handleDeleteModuleRow}
+        rowActionIndex={rowActionIndex}
+        saving={saving}
+      />
     </div>
   );
 }
