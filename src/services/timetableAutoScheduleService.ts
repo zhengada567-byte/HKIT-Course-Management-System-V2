@@ -21,6 +21,7 @@ import {
   buildModuleStreamAlignKey,
   instanceTeacherIncludesFt,
   buildFtTeacherNameSet,
+  buildWeeklyTimeslotKey,
   createStreamYearTimeslotState,
   normalizeSchedulingStream,
   recordAutoSchedulePlacement,
@@ -106,6 +107,118 @@ function teacherSlotKey(teacherName: string, slotKey: string) {
 
 function roomSlotKey(roomCode: string, slotKey: string) {
   return `${roomCode}||${slotKey}`;
+}
+
+async function seedAutoScheduleFromExistingSessions(params: {
+  academicYear: string;
+  term: TimetableScheduleTerm;
+  existingSessions: TimetableSessionRow[];
+  reschedulingModuleIds: Set<string>;
+  reschedulingInstanceCodes: Set<string>;
+  takenTeacherSlots: Set<string>;
+  takenRoomSlots: Set<string>;
+  streamYearTimeslotState: StreamYearTimeslotState;
+  streamSlotByModule: Map<string, Map<string, string>>;
+  streamYearOccupiedSlots: Map<string, Set<string>>;
+  streamAllOccupiedSlots: Map<string, Set<string>>;
+  programmeSlotStreams: Map<string, Map<string, Set<string>>>;
+}) {
+  const instanceCodes = Array.from(
+    new Set(
+      params.existingSessions
+        .map((session) => String(session.module_instance_code ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (instanceCodes.length === 0) return;
+
+  const modules = await listTimetableModulesByInstanceCodes({
+    academicYear: params.academicYear,
+    moduleInstanceCodes: instanceCodes,
+  });
+  const moduleByInstanceCode = new Map(
+    modules.map((module) => [
+      String(module.module_instance_code ?? "").trim(),
+      module,
+    ])
+  );
+
+  const seenWeekly = new Set<string>();
+
+  for (const session of params.existingSessions) {
+    if (session.status === "cancel") continue;
+
+    if (
+      params.reschedulingModuleIds.has(
+        String(session.timetable_module_id ?? "").trim()
+      )
+    ) {
+      continue;
+    }
+
+    if (
+      params.reschedulingInstanceCodes.has(
+        String(session.module_instance_code ?? "").trim()
+      )
+    ) {
+      continue;
+    }
+
+    const instanceCode = String(session.module_instance_code ?? "").trim();
+    const timetableModule = moduleByInstanceCode.get(instanceCode);
+
+    if (!timetableModule || timetableModule.module_term !== params.term) {
+      continue;
+    }
+
+    const dateIso = String(session.session_date ?? "").slice(0, 10);
+    if (!dateIso) continue;
+
+    const jsDay = new Date(`${dateIso}T00:00:00`).getDay();
+    if (jsDay === 0) continue;
+
+    const weekday = jsDay as Weekday;
+    const start = String(session.start_time ?? "").slice(0, 5);
+    const end = String(session.end_time ?? "").slice(0, 5);
+    const roomCode = String(session.room_code ?? "").trim();
+
+    if (!start || !end || !roomCode) continue;
+
+    const weeklyIdentity = `${instanceCode}|${weekday}|${start}|${end}|${roomCode}`;
+    if (seenWeekly.has(weeklyIdentity)) continue;
+    seenWeekly.add(weeklyIdentity);
+
+    const slotKey = buildWeeklyTimeslotKey({ weekday, start, end });
+    const teacherName = String(session.teacher_name ?? "").trim();
+
+    if (teacherName) {
+      params.takenTeacherSlots.add(teacherSlotKey(teacherName, slotKey));
+    }
+
+    params.takenRoomSlots.add(roomSlotKey(roomCode, slotKey));
+
+    const programmeCode = String(timetableModule.programme_code ?? "").trim();
+    const moduleYear = String(timetableModule.module_year ?? "").trim();
+
+    if (!programmeCode || !moduleYear) continue;
+
+    recordAutoSchedulePlacement({
+      programmeCode,
+      streamKey: normalizeSchedulingStream(timetableModule.stream_code),
+      moduleYear,
+      alignKey: buildModuleStreamAlignKey(
+        programmeCode,
+        String(session.module_code ?? timetableModule.base_module_code ?? "").trim()
+      ),
+      slotKey,
+      streamYearTimeslotState: params.streamYearTimeslotState,
+      streamSlotByModule: params.streamSlotByModule,
+      streamYearOccupiedSlots: params.streamYearOccupiedSlots,
+      streamAllOccupiedSlots: params.streamAllOccupiedSlots,
+      programmeSlotStreams: params.programmeSlotStreams,
+    });
+  }
 }
 
 async function buildTeachingDates(params: {
@@ -317,6 +430,21 @@ export async function autoScheduleInstances(params: {
   const streamYearOccupiedSlots = new Map<string, Set<string>>();
   const streamAllOccupiedSlots = new Map<string, Set<string>>();
   const programmeSlotStreams = new Map<string, Map<string, Set<string>>>();
+
+  await seedAutoScheduleFromExistingSessions({
+    academicYear: params.academicYear,
+    term: params.term,
+    existingSessions,
+    reschedulingModuleIds,
+    reschedulingInstanceCodes,
+    takenTeacherSlots,
+    takenRoomSlots,
+    streamYearTimeslotState,
+    streamSlotByModule,
+    streamYearOccupiedSlots,
+    streamAllOccupiedSlots,
+    programmeSlotStreams,
+  });
 
   const failures: AutoScheduleFailure[] = [];
   const placedTimetableModuleIds = new Set<string>();

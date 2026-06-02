@@ -547,8 +547,8 @@ export function ScheduleStep(props: {
         <div className="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
           流程：填老師 Not Available（Mon–Sat × 上午/下午/晚上）＋ Day/Sat 開始時間 →
           點「自動排課」→ 系統寫入 timetable_sessions；亦可展開 Weekly Timetable
-          手動以 + / − 編輯（填 module instance code 及選擇班房）。衝突：同一時段內相同
-          老師 + programme + stream + 年級不可重複。
+          手動以 + / − 編輯後按 Save Timetable 儲存。預設顯示全部課程已儲存時段；可切換「只看本
+          Programme」。衝突：同一時段內相同老師 + programme + stream + 年級不可重複。
         </div>
       </div>
 
@@ -876,6 +876,7 @@ export function ScheduleStep(props: {
           <WeeklyTimetableEditor
             academicYear={academicYear}
             term={term}
+            programmeCode={programmeCode || undefined}
             timetableInstances={instancesForSelectedTerm}
             classrooms={classrooms}
             preferredStartByCode={preferredStartByCode}

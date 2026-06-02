@@ -315,6 +315,15 @@ export function buildStreamYearSlotKey(
     .toUpperCase()}`;
 }
 
+/** Collapsed weekly slot identity (Mon=1 .. Sat=6). */
+export function buildWeeklyTimeslotKey(params: {
+  weekday: number;
+  start: string;
+  end: string;
+}) {
+  return `${params.weekday}|${String(params.start ?? "").slice(0, 5)}|${String(params.end ?? "").slice(0, 5)}`;
+}
+
 /** Same programme + stream + year cannot share a weekly timeslot; different streams may. */
 export function buildStreamYearTimeslotKey(params: {
   programmeCode: string;

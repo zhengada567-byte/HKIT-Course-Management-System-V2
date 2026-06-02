@@ -5,10 +5,14 @@ import { dedupeJoinedModuleName } from "../../../../lib/moduleDisplay";
 import { useAuth } from "../../../../contexts/AuthContext";
 import type { TimetableModuleInstanceRow } from "../../../../services/timetableModuleInstanceService";
 import {
-  addModuleToWeeklySlot,
+  buildDraftWeeklyPlacement,
+  cloneWeeklyGridState,
+  collectWeeklyPlacements,
   mergeWeeklySlotRows,
-  removeModuleFromWeeklySlot,
+  persistWeeklyTimetableDraft,
+  wouldWeeklyPlacementConflict,
   type WeeklyGridItem,
+  type WeeklyGridState,
 } from "../../../../services/timetableManualScheduleService";
 import {
   listTimetableSessions,
@@ -26,11 +30,6 @@ const weekdays: Array<{ id: 1 | 2 | 3 | 4 | 5 | 6; label: string }> = [
   { id: 6, label: "Sat" },
 ];
 
-type WeeklyGridState = {
-  slots: Array<{ start: string; end: string }>;
-  itemsBySlotAndWeekday: Record<string, Record<number, WeeklyGridItem[]>>;
-};
-
 type AddDialogState = {
   weekday: 1 | 2 | 3 | 4 | 5 | 6;
   start: string;
@@ -39,9 +38,12 @@ type AddDialogState = {
   roomCode: string;
 };
 
+type ViewScope = "all" | "programme";
+
 export function WeeklyTimetableEditor(props: {
   academicYear: string;
   term: TimetableScheduleTerm;
+  programmeCode?: string;
   timetableInstances: TimetableModuleInstanceRow[];
   classrooms: TimetableClassroomRow[];
   preferredStartByCode: Record<string, string>;
@@ -54,6 +56,7 @@ export function WeeklyTimetableEditor(props: {
   const {
     academicYear,
     term,
+    programmeCode,
     timetableInstances,
     classrooms,
     preferredStartByCode,
@@ -66,9 +69,26 @@ export function WeeklyTimetableEditor(props: {
   const [weeklyLoading, setWeeklyLoading] = useState(false);
   const [weeklyError, setWeeklyError] = useState<string | null>(null);
   const [weeklyGrid, setWeeklyGrid] = useState<WeeklyGridState | null>(null);
+  const [savedGrid, setSavedGrid] = useState<WeeklyGridState | null>(null);
+  const [viewScope, setViewScope] = useState<ViewScope>("all");
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [cellBusyKey, setCellBusyKey] = useState<string | null>(null);
   const [addDialog, setAddDialog] = useState<AddDialogState | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
+
+  const editableInstanceCodes = useMemo(
+    () =>
+      timetableInstances
+        .map((row) => String(row.module_instance_code ?? "").trim())
+        .filter(Boolean),
+    [timetableInstances]
+  );
+
+  const editableInstanceCodeSet = useMemo(
+    () => new Set(editableInstanceCodes.map((code) => code.toUpperCase())),
+    [editableInstanceCodes]
+  );
 
   const instanceByCode = useMemo(() => {
     const map = new Map<string, TimetableModuleInstanceRow>();
@@ -82,21 +102,28 @@ export function WeeklyTimetableEditor(props: {
   const loadWeeklyTimetable = useCallback(async () => {
     setWeeklyLoading(true);
     setWeeklyError(null);
+    setSaveMessage(null);
 
     try {
-      const instanceCodesForTerm = new Set(
-        timetableInstances
-          .map((row) => String(row.module_instance_code ?? "").trim())
-          .filter(Boolean)
+      const programmeInstanceCodes = new Set(editableInstanceCodes);
+
+      const sessions = await listTimetableSessions({ academicYear });
+      const sessionInstanceCodes = Array.from(
+        new Set(
+          sessions
+            .map((row) => String(row.module_instance_code ?? "").trim())
+            .filter(Boolean)
+        )
       );
 
-      const [sessions, timetableModules] = await Promise.all([
-        listTimetableSessions({ academicYear }),
-        listTimetableModulesByInstanceCodes({
-          academicYear,
-          moduleInstanceCodes: Array.from(instanceCodesForTerm),
-        }),
-      ]);
+      const codesToLoad = Array.from(
+        new Set([...programmeInstanceCodes, ...sessionInstanceCodes])
+      );
+
+      const timetableModules = await listTimetableModulesByInstanceCodes({
+        academicYear,
+        moduleInstanceCodes: codesToLoad,
+      });
 
       const moduleByInstanceCode = new Map(
         timetableModules.map((row) => [
@@ -115,7 +142,21 @@ export function WeeklyTimetableEditor(props: {
         if (session.status === "cancel") continue;
 
         const instanceCode = String(session.module_instance_code ?? "").trim();
-        if (!instanceCodesForTerm.has(instanceCode)) continue;
+        const timetableModule = moduleByInstanceCode.get(instanceCode);
+
+        if (!timetableModule || timetableModule.module_term !== term) {
+          continue;
+        }
+
+        if (viewScope === "programme") {
+          if (!programmeInstanceCodes.has(instanceCode)) continue;
+          if (
+            programmeCode &&
+            String(timetableModule.programme_code ?? "").trim() !== programmeCode
+          ) {
+            continue;
+          }
+        }
 
         const dateIso = String(session.session_date ?? "").slice(0, 10);
         if (!dateIso) continue;
@@ -135,8 +176,6 @@ export function WeeklyTimetableEditor(props: {
         const key = [weekday, start, end, roomCode, instanceCode].join("|");
         if (collapsed.has(key)) continue;
 
-        const timetableModule = moduleByInstanceCode.get(instanceCode);
-
         collapsed.set(key, {
           weekday,
           start,
@@ -146,9 +185,9 @@ export function WeeklyTimetableEditor(props: {
           moduleName: String(session.module_name ?? "").trim(),
           teacherName: String(session.teacher_name ?? "").trim(),
           roomCode,
-          programmeCode: String(timetableModule?.programme_code ?? "").trim(),
-          streamCode: String(timetableModule?.stream_code ?? "").trim(),
-          moduleYear: String(timetableModule?.module_year ?? "").trim(),
+          programmeCode: String(timetableModule.programme_code ?? "").trim(),
+          streamCode: String(timetableModule.stream_code ?? "").trim(),
+          moduleYear: String(timetableModule.module_year ?? "").trim(),
         });
       }
 
@@ -193,7 +232,9 @@ export function WeeklyTimetableEditor(props: {
         startTimeOptions,
       });
 
-      setWeeklyGrid({ slots, itemsBySlotAndWeekday });
+      const nextGrid = { slots, itemsBySlotAndWeekday };
+      setWeeklyGrid(nextGrid);
+      setSavedGrid(cloneWeeklyGridState(nextGrid));
     } catch (error) {
       setWeeklyError(
         error instanceof Error ? error.message : "Failed to load weekly timetable."
@@ -203,51 +244,82 @@ export function WeeklyTimetableEditor(props: {
     }
   }, [
     academicYear,
+    editableInstanceCodes,
     preferredStartByCode,
+    programmeCode,
     startTimeOptions,
+    term,
     timetableInstances,
+    viewScope,
   ]);
-
-  useEffect(() => {
-    if (open && !weeklyGrid && !weeklyLoading) {
-      void loadWeeklyTimetable();
-    }
-  }, [open, weeklyGrid, weeklyLoading, loadWeeklyTimetable]);
 
   useEffect(() => {
     if (open) {
       void loadWeeklyTimetable();
     }
-  }, [refreshToken, open, loadWeeklyTimetable]);
+  }, [refreshToken, open, viewScope, loadWeeklyTimetable]);
 
-  async function handleRemoveItem(params: {
+  const isDirty = useMemo(() => {
+    if (!weeklyGrid || !savedGrid) return false;
+
+    const toKeySet = (grid: WeeklyGridState) =>
+      new Set(
+        collectWeeklyPlacements(grid)
+          .filter((row) =>
+            editableInstanceCodeSet.has(row.moduleInstanceCode.toUpperCase())
+          )
+          .map(
+            (row) =>
+              `${row.weekday}|${row.start}|${row.end}|${row.roomCode}|${row.moduleInstanceCode.toUpperCase()}`
+          )
+          .sort()
+      );
+
+    const draftKeys = toKeySet(weeklyGrid);
+    const savedKeys = toKeySet(savedGrid);
+
+    if (draftKeys.size !== savedKeys.size) return true;
+
+    for (const key of draftKeys) {
+      if (!savedKeys.has(key)) return true;
+    }
+
+    return false;
+  }, [editableInstanceCodeSet, savedGrid, weeklyGrid]);
+
+  function handleRemoveItem(params: {
     weekday: 1 | 2 | 3 | 4 | 5 | 6;
     start: string;
     end: string;
     item: WeeklyGridItem;
   }) {
-    const busyKey = `${params.weekday}|${params.start}|${params.end}|remove|${params.item.moduleInstanceCode}`;
-    setCellBusyKey(busyKey);
-    setWeeklyError(null);
-
-    try {
-      await removeModuleFromWeeklySlot({
-        academicYear,
-        term,
-        weekday: params.weekday,
-        startTime: params.start,
-        endTime: params.end,
-        roomCode: params.item.roomCode,
-        moduleInstanceCode: params.item.moduleInstanceCode,
-      });
-      await loadWeeklyTimetable();
-    } catch (error) {
-      setWeeklyError(
-        error instanceof Error ? error.message : "Failed to remove module."
-      );
-    } finally {
-      setCellBusyKey(null);
+    if (
+      !editableInstanceCodeSet.has(params.item.moduleInstanceCode.toUpperCase())
+    ) {
+      return;
     }
+
+    setWeeklyGrid((current) => {
+      if (!current) return current;
+
+      const next = cloneWeeklyGridState(current);
+      const sk = `${params.start}-${params.end}`;
+      const items = next.itemsBySlotAndWeekday[sk]?.[params.weekday] ?? [];
+
+      next.itemsBySlotAndWeekday[sk] = {
+        ...(next.itemsBySlotAndWeekday[sk] ?? {}),
+        [params.weekday]: items.filter(
+          (row) =>
+            !(
+              row.moduleInstanceCode === params.item.moduleInstanceCode &&
+              row.roomCode === params.item.roomCode
+            )
+        ),
+      };
+
+      return next;
+    });
+    setSaveMessage(null);
   }
 
   function openAddDialog(params: {
@@ -266,7 +338,7 @@ export function WeeklyTimetableEditor(props: {
   }
 
   async function handleConfirmAdd() {
-    if (!addDialog) return;
+    if (!addDialog || !weeklyGrid) return;
 
     const code = addDialog.moduleInstanceCode.trim();
     const instance = instanceByCode.get(code.toUpperCase());
@@ -276,28 +348,55 @@ export function WeeklyTimetableEditor(props: {
       return;
     }
 
-    const sk = `${addDialog.start}-${addDialog.end}`;
-    const existing =
-      weeklyGrid?.itemsBySlotAndWeekday[sk]?.[addDialog.weekday] ?? [];
-
     setCellBusyKey(`${addDialog.weekday}|${addDialog.start}|${addDialog.end}|add`);
     setAddError(null);
 
     try {
-      await addModuleToWeeklySlot({
+      const [timetableModule] = await listTimetableModulesByInstanceCodes({
         academicYear,
-        term,
-        weekday: addDialog.weekday,
-        startTime: addDialog.start,
-        endTime: addDialog.end,
-        roomCode: addDialog.roomCode,
-        moduleInstanceCode: code,
-        instance,
-        existingOccupants: existing,
-        createdBy: user?.id ?? null,
+        moduleInstanceCodes: [code],
       });
+
+      if (!timetableModule) {
+        throw new Error(`No timetable module found for "${code}".`);
+      }
+
+      const sk = `${addDialog.start}-${addDialog.end}`;
+      const existing =
+        weeklyGrid.itemsBySlotAndWeekday[sk]?.[addDialog.weekday] ?? [];
+
+      const placement = buildDraftWeeklyPlacement({
+        weekday: addDialog.weekday,
+        start: addDialog.start,
+        end: addDialog.end,
+        roomCode: addDialog.roomCode,
+        instance,
+        timetableModule,
+      });
+
+      const conflict = wouldWeeklyPlacementConflict(existing, placement);
+      if (conflict) {
+        throw new Error(conflict);
+      }
+
+      setWeeklyGrid((current) => {
+        if (!current) return current;
+
+        const next = cloneWeeklyGridState(current);
+        next.itemsBySlotAndWeekday[sk] = {
+          ...(next.itemsBySlotAndWeekday[sk] ?? {}),
+          [addDialog.weekday]: [...existing, placement].sort((a, b) => {
+            if (a.roomCode !== b.roomCode) {
+              return a.roomCode.localeCompare(b.roomCode);
+            }
+            return a.moduleInstanceCode.localeCompare(b.moduleInstanceCode);
+          }),
+        };
+        return next;
+      });
+
       setAddDialog(null);
-      await loadWeeklyTimetable();
+      setSaveMessage(null);
     } catch (error) {
       setAddError(error instanceof Error ? error.message : "Failed to add module.");
     } finally {
@@ -305,18 +404,51 @@ export function WeeklyTimetableEditor(props: {
     }
   }
 
+  async function handleSaveTimetable() {
+    if (!weeklyGrid || !savedGrid || !isDirty) return;
+
+    setSaving(true);
+    setWeeklyError(null);
+    setSaveMessage(null);
+
+    try {
+      const result = await persistWeeklyTimetableDraft({
+        academicYear,
+        term,
+        savedGrid,
+        draftGrid: weeklyGrid,
+        editableInstanceCodes,
+        instanceByCode,
+        createdBy: user?.id ?? null,
+      });
+
+      await loadWeeklyTimetable();
+      setSaveMessage(
+        `已儲存至系統：新增 ${result.savedCount} 項，移除 ${result.removedCount} 項。其他 PL 自動排課會讀取這些已儲存時段。`
+      );
+    } catch (error) {
+      setWeeklyError(
+        error instanceof Error ? error.message : "Failed to save weekly timetable."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const scheduledInstanceCodes = useMemo(() => {
     const set = new Set<string>();
-    if (!weeklyGrid) return set;
-    for (const sk of Object.keys(weeklyGrid.itemsBySlotAndWeekday)) {
-      for (const day of Object.keys(weeklyGrid.itemsBySlotAndWeekday[sk] ?? {})) {
-        for (const item of weeklyGrid.itemsBySlotAndWeekday[sk]![Number(day)] ?? []) {
+    const source = savedGrid ?? weeklyGrid;
+    if (!source) return set;
+
+    for (const sk of Object.keys(source.itemsBySlotAndWeekday)) {
+      for (const day of Object.keys(source.itemsBySlotAndWeekday[sk] ?? {})) {
+        for (const item of source.itemsBySlotAndWeekday[sk]![Number(day)] ?? []) {
           set.add(item.moduleInstanceCode);
         }
       }
     }
     return set;
-  }, [weeklyGrid]);
+  }, [savedGrid, weeklyGrid]);
 
   return (
     <div className="mt-3 space-y-4">
@@ -349,6 +481,52 @@ export function WeeklyTimetableEditor(props: {
 
       {open && weeklyGrid && (
         <>
+          <div className="flex flex-wrap items-end gap-3 rounded border border-slate-200 bg-slate-50 px-3 py-3">
+            <div>
+              <label className="form-label">顯示範圍</label>
+              <select
+                className="form-select"
+                title="Timetable view scope"
+                value={viewScope}
+                disabled={isDirty || weeklyLoading || saving}
+                onChange={(event) => {
+                  const next = event.target.value as ViewScope;
+                  if (isDirty) {
+                    setWeeklyError("請先 Save 再切換顯示範圍。");
+                    return;
+                  }
+                  setViewScope(next);
+                }}
+              >
+                <option value="all">全部課程（系統已儲存）</option>
+                <option value="programme">
+                  只看本 Programme{programmeCode ? `（${programmeCode}）` : ""}
+                </option>
+              </select>
+            </div>
+
+            {isDirty && (
+              <span className="text-sm font-medium text-amber-800">
+                有未保存的變更
+              </span>
+            )}
+
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!isDirty || saving || weeklyLoading}
+              onClick={() => void handleSaveTimetable()}
+            >
+              {saving ? "Saving..." : "Save Timetable"}
+            </button>
+          </div>
+
+          {saveMessage && (
+            <div className="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+              {saveMessage}
+            </div>
+          )}
+
           <div className="overflow-x-auto rounded border border-slate-200">
             <table className="min-w-[980px] table-fixed border-collapse text-sm">
               <thead className="bg-slate-50">
@@ -396,6 +574,11 @@ export function WeeklyTimetableEditor(props: {
                                       <div className="font-medium">
                                         {item.moduleInstanceCode}
                                       </div>
+                                      {viewScope === "all" && item.programmeCode && (
+                                        <div className="text-xs text-slate-500">
+                                          {item.programmeCode}
+                                        </div>
+                                      )}
                                       <div className="text-xs text-slate-600">
                                         {item.moduleCode}{" "}
                                         <span>({item.roomCode})</span>
@@ -413,9 +596,14 @@ export function WeeklyTimetableEditor(props: {
                                       type="button"
                                       className="btn btn-secondary shrink-0 px-1.5 py-0.5 text-xs"
                                       title="Remove module"
-                                      disabled={Boolean(isBusy)}
+                                      disabled={
+                                        Boolean(isBusy) ||
+                                        !editableInstanceCodeSet.has(
+                                          item.moduleInstanceCode.toUpperCase()
+                                        )
+                                      }
                                       onClick={() =>
-                                        void handleRemoveItem({
+                                        handleRemoveItem({
                                           weekday: day.id,
                                           start: slot.start,
                                           end: slot.end,
@@ -461,8 +649,8 @@ export function WeeklyTimetableEditor(props: {
               待編時間表模組（{term}）
             </div>
             <div className="mt-1 text-xs text-slate-600">
-              填寫 module instance code 後會自動帶入 module name 及教師；衝突規則：同一時段內，相同
-              老師 + programme + stream + 年級 不能重複。
+              編輯後請按 Save Timetable 才會寫入系統；下方列表顯示本 Programme 待排模組。
+              Save 後其他 PL 自動排課會避開已儲存的時段。
             </div>
             <div className="mt-3 overflow-x-auto">
               <table className="min-w-full text-sm">

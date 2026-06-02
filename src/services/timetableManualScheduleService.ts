@@ -243,3 +243,166 @@ export function mergeWeeklySlotRows(params: {
     return a.end.localeCompare(b.end);
   });
 }
+
+export type WeeklyGridState = {
+  slots: Array<{ start: string; end: string }>;
+  itemsBySlotAndWeekday: Record<string, Record<number, WeeklyGridItem[]>>;
+};
+
+export type WeeklyPlacementRecord = WeeklyGridItem & {
+  weekday: 1 | 2 | 3 | 4 | 5 | 6;
+  start: string;
+  end: string;
+};
+
+export function cloneWeeklyGridState(grid: WeeklyGridState): WeeklyGridState {
+  return JSON.parse(JSON.stringify(grid)) as WeeklyGridState;
+}
+
+export function weeklyPlacementIdentity(placement: WeeklyPlacementRecord) {
+  return [
+    placement.weekday,
+    placement.start,
+    placement.end,
+    placement.roomCode,
+    placement.moduleInstanceCode.toUpperCase(),
+  ].join("|");
+}
+
+export function collectWeeklyPlacements(
+  grid: WeeklyGridState
+): WeeklyPlacementRecord[] {
+  const results: WeeklyPlacementRecord[] = [];
+
+  for (const slot of grid.slots) {
+    const slotKey = `${slot.start}-${slot.end}`;
+    const byDay = grid.itemsBySlotAndWeekday[slotKey] ?? {};
+
+    for (const [dayText, items] of Object.entries(byDay)) {
+      const weekday = Number(dayText) as WeeklyPlacementRecord["weekday"];
+
+      for (const item of items) {
+        results.push({
+          ...item,
+          weekday,
+          start: slot.start,
+          end: slot.end,
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+export function buildDraftWeeklyPlacement(params: {
+  weekday: 1 | 2 | 3 | 4 | 5 | 6;
+  start: string;
+  end: string;
+  roomCode: string;
+  instance: TimetableModuleInstanceRow;
+  timetableModule: TimetableModuleRow;
+}): WeeklyPlacementRecord {
+  const occupant = buildWeeklyPlacementOccupant({
+    instance: params.instance,
+    timetableModule: params.timetableModule,
+    roomCode: params.roomCode,
+  });
+
+  return {
+    ...occupant,
+    weekday: params.weekday,
+    start: params.start,
+    end: params.end,
+  };
+}
+
+export async function persistWeeklyTimetableDraft(params: {
+  academicYear: string;
+  term: TimetableScheduleTerm;
+  savedGrid: WeeklyGridState;
+  draftGrid: WeeklyGridState;
+  editableInstanceCodes: string[];
+  instanceByCode: Map<string, TimetableModuleInstanceRow>;
+  createdBy?: string | null;
+}) {
+  const editable = new Set(
+    params.editableInstanceCodes
+      .map((code) => String(code ?? "").trim().toUpperCase())
+      .filter(Boolean)
+  );
+
+  if (editable.size === 0) {
+    return { savedCount: 0, removedCount: 0 };
+  }
+
+  const savedPlacements = collectWeeklyPlacements(params.savedGrid).filter(
+    (row) => editable.has(row.moduleInstanceCode.toUpperCase())
+  );
+  const draftPlacements = collectWeeklyPlacements(params.draftGrid).filter(
+    (row) => editable.has(row.moduleInstanceCode.toUpperCase())
+  );
+
+  const savedKeys = new Map(
+    savedPlacements.map((row) => [weeklyPlacementIdentity(row), row])
+  );
+  const draftKeys = new Map(
+    draftPlacements.map((row) => [weeklyPlacementIdentity(row), row])
+  );
+
+  let removedCount = 0;
+  let savedCount = 0;
+
+  for (const [key, placement] of savedKeys) {
+    if (draftKeys.has(key)) continue;
+
+    await removeModuleFromWeeklySlot({
+      academicYear: params.academicYear,
+      term: params.term,
+      weekday: placement.weekday,
+      startTime: placement.start,
+      endTime: placement.end,
+      roomCode: placement.roomCode,
+      moduleInstanceCode: placement.moduleInstanceCode,
+    });
+    removedCount += 1;
+  }
+
+  for (const [key, placement] of draftKeys) {
+    if (savedKeys.has(key)) continue;
+
+    const instance = params.instanceByCode.get(
+      placement.moduleInstanceCode.toUpperCase()
+    );
+
+    if (!instance) {
+      throw new Error(
+        `Cannot save "${placement.moduleInstanceCode}": instance not found on this page.`
+      );
+    }
+
+    const slotKey = `${placement.start}-${placement.end}`;
+    const cellOccupants =
+      params.draftGrid.itemsBySlotAndWeekday[slotKey]?.[placement.weekday] ?? [];
+
+    await addModuleToWeeklySlot({
+      academicYear: params.academicYear,
+      term: params.term,
+      weekday: placement.weekday,
+      startTime: placement.start,
+      endTime: placement.end,
+      roomCode: placement.roomCode,
+      moduleInstanceCode: placement.moduleInstanceCode,
+      instance,
+      existingOccupants: cellOccupants.filter(
+        (item) =>
+          item.moduleInstanceCode.toUpperCase() !==
+          placement.moduleInstanceCode.toUpperCase()
+      ),
+      createdBy: params.createdBy ?? null,
+    });
+    savedCount += 1;
+  }
+
+  return { savedCount, removedCount };
+}
