@@ -574,3 +574,112 @@ export async function listFreeDatesForSlot(params: {
   return results;
 }
 
+export function addHoursToTime(startTime: string, hours: number) {
+  const [hh, mm] = String(startTime ?? "00:00")
+    .slice(0, 5)
+    .split(":");
+  const totalMinutes = Number(hh) * 60 + Number(mm) + hours * 60;
+  const nextH = Math.floor(totalMinutes / 60) % 24;
+  const nextM = totalMinutes % 60;
+  return `${String(nextH).padStart(2, "0")}:${String(nextM).padStart(2, "0")}`;
+}
+
+export async function buildTeachingDatesForWeekday(params: {
+  academicYear: string;
+  term: TimetableScheduleTerm;
+  weekday: 1 | 2 | 3 | 4 | 5 | 6;
+}) {
+  const excluded = await buildExcludedIsoDatesForTerm({
+    academicYear: params.academicYear,
+    term: params.term,
+  });
+
+  const dates: IsoDateString[] = [];
+  let cursor = new Date(excluded.start.getTime());
+
+  while (cursor.getTime() <= excluded.end.getTime()) {
+    const jsDay = cursor.getDay();
+    if (jsDay === params.weekday && !isDateExcludedForTeaching(cursor, excluded)) {
+      dates.push(toIsoDateString(cursor));
+    }
+    cursor = addDays(cursor, 1);
+  }
+
+  return dates;
+}
+
+export async function deleteWeeklyPlacementSessions(params: {
+  academicYear: string;
+  term: TimetableScheduleTerm;
+  moduleInstanceCode: string;
+  weekday: 1 | 2 | 3 | 4 | 5 | 6;
+  startTime: string;
+  endTime: string;
+  roomCode: string;
+}) {
+  const code = String(params.moduleInstanceCode ?? "").trim();
+  const roomCode = String(params.roomCode ?? "").trim();
+  if (!code || !roomCode) return;
+
+  const dates = await buildTeachingDatesForWeekday({
+    academicYear: params.academicYear,
+    term: params.term,
+    weekday: params.weekday,
+  });
+
+  if (dates.length === 0) return;
+
+  const startNorm = normalizeSessionTime(params.startTime);
+  const endNorm = normalizeSessionTime(params.endTime);
+
+  for (const batch of chunkValues(dates, 50)) {
+    const { error } = await supabase
+      .from("timetable_sessions")
+      .delete()
+      .eq("academic_year", normalizeAcademicYear(params.academicYear))
+      .eq("module_instance_code", code)
+      .eq("room_code", roomCode)
+      .eq("start_time", startNorm)
+      .eq("end_time", endNorm)
+      .in("session_date", batch);
+
+    if (error) throw error;
+  }
+}
+
+export async function insertWeeklyPlacementSessions(params: {
+  academicYear: string;
+  rows: Array<
+    Omit<TimetableSessionRow, "id" | "created_at" | "updated_at"> & {
+      created_by?: string | null;
+    }
+  >;
+}) {
+  if (params.rows.length === 0) return;
+
+  const academicYear = normalizeAcademicYear(params.academicYear);
+  const seen = new Set<string>();
+  const payload = params.rows
+    .map((row) => ({
+      ...row,
+      academic_year: academicYear,
+      session_date: normalizeSessionDate(row.session_date),
+      start_time: normalizeSessionTime(row.start_time),
+      end_time: normalizeSessionTime(row.end_time),
+      room_code: String(row.room_code ?? "").trim(),
+      module_instance_code: String(row.module_instance_code ?? "").trim(),
+      updated_at: new Date().toISOString(),
+    }))
+    .filter((row) => {
+      const key = sessionInsertIdentityKey(row);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+  if (payload.length === 0) return;
+
+  await ensureDefaultTimetableClassrooms();
+  await insertTimetableSessionBatches(payload);
+}
+

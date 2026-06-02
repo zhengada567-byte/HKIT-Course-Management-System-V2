@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   defaultClassroomsForHKIT,
-  listTimetableSessions,
   type TimetableClassroomRow,
 } from "../../../../services/timetableScheduleService";
 import type { TimetableModuleInstanceRow } from "../../../../services/timetableModuleInstanceService";
@@ -30,6 +29,7 @@ import {
   autoScheduleInstances,
   type AutoScheduleFailure,
 } from "../../../../services/timetableAutoScheduleService";
+import { WeeklyTimetableEditor } from "./WeeklyTimetableEditor";
 
 export function ScheduleStep(props: {
   academicYear: string;
@@ -495,146 +495,13 @@ export function ScheduleStep(props: {
   const [autoError, setAutoError] = useState<string | null>(null);
   const [autoResult, setAutoResult] = useState<string | null>(null);
   const [autoFailures, setAutoFailures] = useState<AutoScheduleFailure[]>([]);
-
   const [weeklyOpen, setWeeklyOpen] = useState(false);
-  const [weeklyLoading, setWeeklyLoading] = useState(false);
-  const [weeklyError, setWeeklyError] = useState<string | null>(null);
-  const [weeklyGrid, setWeeklyGrid] = useState<{
-    slots: Array<{ start: string; end: string }>;
-    itemsBySlotAndWeekday: Record<string, Record<number, Array<{
-      moduleCode: string;
-      moduleName: string;
-      moduleInstanceCode: string;
-      teacherName: string;
-      roomCode: string;
-    }>>>;
-  } | null>(null);
+  const [weeklyRefreshToken, setWeeklyRefreshToken] = useState(0);
 
-  async function loadWeeklyTimetable() {
-    setWeeklyLoading(true);
-    setWeeklyError(null);
-
-    try {
-      const sessions = await listTimetableSessions({ academicYear });
-      const instanceCodesForTerm = new Set(
-        timetableInstances
-          .filter((row) => row.module_term === term)
-          .map((row) => String(row.module_instance_code ?? "").trim())
-          .filter(Boolean)
-      );
-
-      const collapsed = new Map<
-        string,
-        {
-          weekday: number; // 1..6
-          start: string;
-          end: string;
-          moduleCode: string;
-          moduleName: string;
-          moduleInstanceCode: string;
-          teacherName: string;
-          roomCode: string;
-        }
-      >();
-
-      for (const s of sessions) {
-        if (s.status === "cancel") continue;
-        const instanceCode = String(s.module_instance_code ?? "").trim();
-        if (!instanceCodeForTerm(instanceCode, instanceCodesForTerm)) continue;
-
-        const dateIso = String(s.session_date ?? "").slice(0, 10);
-        if (!dateIso) continue;
-
-        const jsDay = new Date(`${dateIso}T00:00:00`).getDay(); // 0..6
-        if (jsDay === 0) continue;
-
-        const weekday = jsDay; // Mon..Sat => 1..6
-        const start = String(s.start_time ?? "").slice(0, 5);
-        const end = String(s.end_time ?? "").slice(0, 5);
-        const roomCode = String(s.room_code ?? "").trim();
-
-        if (!start || !end || !roomCode) continue;
-
-        const key = [
-          weekday,
-          start,
-          end,
-          roomCode,
-          instanceCode,
-        ].join("|");
-
-        if (collapsed.has(key)) continue;
-
-        collapsed.set(key, {
-          weekday,
-          start,
-          end,
-          moduleCode: String(s.module_code ?? "").trim(),
-          moduleName: String(s.module_name ?? "").trim(),
-          moduleInstanceCode: instanceCode,
-          teacherName: String(s.teacher_name ?? "").trim(),
-          roomCode,
-        });
-      }
-
-      const slotKey = (start: string, end: string) => `${start}-${end}`;
-
-      const slotsSet = new Map<string, { start: string; end: string }>();
-      const itemsBySlotAndWeekday: Record<
-        string,
-        Record<
-          number,
-          Array<{
-            moduleCode: string;
-            moduleName: string;
-            moduleInstanceCode: string;
-            teacherName: string;
-            roomCode: string;
-          }>
-        >
-      > = {};
-
-      for (const item of collapsed.values()) {
-        const sk = slotKey(item.start, item.end);
-        if (!slotsSet.has(sk)) slotsSet.set(sk, { start: item.start, end: item.end });
-        itemsBySlotAndWeekday[sk] ||= {};
-        itemsBySlotAndWeekday[sk][item.weekday] ||= [];
-        itemsBySlotAndWeekday[sk][item.weekday]!.push({
-          moduleCode: item.moduleCode,
-          moduleName: item.moduleName,
-          moduleInstanceCode: item.moduleInstanceCode,
-          teacherName: item.teacherName,
-          roomCode: item.roomCode,
-        });
-      }
-
-      const slots = Array.from(slotsSet.values()).sort((a, b) => {
-        if (a.start !== b.start) return a.start.localeCompare(b.start);
-        return a.end.localeCompare(b.end);
-      });
-
-      for (const sk of Object.keys(itemsBySlotAndWeekday)) {
-        for (const day of Object.keys(itemsBySlotAndWeekday[sk] ?? {})) {
-          itemsBySlotAndWeekday[sk]![Number(day)]!.sort((a, b) => {
-            if (a.roomCode !== b.roomCode) return a.roomCode.localeCompare(b.roomCode);
-            return a.moduleInstanceCode.localeCompare(b.moduleInstanceCode);
-          });
-        }
-      }
-
-      setWeeklyGrid({ slots, itemsBySlotAndWeekday });
-    } catch (error) {
-      setWeeklyError(
-        error instanceof Error ? error.message : "Failed to load weekly timetable."
-      );
-    } finally {
-      setWeeklyLoading(false);
-    }
-  }
-
-  function instanceCodeForTerm(code: string, set: Set<string>) {
-    return set.has(code);
-  }
+  const instancesForSelectedTerm = useMemo(
+    () => timetableInstances.filter((row) => row.module_term === term),
+    [timetableInstances, term]
+  );
 
   async function handleAutoSchedule() {
     setAutoLoading(true);
@@ -658,6 +525,7 @@ export function ScheduleStep(props: {
           ? `Scheduled: ${result.scheduledCount}; skipped (already scheduled): ${result.skippedAlreadyScheduledCount}; failed: ${result.failedCount}.`
           : `Scheduled: ${result.scheduledCount}（已覆盖本学期既有排课）; failed: ${result.failedCount}.`
       );
+      setWeeklyRefreshToken((value) => value + 1);
     } catch (error) {
       setAutoError(
         error instanceof Error ? error.message : "Auto schedule failed."
@@ -678,9 +546,9 @@ export function ScheduleStep(props: {
 
         <div className="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
           流程：填老師 Not Available（Mon–Sat × 上午/下午/晚上）＋ Day/Sat 開始時間 →
-          點「自動排課」→ 系統寫入 timetable_sessions。自動排課僅 Mon–Fri（不用星期六）；
-          Sunday 不排；每堂 4 小时；Night 固定 18:30。不同 stream 盡量同一時段；
-          同 stream 同年必須錯開。
+          點「自動排課」→ 系統寫入 timetable_sessions；亦可展開 Weekly Timetable
+          手動以 + / − 編輯（填 module instance code 及選擇班房）。衝突：同一時段內相同
+          老師 + programme + stream + 年級不可重複。
         </div>
       </div>
 
@@ -1005,111 +873,17 @@ export function ScheduleStep(props: {
             </div>
           )}
 
-          <div className="mt-3">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => {
-                const next = !weeklyOpen;
-                setWeeklyOpen(next);
-                if (next && !weeklyGrid && !weeklyLoading) {
-                  void loadWeeklyTimetable();
-                }
-              }}
-              disabled={weeklyLoading}
-            >
-              {weeklyLoading
-                ? "Loading weekly timetable..."
-                : weeklyOpen
-                  ? "Hide weekly timetable"
-                  : "Show weekly timetable"}
-            </button>
-          </div>
-
-          {weeklyError && (
-            <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {weeklyError}
-            </div>
-          )}
-
-          {weeklyOpen && weeklyGrid && (
-            <div className="mt-3 overflow-x-auto rounded border border-slate-200">
-              <table className="min-w-[900px] table-fixed border-collapse text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="w-28 border border-slate-200 px-2 py-2 text-left">
-                      Time
-                    </th>
-                    {weekdays.map((d) => (
-                      <th
-                        key={d.id}
-                        className="border border-slate-200 px-2 py-2 text-left"
-                      >
-                        {d.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {weeklyGrid.slots.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={1 + weekdays.length}
-                        className="border border-slate-200 px-2 py-3 text-slate-600"
-                      >
-                        No scheduled sessions found for this term yet.
-                      </td>
-                    </tr>
-                  )}
-                  {weeklyGrid.slots.map((slot) => {
-                    const sk = `${slot.start}-${slot.end}`;
-                    return (
-                      <tr key={sk}>
-                        <td className="border border-slate-200 px-2 py-2 align-top font-medium">
-                          {slot.start}–{slot.end}
-                        </td>
-                        {weekdays.map((d) => {
-                          const items =
-                            weeklyGrid.itemsBySlotAndWeekday[sk]?.[d.id] ?? [];
-                          return (
-                            <td
-                              key={`${sk}-${d.id}`}
-                              className="border border-slate-200 px-2 py-2 align-top"
-                            >
-                              {items.length === 0 ? (
-                                <span className="text-slate-400">-</span>
-                              ) : (
-                                <div className="space-y-2">
-                                  {items.map((it) => (
-                                    <div key={`${it.roomCode}-${it.moduleInstanceCode}`}>
-                                      <div className="font-medium">
-                                        {it.moduleCode || it.moduleInstanceCode}{" "}
-                                        <span className="text-slate-600">
-                                          ({it.roomCode})
-                                        </span>
-                                      </div>
-                                      <div className="text-xs text-slate-600">
-                                        {it.moduleName
-                                          ? dedupeJoinedModuleName(it.moduleName)
-                                          : ""}
-                                      </div>
-                                      <div className="text-xs text-slate-600">
-                                        {it.teacherName || ""}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <WeeklyTimetableEditor
+            academicYear={academicYear}
+            term={term}
+            timetableInstances={instancesForSelectedTerm}
+            classrooms={classrooms}
+            preferredStartByCode={preferredStartByCode}
+            startTimeOptions={startTimeOptions}
+            open={weeklyOpen}
+            onOpenChange={setWeeklyOpen}
+            refreshToken={weeklyRefreshToken}
+          />
         </div>
       </div>
     </div>
