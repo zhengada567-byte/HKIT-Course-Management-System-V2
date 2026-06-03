@@ -520,9 +520,24 @@ export function MakeTimetablePage() {
     }
   }
 
+  function handleStepChange(next: Step) {
+    if (!programmeCode && next !== "student_numbers") {
+      setMessage(t.selectProgrammeRequired);
+      setStep("student_numbers");
+      return;
+    }
+
+    setStep(next);
+  }
+
   async function handleSaveStudentNumbers() {
     if (!user) {
       setMessage("Please login before saving student numbers.");
+      return;
+    }
+
+    if (!programmeCode) {
+      setMessage(t.selectProgrammeRequired);
       return;
     }
 
@@ -1436,6 +1451,15 @@ export function MakeTimetablePage() {
       if (!user) {
         setPlanningModules([]);
         setStudentRows([]);
+        setExcludedModules([]);
+        setLoading(false);
+        return;
+      }
+
+      if (!programmeCode) {
+        setPlanningModules([]);
+        setStudentRows([]);
+        setExcludedModules([]);
         setLoading(false);
         return;
       }
@@ -1447,7 +1471,7 @@ export function MakeTimetablePage() {
 
         await ensureTimetablePlanningModules({
           academicYear,
-          programmeCode: programmeCode || undefined,
+          programmeCode,
           createdBy: user.id,
         });
 
@@ -1455,7 +1479,7 @@ export function MakeTimetablePage() {
 
         const data = await listPlanningModulesWithStudentNumbers({
           academicYear,
-          programmeCode: programmeCode || undefined,
+          programmeCode,
         });
 
         if (currentRequest !== requestId) return;
@@ -1506,7 +1530,14 @@ export function MakeTimetablePage() {
   }, [academicYear, programmeCode, user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!programmeCode && step !== "student_numbers") {
+      setStep("student_numbers");
+      setMessage(t.selectProgrammeRequired);
+    }
+  }, [programmeCode, step, t.selectProgrammeRequired]);
+
+  useEffect(() => {
+    if (!user || !programmeCode) return;
 
     if (step === "combine" || step === "split") {
       void refreshCombineGroups({
@@ -1621,12 +1652,14 @@ export function MakeTimetablePage() {
               className="form-select"
               value={programmeCode}
               title="Programme"
+              required
               onChange={(event) => {
                 setProgrammeCode(event.target.value);
                 setStep("student_numbers");
+                setMessage("");
               }}
             >
-              <option value="">All Programmes</option>
+              <option value="">{t.selectProgrammePlaceholder}</option>
               {programmeCodes.map((code) => (
                 <option key={code} value={code}>
                   {code}
@@ -1637,15 +1670,24 @@ export function MakeTimetablePage() {
 
           <div className="flex items-end">
             <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              Select a programme (all streams). Student numbers and combine are
-              programme-wide; streams are combined automatically when the same
-              module code applies.
+              Step 1 requires a programme (all streams). Combine, split, and
+              schedule are locked until you select one.
             </div>
           </div>
         </div>
       </div>
 
-      <StepTabs step={step} setStep={setStep} />
+      {!programmeCode && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {t.selectProgrammeRequired}
+        </div>
+      )}
+
+      <StepTabs
+        step={step}
+        programmeSelected={Boolean(programmeCode)}
+        onStepChange={handleStepChange}
+      />
 
       {loading && step !== "student_numbers" ? (
         <LoadingState />
@@ -1674,7 +1716,7 @@ export function MakeTimetablePage() {
             </>
           )}
 
-          {step === "combine" && (
+          {step === "combine" && programmeCode && (
             <CombineStep
               planningModules={planningModules}
               manualGroups={manualGroups}
@@ -1686,7 +1728,7 @@ export function MakeTimetablePage() {
             />
           )}
 
-          {step === "split" && (
+          {step === "split" && programmeCode && (
             <SplitStep
               planningModules={planningModules}
               studentRows={studentRows}
@@ -1712,7 +1754,7 @@ export function MakeTimetablePage() {
             />
           )}
 
-          {step === "schedule" && (
+          {step === "schedule" && programmeCode && (
             <ScheduleStep
               academicYear={academicYear}
               timetableInstances={scheduleInstances}

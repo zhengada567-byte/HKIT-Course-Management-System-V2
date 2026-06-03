@@ -70,6 +70,9 @@ export const zhHant = {
   excludedModules: "已從本年度開課清單排除",
   excludeFromOfferingConfirm:
     "從本年度開課清單移除此科？科目主檔不會刪除。",
+  selectProgrammePlaceholder: "— 請選擇課程 —",
+  selectProgrammeRequired:
+    "請先在第一步選擇課程，才能進入合班、分班或排課。",
   search: "搜尋",
   reset: "重設",
   displayModules: "顯示科目",

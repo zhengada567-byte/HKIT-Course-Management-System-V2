@@ -70,6 +70,9 @@ export const en = {
   excludedModules: "Excluded from offering list",
   excludeFromOfferingConfirm:
     "Remove this module from this year's offering list? The module catalogue row is kept.",
+  selectProgrammePlaceholder: "— Select programme —",
+  selectProgrammeRequired:
+    "Please select a programme in step 1 before continuing to combine, split, or schedule.",
   search: "Search",
   reset: "Reset",
   displayModules: "Display Modules",
