@@ -13,6 +13,7 @@ export type {
   TeachingMode,
   ProgrammeType,
   SelectOption,
+  PlanningOfferingStatus,
 } from "./common";
 
 export type {

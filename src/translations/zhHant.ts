@@ -65,6 +65,11 @@ export const zhHant = {
   delete: "刪除",
   create: "新增",
   addNewModule: "新增科目",
+  excludeFromOffering: "不開課",
+  restoreToOffering: "還原開課",
+  excludedModules: "已從本年度開課清單排除",
+  excludeFromOfferingConfirm:
+    "從本年度開課清單移除此科？科目主檔不會刪除。",
   search: "搜尋",
   reset: "重設",
   displayModules: "顯示科目",

@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { filterActivePlanningModules } from "../lib/timetablePlanningOffering";
 import type {
   CombineGroupRow,
   ModuleEnrollmentRow,
@@ -343,8 +344,9 @@ export async function applyNaturalCombine(params: {
 
   if (planningError) throw planningError;
 
-  const planningModules =
-  (planningData ?? []) as TimetablePlanningModuleRow[];
+  const planningModules = filterActivePlanningModules(
+    (planningData ?? []) as TimetablePlanningModuleRow[]
+  );
 
 /*
   Important:

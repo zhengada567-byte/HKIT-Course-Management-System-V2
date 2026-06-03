@@ -1,10 +1,15 @@
 import { supabase } from "../lib/supabase";
 import {
+  filterActivePlanningModules,
+  filterExcludedPlanningModules,
+} from "../lib/timetablePlanningOffering";
+import {
   getAcademicYearVariants,
   normalizeAcademicYear,
   normalizeStream,
   offeredTermToStudyTerm,
 } from "../lib/utils";
+import type { PlanningOfferingStatus } from "../types";
 import type {
   ModuleAdjustmentRow,
   ModuleRow,
@@ -185,6 +190,7 @@ export async function generateTimetablePlanningModules(
       manual_combine_group_id: null,
       split_status: "not_started",
       assignment_status: "not_started",
+      offering_status: "active" as PlanningOfferingStatus,
       created_by: params.createdBy,
     };
   });
@@ -290,6 +296,7 @@ export async function ensureTimetablePlanningModules(
       manual_combine_group_id: null,
       split_status: "not_started",
       assignment_status: "not_started",
+      offering_status: "active" as PlanningOfferingStatus,
       created_by: params.createdBy,
     };
   });
@@ -321,12 +328,33 @@ function normalizePlanningRowsToYear(
   }));
 }
 
+export type PlanningModulesOfferingFilter = "active" | "excluded" | "all";
+
+function filterPlanningModulesByOffering<
+  T extends TimetablePlanningModuleRow,
+>(
+  rows: T[],
+  offeringStatus: PlanningModulesOfferingFilter = "active"
+) {
+  if (offeringStatus === "all") {
+    return rows;
+  }
+
+  if (offeringStatus === "excluded") {
+    return filterExcludedPlanningModules(rows);
+  }
+
+  return filterActivePlanningModules(rows);
+}
+
 export async function listPlanningModules(params: {
   academicYear: string;
   programmeCode?: string;
   streamCode?: string;
+  offeringStatus?: PlanningModulesOfferingFilter;
 }) {
   const yearVariants = getAcademicYearVariants(params.academicYear);
+  const offeringStatus = params.offeringStatus ?? "active";
 
   let query = supabase
     .from("timetable_planning_modules")
@@ -340,14 +368,20 @@ export async function listPlanningModules(params: {
     query = query.eq("programme_code", params.programmeCode);
   }
 
+  if (offeringStatus !== "all") {
+    query = query.eq("offering_status", offeringStatus);
+  }
+
   const { data, error } = await query;
 
   if (error) throw error;
 
-  const rows = normalizePlanningRowsToYear(
+  let rows = normalizePlanningRowsToYear(
     (data ?? []) as TimetablePlanningModuleRow[],
     params.academicYear
   );
+
+  rows = filterPlanningModulesByOffering(rows, offeringStatus);
 
   if (!params.streamCode) {
     return rows;
@@ -502,6 +536,7 @@ export async function listPlanningModulesWithStudentNumbers(params: {
   academicYear: string;
   programmeCode?: string;
   streamCode?: string;
+  offeringStatus?: PlanningModulesOfferingFilter;
 }) {
   const planningModules = await listPlanningModules(params);
 
@@ -513,8 +548,11 @@ export async function listPlanningModulesWithStudentNumbers(params: {
 
 export async function listAllPlanningModulesWithStudentNumbers(params: {
   academicYear: string;
+  offeringStatus?: PlanningModulesOfferingFilter;
 }) {
-  const { data, error } = await supabase
+  const offeringStatus = params.offeringStatus ?? "active";
+
+  let query = supabase
     .from("timetable_planning_modules")
     .select("*")
     .eq("academic_year", params.academicYear)
@@ -522,9 +560,18 @@ export async function listAllPlanningModulesWithStudentNumbers(params: {
     .order("stream_code")
     .order("module_code");
 
+  if (offeringStatus !== "all") {
+    query = query.eq("offering_status", offeringStatus);
+  }
+
+  const { data, error } = await query;
+
   if (error) throw error;
 
-  const planningModules = (data ?? []) as TimetablePlanningModuleRow[];
+  const planningModules = filterPlanningModulesByOffering(
+    (data ?? []) as TimetablePlanningModuleRow[],
+    offeringStatus
+  );
 
   return attachStudentNumbersAndDefaults({
     academicYear: params.academicYear,

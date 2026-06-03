@@ -50,6 +50,8 @@ export interface StudentNumberInputRow {
   /** Actual run / intake term (T2025A, T2025B, ...). */
   study_term: string;
   streams_included: string[];
+  /** All active planning rows aggregated into this display row. */
+  planning_module_ids: string[];
   expected_student_number: number | null;
   actual_student_number: number | null;
 }
@@ -221,6 +223,7 @@ export function buildStudentNumberInputRows(
         programme_stream: timetableStream,
         study_term: studyTerm,
         streams_included: [],
+        planning_module_ids: [],
         expected_student_number: resolveExpectedStudentNumberOnSync({
           existingExpected:
             existing?.expected_student_number ??
@@ -245,6 +248,10 @@ export function buildStudentNumberInputRows(
 
     if (!row.streams_included.includes(streamDisplay)) {
       row.streams_included.push(streamDisplay);
+    }
+
+    if (!row.planning_module_ids.includes(module.id)) {
+      row.planning_module_ids.push(module.id);
     }
   }
 

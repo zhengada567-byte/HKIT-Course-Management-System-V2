@@ -21,6 +21,8 @@ export type SplitStatus = "not_started" | "no_split" | "split";
 
 export type AssignmentStatus = "not_started" | "assigned" | "confirmed";
 
+export type PlanningOfferingStatus = "active" | "excluded";
+
 export type TeachingMode = "Day" | "Night" | "Saturday";
 
 export type ProgrammeType = "HD" | "Degree" | string;

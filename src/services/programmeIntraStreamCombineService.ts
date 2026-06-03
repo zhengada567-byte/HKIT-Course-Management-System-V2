@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { filterActivePlanningModules } from "../lib/timetablePlanningOffering";
 import type { TimetablePlanningModuleRow } from "../types";
 import { createManualCombineGroup } from "./manualCombineService";
 
@@ -117,7 +118,9 @@ export async function applyProgrammeIntraStreamAutoCombine(params: {
 
   if (error) throw error;
 
-  const planningModules = (data ?? []) as TimetablePlanningModuleRow[];
+  const planningModules = filterActivePlanningModules(
+    (data ?? []) as TimetablePlanningModuleRow[]
+  );
   const candidates = detectProgrammeIntraStreamCombineCandidates(planningModules);
 
   let appliedCount = 0;

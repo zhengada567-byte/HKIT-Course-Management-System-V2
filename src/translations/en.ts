@@ -65,6 +65,11 @@ export const en = {
   delete: "Delete",
   create: "Create",
   addNewModule: "Add New Module",
+  excludeFromOffering: "Not Offered",
+  restoreToOffering: "Restore to Offering",
+  excludedModules: "Excluded from offering list",
+  excludeFromOfferingConfirm:
+    "Remove this module from this year's offering list? The module catalogue row is kept.",
   search: "Search",
   reset: "Reset",
   displayModules: "Display Modules",

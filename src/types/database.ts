@@ -8,6 +8,7 @@ import type {
   CombineType,
   EmploymentType,
   ModuleTerm,
+  PlanningOfferingStatus,
   SplitStatus,
   TeachingMode,
   TeachingStatus,
@@ -136,6 +137,9 @@ export interface TimetablePlanningModuleRow {
   manual_combine_group_id: string | null;
   split_status: SplitStatus;
   assignment_status: AssignmentStatus;
+  offering_status: PlanningOfferingStatus;
+  excluded_at: string | null;
+  excluded_by: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

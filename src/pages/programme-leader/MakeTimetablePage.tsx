@@ -39,6 +39,10 @@ import {
   validateStudentNumbersComplete,
   type StudentNumberInputRow,
 } from "../../services/studentNumberService";
+import {
+  excludePlanningModules,
+  restorePlanningModules,
+} from "../../services/timetablePlanningOfferingService";
 import { syncStudyPlanStudentNumbersToTimetable } from "../../services/timetableStudentNumberSyncService";
 import {
   normalizeStream,
@@ -153,6 +157,9 @@ export function MakeTimetablePage() {
   >([]);
 
   const [studentRows, setStudentRows] = useState<StudentNumberInputRow[]>([]);
+  const [excludedModules, setExcludedModules] = useState<
+    PlanningModuleWithStudentNumber[]
+  >([]);
   const [manualGroups, setManualGroups] = useState<
     ManualCombineGroupWithDetails[]
   >([]);
@@ -183,6 +190,7 @@ export function MakeTimetablePage() {
 
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [offeringBusy, setOfferingBusy] = useState(false);
   const [message, setMessage] = useState("");
   const programmeCodes = useMemo(
     () => [...new Set(programmes.map((p) => p.programme_code))],
@@ -229,9 +237,26 @@ export function MakeTimetablePage() {
     const data = await listPlanningModulesWithStudentNumbers({
       academicYear,
       programmeCode: programmeCode || undefined,
+      offeringStatus: "active",
     });
 
     setPlanningModules(data);
+    return data;
+  }
+
+  async function refreshExcludedModules() {
+    if (!programmeCode) {
+      setExcludedModules([]);
+      return [];
+    }
+
+    const data = await listPlanningModulesWithStudentNumbers({
+      academicYear,
+      programmeCode,
+      offeringStatus: "excluded",
+    });
+
+    setExcludedModules(data);
     return data;
   }
 
@@ -248,9 +273,68 @@ export function MakeTimetablePage() {
   }
 
   async function loadStudentNumberRows() {
-    const planning = await refreshPlanning();
+    const [planning] = await Promise.all([
+      refreshPlanning(),
+      refreshExcludedModules(),
+    ]);
     const rows = await refreshStudentRows(planning);
     return { planning, rows };
+  }
+
+  async function handleExcludeFromOffering(row: StudentNumberInputRow) {
+    if (!user?.id) {
+      setMessage("Please login before updating the offering list.");
+      return;
+    }
+
+    if (row.planning_module_ids.length === 0) {
+      setMessage("No planning module linked to this row.");
+      return;
+    }
+
+    const ok = window.confirm(t.excludeFromOfferingConfirm);
+
+    if (!ok) return;
+
+    setOfferingBusy(true);
+    setMessage("");
+
+    try {
+      await excludePlanningModules({
+        planningModuleIds: row.planning_module_ids,
+        excludedBy: user.id,
+      });
+
+      await loadStudentNumberRows();
+      setMessage(
+        `Excluded ${row.module_code} from the ${academicYear} offering list.`
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Could not exclude module."
+      );
+    } finally {
+      setOfferingBusy(false);
+    }
+  }
+
+  async function handleRestoreToOffering(
+    module: PlanningModuleWithStudentNumber
+  ) {
+    setOfferingBusy(true);
+    setMessage("");
+
+    try {
+      await restorePlanningModules([module.id]);
+      await loadStudentNumberRows();
+      setMessage(`Restored ${module.module_code} to the offering list.`);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Could not restore module."
+      );
+    } finally {
+      setOfferingBusy(false);
+    }
   }
 
   async function refreshCombineGroups(filters?: { programmeCode?: string }) {
@@ -1576,11 +1660,15 @@ export function MakeTimetablePage() {
               )}
               <StudentNumberStep
                 rows={studentRows}
+                excludedModules={excludedModules}
                 updateRow={updateStudentRow}
                 onSync={handleSyncFromStudyPlan}
                 onSave={handleSaveStudentNumbers}
+                onExclude={(row) => void handleExcludeFromOffering(row)}
+                onRestoreExcluded={(row) => void handleRestoreToOffering(row)}
                 syncDisabled={!programmeCode || loading}
                 syncing={syncing}
+                offeringBusy={offeringBusy}
                 programmeSelected={Boolean(programmeCode)}
               />
             </>
