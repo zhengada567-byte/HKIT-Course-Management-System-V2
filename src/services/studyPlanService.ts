@@ -808,6 +808,8 @@ function toStudentRow(student: StudyPlanStudent) {
     intake_term: student.intakeTerm ?? null,
     graduate_term: student.graduateTerm ?? null,
     ok_to_articulate: isOkToArticulateForReport(student.okToArticulate),
+    remark1: student.remark1 ?? null,
+    remark2: student.remark2 ?? null,
     updated_at: new Date().toISOString(),
   };
 }
@@ -834,6 +836,8 @@ function fromStudentRow(row: any): StudyPlanStudent {
     intakeTerm: row.intake_term ?? undefined,
     graduateTerm: row.graduate_term ?? undefined,
     okToArticulate: isOkToArticulateForReport(row.ok_to_articulate),
+    remark1: row.remark1 ?? undefined,
+    remark2: row.remark2 ?? undefined,
   };
 }
 
@@ -2810,6 +2814,79 @@ export async function upsertStudyPlanModuleRow(
  * Important:
  * modules table currently does NOT have module_sequence.
  */
+/**
+ * All distinct module codes for a programme (any stream), for upload templates.
+ */
+export async function loadProgrammeModuleCatalogForTemplate(
+  programmeCode: string
+): Promise<StudyPlanModule[]> {
+  const code = String(programmeCode ?? "").trim();
+
+  if (!code) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("modules")
+    .select(
+      `
+      id,
+      module_code,
+      module_name,
+      module_year,
+      module_term,
+      programme_code,
+      stream_code
+      `
+    )
+    .eq("programme_code", code)
+    .order("module_year", { ascending: true })
+    .order("module_term", { ascending: true })
+    .order("module_code", { ascending: true });
+
+  if (error) {
+    console.error(
+      "[StudyPlanService] Failed to load programme module catalog:",
+      error
+    );
+    throw error;
+  }
+
+  const moduleMap = new Map<string, any>();
+
+  for (const row of data ?? []) {
+    const moduleCode = String(row.module_code ?? "").trim();
+
+    if (!moduleCode) continue;
+
+    if (!moduleMap.has(moduleCode)) {
+      moduleMap.set(moduleCode, row);
+    }
+  }
+
+  const sortedRows = sortModuleRowsForDisplay(Array.from(moduleMap.values()));
+
+  return sortedRows.map((row: any): StudyPlanModule => {
+    const moduleTerm = row.module_term ?? undefined;
+
+    return {
+      sourceModuleId: row.id ?? undefined,
+      programmeCode: row.programme_code,
+      programmeStream: row.stream_code ?? "nil",
+      moduleCode: row.module_code,
+      moduleName: row.module_name ?? row.module_code,
+      moduleYear: row.module_year ?? undefined,
+      moduleTerm,
+      moduleTermPattern: moduleTerm,
+      planStage: "programme",
+      status: "planned",
+      isExempted: false,
+      isFailed: false,
+      isLocked: false,
+    };
+  });
+}
+
 export async function loadProgrammeModules(
   programmeCode: string,
   programmeStream?: string

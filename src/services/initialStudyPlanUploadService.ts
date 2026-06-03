@@ -13,6 +13,11 @@ import {
 } from "../lib/studyPlanModuleCode";
 
 import {
+  parseArticulationFromUpload,
+  parseRemarkFromUpload,
+} from "../lib/studyPlanCsvFormat";
+
+import {
   generateStudyPlanForStudent,
   getDegreeStartTermAfterBridging,
 } from "../pages/programme-leader/make-study-plan/studyPlanRules";
@@ -91,6 +96,7 @@ const STUDENT_FIELD_ALIASES = {
   intakeTerm: ["intake_term", "intake term", "intaketerm"],
   studyMode: ["study_mode", "study mode", "studymode", "mode"],
   sex: ["sex", "gender"],
+  programmeCode: ["programme_code", "programme code"],
   programmeStream: [
     "programme_stream",
     "programme stream",
@@ -98,6 +104,14 @@ const STUDENT_FIELD_ALIASES = {
     "program stream",
     "stream",
   ],
+  articulation: [
+    "articulation",
+    "ok_to_articulate",
+    "ok to articulate",
+    "原校升學",
+  ],
+  remark1: ["remark1", "remark 1"],
+  remark2: ["remark2", "remark 2"],
 };
 
 const NON_MODULE_HEADER_ALIASES = [
@@ -127,6 +141,16 @@ const NON_MODULE_HEADER_ALIASES = [
   "program_stream",
   "program stream",
   "stream",
+  "programme_code",
+  "programme code",
+  "articulation",
+  "ok_to_articulate",
+  "ok to articulate",
+  "原校升學",
+  "remark1",
+  "remark 1",
+  "remark2",
+  "remark 2",
   "module_code",
   "module code",
   "study_term",
@@ -553,6 +577,21 @@ function buildStudentFromRow(
 
   const intakeTerm = getValueByAliases(row, STUDENT_FIELD_ALIASES.intakeTerm);
 
+  const rowProgrammeCode = getValueByAliases(
+    row,
+    STUDENT_FIELD_ALIASES.programmeCode
+  );
+  const articulation = getValueByAliases(
+    row,
+    STUDENT_FIELD_ALIASES.articulation
+  );
+  const remark1 = parseRemarkFromUpload(
+    row.values[findHeaderIndex(row.headers, STUDENT_FIELD_ALIASES.remark1)]
+  );
+  const remark2 = parseRemarkFromUpload(
+    row.values[findHeaderIndex(row.headers, STUDENT_FIELD_ALIASES.remark2)]
+  );
+
   if (!studentId) {
     errors.push({
       row: row.rowNumber,
@@ -571,6 +610,18 @@ function buildStudentFromRow(
     return null;
   }
 
+  if (
+    rowProgrammeCode &&
+    rowProgrammeCode.toUpperCase() !== programmeCode.toUpperCase()
+  ) {
+    errors.push({
+      row: row.rowNumber,
+      studentId,
+      message: `programme code "${rowProgrammeCode}" does not match selected programme "${programmeCode}".`,
+    });
+    return null;
+  }
+
   const student = {
     studentId,
     studentName,
@@ -582,7 +633,9 @@ function buildStudentFromRow(
       : optionalText(intakeLevel),
     intakeTerm: optionalText(intakeTerm),
     studentStatus: "potential",
-    okToArticulate: true,
+    okToArticulate: parseArticulationFromUpload(articulation),
+    remark1,
+    remark2,
   } as StudyPlanStudent;
 
   return student;

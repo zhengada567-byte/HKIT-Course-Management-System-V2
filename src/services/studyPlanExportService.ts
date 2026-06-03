@@ -1,6 +1,6 @@
 import { saveAs } from "file-saver";
 
-import type { StudyPlanModule } from "../pages/programme-leader/make-study-plan/types";
+import { buildStudyPlanCsvContent } from "../lib/studyPlanCsvFormat";
 
 import {
   loadStudyPlanExportBundles,
@@ -23,34 +23,6 @@ export interface DownloadStudyPlanCsvParams {
   programmeCode?: string;
   programmeStream?: string;
   programmeType?: string;
-}
-
-const STUDENT_HEADERS = [
-  "Student Name",
-  "Intake Level",
-  "student ID",
-  "Intake term",
-  "study mode",
-  "programme stream",
-  "programme code",
-] as const;
-
-function escapeCsvCell(value: unknown): string {
-  const text = String(value ?? "");
-
-  if (/[",\n\r]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-
-  return text;
-}
-
-function studyTermCellValue(module: StudyPlanModule): string {
-  if (module.status === "exempted") {
-    return "Exempted";
-  }
-
-  return String(module.studyTerm ?? "").trim();
 }
 
 function buildExportFilters(
@@ -80,7 +52,7 @@ function buildExportFilters(
   }
 }
 
-function buildStudyPlanCsvContent(bundles: StudyPlanExportBundle[]): string {
+function buildStudyPlanCsvFromBundles(bundles: StudyPlanExportBundle[]): string {
   const exportModulesByStudent = bundles.map(({ modules }) =>
     sortModulesForStudyPlanExport(modules).filter(
       shouldIncludeModuleInStudyPlanExport
@@ -92,41 +64,13 @@ function buildStudyPlanCsvContent(bundles: StudyPlanExportBundle[]): string {
     ...exportModulesByStudent.map((modules) => modules.length)
   );
 
-  const pairHeaders: string[] = [];
-
-  for (let index = 0; index < maxPairCount; index += 1) {
-    pairHeaders.push("Module code", "Study term");
-  }
-
-  const headerRow = [...STUDENT_HEADERS, ...pairHeaders];
-
-  const dataRows = bundles.map(({ student, modules }, bundleIndex) => {
-    const exportModules = exportModulesByStudent[bundleIndex] ?? [];
-
-    const row: string[] = [
-      student.studentName,
-      student.intakeLevel ?? "",
-      student.studentId,
-      student.intakeTerm ?? "",
-      student.studyMode,
-      student.programmeStream ?? "nil",
-      student.programmeCode,
-    ];
-
-    for (const module of exportModules) {
-      row.push(module.moduleCode, studyTermCellValue(module));
-    }
-
-    while (row.length < headerRow.length) {
-      row.push("");
-    }
-
-    return row;
+  return buildStudyPlanCsvContent({
+    modulePairCount: maxPairCount,
+    students: bundles.map(({ student, modules }, bundleIndex) => ({
+      student,
+      modules: exportModulesByStudent[bundleIndex] ?? [],
+    })),
   });
-
-  return [headerRow, ...dataRows]
-    .map((row) => row.map(escapeCsvCell).join(","))
-    .join("\n");
 }
 
 function buildStudyPlanExportFileName(
@@ -159,7 +103,7 @@ export async function buildStudyPlanCsvExport(
     throw new Error("No study plans found for the selected export scope.");
   }
 
-  const csvContent = buildStudyPlanCsvContent(bundles);
+  const csvContent = buildStudyPlanCsvFromBundles(bundles);
   const fileName = buildStudyPlanExportFileName(params, bundles.length);
 
   return {

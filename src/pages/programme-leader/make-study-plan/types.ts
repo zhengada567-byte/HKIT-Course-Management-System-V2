@@ -42,6 +42,10 @@ export interface StudyPlanStudent {
    * Default true. PL can set false to exclude from report counts only.
    */
   okToArticulate?: boolean;
+
+  /** Optional PL notes (CSV import/export). */
+  remark1?: string;
+  remark2?: string;
 }
 
 export interface StudyPlanModule {

@@ -1089,6 +1089,30 @@ export default function StudentProfileEditor({
               </p>
             </label>
           )}
+
+          <label className="space-y-1 md:col-span-2">
+            <span className="text-sm font-medium">remark1</span>
+            <input
+              className="w-full border rounded-md px-3 py-2"
+              value={student.remark1 ?? ""}
+              onChange={(event) =>
+                updateStudent("remark1", event.target.value)
+              }
+              placeholder="Optional note for this student"
+            />
+          </label>
+
+          <label className="space-y-1 md:col-span-2">
+            <span className="text-sm font-medium">remark2</span>
+            <input
+              className="w-full border rounded-md px-3 py-2"
+              value={student.remark2 ?? ""}
+              onChange={(event) =>
+                updateStudent("remark2", event.target.value)
+              }
+              placeholder="Optional second note"
+            />
+          </label>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 border-t pt-4">
