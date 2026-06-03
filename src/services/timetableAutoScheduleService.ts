@@ -23,14 +23,14 @@ import {
   buildFtTeacherNameSet,
   buildWeeklyTimeslotKey,
   createStreamYearTimeslotState,
+  isStreamYearTimeslotBlocked,
   normalizeSchedulingStream,
   recordAutoSchedulePlacement,
+  SCHEDULING_WEEKDAY_LABEL,
   SCHEDULING_WEEKDAYS,
   scoreAutoScheduleSlot,
   type StreamYearTimeslotState,
 } from "../lib/timetableSchedulingRules";
-
-export type AutoScheduleFailure = { code: string; reason: string };
 import { addDays, toIsoDateString } from "../lib/academicCalendar";
 import { loadPlanningModulesByCombineGroupIds } from "./splitClassService";
 import { buildModuleCatalogKey, loadModuleUsesComputerMap } from "./moduleService";
@@ -44,6 +44,238 @@ type Period = "AM" | "PM" | "EVENING";
 
 const NIGHT_START = "18:30";
 const NIGHT_END = "22:30";
+
+export type AutoScheduleFailure = {
+  code: string;
+  module_year: string | null;
+  mode: string | null;
+  stream_code: string | null;
+  programme_code: string | null;
+  time_window: string;
+  reason: string;
+  weekday_detail: string;
+};
+
+function resolveInstanceMode(
+  instance: TimetableModuleInstanceRow,
+  timetableModule: { mode?: string | null }
+) {
+  const fromInstance = String(instance.instance_mode ?? "").trim();
+  if (fromInstance) return fromInstance;
+
+  return String(timetableModule.mode ?? "").trim();
+}
+
+function buildAutoScheduleFailure(params: {
+  instance: TimetableModuleInstanceRow;
+  timetableModule: {
+    programme_code: string;
+    stream_code: string;
+    module_year?: string | null;
+    mode?: string | null;
+  };
+  start: string;
+  end: string;
+  reason: string;
+  weekdayDetail?: string;
+}): AutoScheduleFailure {
+  const mode = resolveInstanceMode(params.instance, params.timetableModule);
+
+  return {
+    code: params.instance.module_instance_code,
+    module_year: String(params.timetableModule.module_year ?? "").trim() || null,
+    mode: mode || null,
+    stream_code: String(params.timetableModule.stream_code ?? "").trim() || null,
+    programme_code:
+      String(params.timetableModule.programme_code ?? "").trim() || null,
+    time_window: `${params.start}–${params.end}`,
+    reason: params.reason,
+    weekday_detail: params.weekdayDetail ?? "",
+  };
+}
+
+function diagnoseWeekdayPlacementFailures(params: {
+  weekday: Weekday;
+  start: string;
+  end: string;
+  period: Period;
+  teacherName: string;
+  programmeCode: string;
+  streamKey: string;
+  moduleYear: string;
+  alignKey: string;
+  rooms: TimetableClassroomRow[];
+  naSet: Set<string>;
+  takenTeacherSlots: Set<string>;
+  takenRoomSlots: Set<string>;
+  existingByDate: Map<string, TimetableSessionRow[]>;
+  streamYearTimeslotState: StreamYearTimeslotState;
+  streamSlotByModule: Map<string, Map<string, string>>;
+  streamYearOccupiedSlots: Map<string, Set<string>>;
+  streamAllOccupiedSlots: Map<string, Set<string>>;
+  programmeSlotStreams: Map<string, Map<string, Set<string>>>;
+  teachingDates: string[];
+}): string | null {
+  const label =
+    SCHEDULING_WEEKDAY_LABEL[
+      params.weekday as keyof typeof SCHEDULING_WEEKDAY_LABEL
+    ] ?? String(params.weekday);
+
+  if (params.naSet.has(`${params.teacherName}||${params.weekday}||${params.period}`)) {
+    return `${label}: teacher Not Available (${params.period})`;
+  }
+
+  const slotKey = buildTimeslotKey({
+    weekday: params.weekday,
+    start: params.start,
+    end: params.end,
+  });
+
+  if (params.takenTeacherSlots.has(teacherSlotKey(params.teacherName, slotKey))) {
+    return `${label}: teacher already has ${params.start}–${params.end} on this weekday`;
+  }
+
+  if (
+    isStreamYearTimeslotBlocked(params.streamYearTimeslotState, {
+      programmeCode: params.programmeCode,
+      streamKey: params.streamKey,
+      moduleYear: params.moduleYear,
+      slotKey,
+    })
+  ) {
+    return `${label}: same programme+stream+year already uses ${params.start}–${params.end} (another module — not a free-room issue)`;
+  }
+
+  let sawRoomNotWeeklyTaken = false;
+  let sawNoDateConflict = false;
+  let sawScoredSlot = false;
+  let sawScoreNullOnly = false;
+
+  for (const room of params.rooms) {
+    if (params.takenRoomSlots.has(roomSlotKey(room.room_code, slotKey))) {
+      continue;
+    }
+
+    sawRoomNotWeeklyTaken = true;
+
+    let conflict = false;
+    for (const date of params.teachingDates) {
+      const existing = params.existingByDate.get(date) ?? [];
+      const overlapped = existing.some((s) => {
+        if (s.status === "cancel") return false;
+        const sStart = String(s.start_time).slice(0, 5);
+        const sEnd = String(s.end_time).slice(0, 5);
+        if (!overlaps({ start: params.start, end: params.end }, { start: sStart, end: sEnd })) {
+          return false;
+        }
+        if (s.room_code === room.room_code) return true;
+        if (String(s.teacher_name ?? "").trim() === params.teacherName) return true;
+        return false;
+      });
+      if (overlapped) {
+        conflict = true;
+        break;
+      }
+    }
+
+    if (conflict) continue;
+
+    sawNoDateConflict = true;
+
+    const score = scoreAutoScheduleSlot({
+      slotKey,
+      streamKey: params.streamKey,
+      moduleYear: params.moduleYear,
+      alignKey: params.alignKey,
+      programmeCode: params.programmeCode,
+      streamYearTimeslotState: params.streamYearTimeslotState,
+      streamSlotByModule: params.streamSlotByModule,
+      streamYearOccupiedSlots: params.streamYearOccupiedSlots,
+      streamAllOccupiedSlots: params.streamAllOccupiedSlots,
+      programmeSlotStreams: params.programmeSlotStreams,
+    });
+
+    if (score === null) {
+      sawScoreNullOnly = true;
+      continue;
+    }
+
+    sawScoredSlot = true;
+  }
+
+  if (sawScoredSlot) {
+    return null;
+  }
+
+  if (!sawRoomNotWeeklyTaken) {
+    return `${label}: all suitable rooms already taken at ${params.start}–${params.end}`;
+  }
+
+  if (!sawNoDateConflict) {
+    return `${label}: existing session clashes (teacher or room) on teaching dates`;
+  }
+
+  if (sawScoreNullOnly) {
+    return `${label}: scheduling rule blocked (${params.programmeCode} ${params.streamKey} ${params.moduleYear} — same programme+stream+same year slot)`;
+  }
+
+  return `${label}: no feasible room`;
+}
+
+function buildWeekdayFailureDetail(params: {
+  start: string;
+  end: string;
+  period: Period;
+  teacherName: string;
+  programmeCode: string;
+  streamKey: string;
+  moduleYear: string;
+  alignKey: string;
+  rooms: TimetableClassroomRow[];
+  naSet: Set<string>;
+  takenTeacherSlots: Set<string>;
+  takenRoomSlots: Set<string>;
+  existingByDate: Map<string, TimetableSessionRow[]>;
+  streamYearTimeslotState: StreamYearTimeslotState;
+  streamSlotByModule: Map<string, Map<string, string>>;
+  streamYearOccupiedSlots: Map<string, Set<string>>;
+  streamAllOccupiedSlots: Map<string, Set<string>>;
+  programmeSlotStreams: Map<string, Map<string, Set<string>>>;
+  teachingDatesByWeekday: Map<Weekday, string[]>;
+}): string {
+  const notes: string[] = [];
+
+  for (const weekday of SCHEDULING_WEEKDAYS) {
+    const note = diagnoseWeekdayPlacementFailures({
+      weekday,
+      start: params.start,
+      end: params.end,
+      period: params.period,
+      teacherName: params.teacherName,
+      programmeCode: params.programmeCode,
+      streamKey: params.streamKey,
+      moduleYear: params.moduleYear,
+      alignKey: params.alignKey,
+      rooms: params.rooms,
+      naSet: params.naSet,
+      takenTeacherSlots: params.takenTeacherSlots,
+      takenRoomSlots: params.takenRoomSlots,
+      existingByDate: params.existingByDate,
+      streamYearTimeslotState: params.streamYearTimeslotState,
+      streamSlotByModule: params.streamSlotByModule,
+      streamYearOccupiedSlots: params.streamYearOccupiedSlots,
+      streamAllOccupiedSlots: params.streamAllOccupiedSlots,
+      programmeSlotStreams: params.programmeSlotStreams,
+      teachingDates: params.teachingDatesByWeekday.get(weekday) ?? [],
+    });
+
+    if (note) {
+      notes.push(note);
+    }
+  }
+
+  return notes.join("; ");
+}
 
 function overlaps(a: { start: string; end: string }, b: { start: string; end: string }) {
   return a.start < b.end && b.start < a.end;
@@ -474,42 +706,72 @@ export async function autoScheduleInstances(params: {
   for (const instance of sorted) {
     const teacherName = String(instance.instance_teacher_name ?? "").trim();
     if (!teacherName) {
-      failures.push({
-        code: instance.module_instance_code,
-        reason: "Missing teacher name on instance.",
-      });
+      failures.push(
+        buildAutoScheduleFailure({
+          instance,
+          timetableModule: {
+            programme_code: "",
+            stream_code: "",
+            module_year: null,
+            mode: instance.instance_mode,
+          },
+          start: NIGHT_START,
+          end: NIGHT_END,
+          reason: "Missing teacher name on instance.",
+        })
+      );
       continue;
     }
 
     const timetableModule = moduleByInstanceCode.get(instance.module_instance_code);
     if (!timetableModule) {
-      failures.push({
-        code: instance.module_instance_code,
-        reason: "Missing timetable_modules row for this instance code.",
-      });
+      failures.push(
+        buildAutoScheduleFailure({
+          instance,
+          timetableModule: {
+            programme_code: "",
+            stream_code: "",
+            module_year: null,
+            mode: instance.instance_mode,
+          },
+          start: NIGHT_START,
+          end: NIGHT_END,
+          reason: "Missing timetable_modules row for this instance code.",
+        })
+      );
       continue;
     }
 
     if (placedTimetableModuleIds.has(timetableModule.id)) {
-      failures.push({
-        code: instance.module_instance_code,
-        reason:
-          "This timetable module already has a slot assigned in this auto-schedule run.",
-      });
+      failures.push(
+        buildAutoScheduleFailure({
+          instance,
+          timetableModule,
+          start: NIGHT_START,
+          end: NIGHT_END,
+          reason:
+            "This timetable module already has a slot assigned in this auto-schedule run.",
+        })
+      );
       continue;
     }
 
     const moduleYear = String(timetableModule.module_year ?? "").trim();
     if (!moduleYear) {
-      failures.push({
-        code: instance.module_instance_code,
-        reason: "Missing module_year (required for conflict rule).",
-      });
+      failures.push(
+        buildAutoScheduleFailure({
+          instance,
+          timetableModule,
+          start: NIGHT_START,
+          end: NIGHT_END,
+          reason: "Missing module_year (required for conflict rule).",
+        })
+      );
       continue;
     }
 
     const size = Number(instance.instance_expected_size ?? 0);
-    const mode = String(instance.instance_mode ?? "").trim();
+    const mode = resolveInstanceMode(instance, timetableModule);
 
     let start = NIGHT_START;
     let end = NIGHT_END;
@@ -556,12 +818,17 @@ export async function autoScheduleInstances(params: {
             .join(", ") || "none"
         : "";
 
-      failures.push({
-        code: instance.module_instance_code,
-        reason: requiresComputer
-          ? `No computer room fits ${size} students (capacities incl. +10: ${capacityHint}).`
-          : `No room fits ${size} students.`,
-      });
+      failures.push(
+        buildAutoScheduleFailure({
+          instance,
+          timetableModule,
+          start,
+          end,
+          reason: requiresComputer
+            ? `No computer room fits ${size} students (capacities incl. +10: ${capacityHint}).`
+            : `No room fits ${size} students.`,
+        })
+      );
       continue;
     }
 
@@ -684,11 +951,56 @@ export async function autoScheduleInstances(params: {
     }
 
     if (!placed) {
-      failures.push({
-        code: instance.module_instance_code,
-        reason:
-          "No feasible Mon–Fri timeslot/room (Saturday not used; same programme+stream+year must not share a slot; teacher NA; teacher/room occupied; room size/type).",
+      const teachingDatesByWeekday = new Map<Weekday, string[]>();
+
+      for (const weekday of SCHEDULING_WEEKDAYS) {
+        teachingDatesByWeekday.set(
+          weekday,
+          await buildTeachingDates({
+            academicYear: params.academicYear,
+            term: params.term,
+            weekday,
+          })
+        );
+      }
+
+      const weekdayDetail = buildWeekdayFailureDetail({
+        start,
+        end,
+        period,
+        teacherName,
+        programmeCode,
+        streamKey,
+        moduleYear,
+        alignKey,
+        rooms,
+        naSet,
+        takenTeacherSlots,
+        takenRoomSlots,
+        existingByDate,
+        streamYearTimeslotState,
+        streamSlotByModule,
+        streamYearOccupiedSlots,
+        streamAllOccupiedSlots,
+        programmeSlotStreams,
+        teachingDatesByWeekday,
       });
+
+      const modeHint =
+        mode !== "Night" && String(timetableModule.mode ?? "").trim() === "Night"
+          ? " Scheduled as Day (instance_mode empty; timetable mode is Night — set instance mode or re-sync instances)."
+          : "";
+
+      failures.push(
+        buildAutoScheduleFailure({
+          instance,
+          timetableModule,
+          start,
+          end,
+          reason: `No feasible Mon–Fri slot.${modeHint}`,
+          weekdayDetail,
+        })
+      );
     }
   }
 

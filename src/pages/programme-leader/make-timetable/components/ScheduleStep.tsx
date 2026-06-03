@@ -29,6 +29,8 @@ import {
   autoScheduleInstances,
   type AutoScheduleFailure,
 } from "../../../../services/timetableAutoScheduleService";
+import { listTimetableModulesByInstanceCodes } from "../../../../services/timetableService";
+import type { TimetableModuleRow } from "../../../../types";
 import { WeeklyTimetableEditor } from "./WeeklyTimetableEditor";
 
 export function ScheduleStep(props: {
@@ -67,20 +69,70 @@ export function ScheduleStep(props: {
     }
   }, [timetableInstances, term]);
 
+  const [timetableModuleMeta, setTimetableModuleMeta] = useState<
+    Record<string, TimetableModuleRow>
+  >({});
+
+  useEffect(() => {
+    const codes = timetableInstances
+      .map((row) => String(row.module_instance_code ?? "").trim())
+      .filter(Boolean);
+
+    if (codes.length === 0) {
+      setTimetableModuleMeta({});
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const modules = await listTimetableModulesByInstanceCodes({
+          academicYear,
+          moduleInstanceCodes: codes,
+        });
+
+        if (cancelled) return;
+
+        const map: Record<string, TimetableModuleRow> = {};
+        for (const module of modules) {
+          const code = String(module.module_instance_code ?? "").trim();
+          if (code) map[code] = module;
+        }
+        setTimetableModuleMeta(map);
+      } catch {
+        if (!cancelled) setTimetableModuleMeta({});
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYear, timetableInstances]);
+
   const moduleOptions = useMemo(() => {
     return timetableInstances
       .filter((row) => row.module_term === term)
-      .map((row) => ({
-        id: row.id,
-        moduleInstanceCode: row.module_instance_code,
-        moduleName: row.module_name || "",
-        moduleTerm: row.module_term,
-        mode: row.instance_mode || "",
-        size: row.instance_expected_size ?? null,
-        teacherName: row.instance_teacher_name ?? "",
-      }))
+      .map((row) => {
+        const meta = timetableModuleMeta[row.module_instance_code];
+
+        return {
+          id: row.id,
+          moduleInstanceCode: row.module_instance_code,
+          moduleName: row.module_name || "",
+          moduleTerm: row.module_term,
+          moduleYear: meta?.module_year ?? "",
+          streamCode: meta?.stream_code ?? "",
+          mode:
+            String(row.instance_mode ?? "").trim() ||
+            String(meta?.mode ?? "").trim() ||
+            "",
+          size: row.instance_expected_size ?? null,
+          teacherName: row.instance_teacher_name ?? "",
+        };
+      })
       .sort((a, b) => a.moduleInstanceCode.localeCompare(b.moduleInstanceCode));
-  }, [timetableInstances, term]);
+  }, [timetableInstances, term, timetableModuleMeta]);
 
   const instancesForTermCount = useMemo(
     () => timetableInstances.filter((row) => row.module_term === term).length,
@@ -758,6 +810,12 @@ export function ScheduleStep(props: {
                     Module instance
                   </th>
                   <th className="border border-slate-200 bg-slate-50 px-2 py-2 text-left">
+                    Module year
+                  </th>
+                  <th className="border border-slate-200 bg-slate-50 px-2 py-2 text-left">
+                    Stream
+                  </th>
+                  <th className="border border-slate-200 bg-slate-50 px-2 py-2 text-left">
                     Mode
                   </th>
                   <th className="border border-slate-200 bg-slate-50 px-2 py-2 text-left">
@@ -783,6 +841,12 @@ export function ScheduleStep(props: {
                         {m.moduleName
                           ? `- ${dedupeJoinedModuleName(m.moduleName)}`
                           : ""}
+                      </td>
+                      <td className="border border-slate-200 px-2 py-2">
+                        {m.moduleYear || "(empty)"}
+                      </td>
+                      <td className="border border-slate-200 px-2 py-2">
+                        {m.streamCode || "(empty)"}
                       </td>
                       <td className="border border-slate-200 px-2 py-2">
                         {m.mode || "(empty)"}
@@ -861,15 +925,66 @@ export function ScheduleStep(props: {
               <div className="font-medium">
                 Failed modules ({autoFailures.length})
               </div>
-              <ul className="mt-2 max-h-64 list-disc space-y-1 overflow-y-auto pl-5">
-                {autoFailures.map((row) => (
-                  <li key={`${row.code}-${row.reason}`}>
-                    <span className="font-mono font-medium">{row.code}</span>
-                    {" — "}
-                    {row.reason}
-                  </li>
-                ))}
-              </ul>
+              <p className="mt-1 text-xs text-amber-900">
+                Check Module year and per-weekday notes (e.g. why Tue evening was
+                skipped).
+              </p>
+              <div className="mt-2 max-h-80 overflow-auto">
+                <table className="min-w-full border-collapse text-xs">
+                  <thead>
+                    <tr>
+                      <th className="border border-amber-200 bg-amber-100/80 px-2 py-1 text-left">
+                        Code
+                      </th>
+                      <th className="border border-amber-200 bg-amber-100/80 px-2 py-1 text-left">
+                        Year
+                      </th>
+                      <th className="border border-amber-200 bg-amber-100/80 px-2 py-1 text-left">
+                        Stream
+                      </th>
+                      <th className="border border-amber-200 bg-amber-100/80 px-2 py-1 text-left">
+                        Mode
+                      </th>
+                      <th className="border border-amber-200 bg-amber-100/80 px-2 py-1 text-left">
+                        Time
+                      </th>
+                      <th className="border border-amber-200 bg-amber-100/80 px-2 py-1 text-left">
+                        Summary
+                      </th>
+                      <th className="border border-amber-200 bg-amber-100/80 px-2 py-1 text-left">
+                        Mon–Fri detail
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {autoFailures.map((row) => (
+                      <tr key={`${row.code}-${row.reason}`}>
+                        <td className="border border-amber-200 px-2 py-1 font-mono">
+                          {row.code}
+                        </td>
+                        <td className="border border-amber-200 px-2 py-1">
+                          {row.module_year ?? "-"}
+                        </td>
+                        <td className="border border-amber-200 px-2 py-1">
+                          {row.stream_code ?? "-"}
+                        </td>
+                        <td className="border border-amber-200 px-2 py-1">
+                          {row.mode ?? "-"}
+                        </td>
+                        <td className="border border-amber-200 px-2 py-1 whitespace-nowrap">
+                          {row.time_window}
+                        </td>
+                        <td className="border border-amber-200 px-2 py-1">
+                          {row.reason}
+                        </td>
+                        <td className="border border-amber-200 px-2 py-1">
+                          {row.weekday_detail || "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 

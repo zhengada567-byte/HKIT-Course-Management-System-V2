@@ -20,6 +20,7 @@ import {
   type TimetableScheduleTerm,
 } from "../../../../services/timetableScheduleService";
 import { listTimetableModulesByInstanceCodes } from "../../../../services/timetableService";
+import type { TimetableModuleRow } from "../../../../types";
 
 const weekdays: Array<{ id: 1 | 2 | 3 | 4 | 5 | 6; label: string }> = [
   { id: 1, label: "Mon" },
@@ -76,6 +77,9 @@ export function WeeklyTimetableEditor(props: {
   const [cellBusyKey, setCellBusyKey] = useState<string | null>(null);
   const [addDialog, setAddDialog] = useState<AddDialogState | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
+  const [moduleMetaByCode, setModuleMetaByCode] = useState<
+    Record<string, TimetableModuleRow>
+  >({});
 
   const editableInstanceCodes = useMemo(
     () =>
@@ -131,6 +135,12 @@ export function WeeklyTimetableEditor(props: {
           row,
         ])
       );
+
+      const metaRecord: Record<string, TimetableModuleRow> = {};
+      for (const [code, module] of moduleByInstanceCode) {
+        metaRecord[code] = module;
+      }
+      setModuleMetaByCode(metaRecord);
 
       const collapsed = new Map<
         string,
@@ -574,11 +584,16 @@ export function WeeklyTimetableEditor(props: {
                                       <div className="font-medium">
                                         {item.moduleInstanceCode}
                                       </div>
-                                      {viewScope === "all" && item.programmeCode && (
-                                        <div className="text-xs text-slate-500">
-                                          {item.programmeCode}
-                                        </div>
-                                      )}
+                                      <div className="text-xs text-slate-500">
+                                        {[
+                                          item.moduleYear || null,
+                                          viewScope === "all"
+                                            ? item.programmeCode || null
+                                            : null,
+                                        ]
+                                          .filter(Boolean)
+                                          .join(" · ") || "—"}
+                                      </div>
                                       <div className="text-xs text-slate-600">
                                         {item.moduleCode}{" "}
                                         <span>({item.roomCode})</span>
@@ -658,6 +673,7 @@ export function WeeklyTimetableEditor(props: {
                   <tr>
                     <th className="px-3 py-2 text-left">Module instance code</th>
                     <th className="px-3 py-2 text-left">Module name</th>
+                    <th className="px-3 py-2 text-left">Year</th>
                     <th className="px-3 py-2 text-left">Teacher</th>
                     <th className="px-3 py-2 text-left">Status</th>
                   </tr>
@@ -666,7 +682,7 @@ export function WeeklyTimetableEditor(props: {
                   {timetableInstances.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={4}
+                        colSpan={5}
                         className="px-3 py-4 text-slate-500"
                       >
                         No module instances for this term.
@@ -677,6 +693,9 @@ export function WeeklyTimetableEditor(props: {
                       const scheduled = scheduledInstanceCodes.has(
                         row.module_instance_code
                       );
+                      const meta =
+                        moduleMetaByCode[row.module_instance_code] ??
+                        moduleMetaByCode[row.module_instance_code.toUpperCase()];
                       return (
                         <tr key={row.id} className="border-t">
                           <td className="px-3 py-2 font-mono font-medium">
@@ -686,6 +705,9 @@ export function WeeklyTimetableEditor(props: {
                             {row.module_name
                               ? dedupeJoinedModuleName(row.module_name)
                               : row.module_code}
+                          </td>
+                          <td className="px-3 py-2">
+                            {meta?.module_year || "-"}
                           </td>
                           <td className="px-3 py-2">
                             {row.instance_teacher_name || "TBC"}

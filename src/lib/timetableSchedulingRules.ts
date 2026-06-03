@@ -8,6 +8,14 @@ export const SCHEDULING_WEEKDAYS = [1, 2, 3, 4, 5] as const;
 
 export type SchedulingWeekday = (typeof SCHEDULING_WEEKDAYS)[number];
 
+export const SCHEDULING_WEEKDAY_LABEL: Record<SchedulingWeekday, string> = {
+  1: "Mon",
+  2: "Tue",
+  3: "Wed",
+  4: "Thu",
+  5: "Fri",
+};
+
 export function isFtEmploymentType(value: unknown): boolean {
   return String(value ?? "").trim().toUpperCase() === "FT";
 }
@@ -350,12 +358,27 @@ export function normalizeProgrammeKey(programmeCode: string) {
     .toUpperCase();
 }
 
+function normalizeModuleYearKey(year: string | null | undefined) {
+  return String(year ?? "")
+    .trim()
+    .toUpperCase();
+}
+
+function parseStreamYearSlotKey(key: string) {
+  const parts = key.split("|");
+  return {
+    programme: parts[0] ?? "",
+    stream: parts[1] ?? "",
+    year: normalizeModuleYearKey(parts[2]),
+  };
+}
+
 /**
  * Score a feasible slot. Returns null when hard-rejected (same stream + same year already uses slot).
  *
  * Preferences:
  * - Align different streams (same module, or other modules in programme e.g. CS423 / CS407)
- * - Same stream + different year: avoid same slot (soft)
+ * - Same stream + different year: may share the same evening slot (soft penalty only)
  * - Same stream + same year: must not share slot (hard)
  */
 export function scoreAutoScheduleSlot(params: {
@@ -415,18 +438,32 @@ export function scoreAutoScheduleSlot(params: {
     params.moduleYear
   );
 
+  const targetProgramme = normalizeProgrammeKey(params.programmeCode);
+  const targetYear = normalizeModuleYearKey(params.moduleYear);
+
   if (params.streamYearOccupiedSlots.get(streamYearKey)?.has(params.slotKey)) {
     score -= 80;
   }
 
-  for (const [otherStreamKey, slots] of params.streamYearOccupiedSlots) {
+  for (const [otherStreamYearKey, slots] of params.streamYearOccupiedSlots) {
     if (!slots.has(params.slotKey)) continue;
 
-    const otherStream = otherStreamKey.split("|")[1] ?? "";
+    const { programme: otherProgramme, stream: otherStream, year: otherYear } =
+      parseStreamYearSlotKey(otherStreamYearKey);
 
-    if (isSameStreamSchedulingGroup(params.streamKey, otherStream)) {
+    if (normalizeProgrammeKey(otherProgramme) !== targetProgramme) {
+      continue;
+    }
+
+    if (!isSameStreamSchedulingGroup(params.streamKey, otherStream)) {
+      continue;
+    }
+
+    if (otherYear === targetYear) {
       return null;
     }
+
+    score -= 40;
   }
 
   const streamAllKey = buildStreamSlotKey(params.programmeCode, params.streamKey);
