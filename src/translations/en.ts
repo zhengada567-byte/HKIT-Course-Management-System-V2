@@ -24,6 +24,9 @@ export const en = {
   programmeCode: "Programme Code",
   programmeName: "Programme Name",
   programmeStream: "Programme Stream",
+  articulation: "Articulation",
+  articulationHint:
+    "HD only: Degree programme code(s) this stream articulates to (e.g. UWLCS or UWLBS/WUBM). Leave empty for Degree rows.",
   moduleCode: "Module Code",
   moduleName: "Module Name",
   moduleYear: "Module Year",

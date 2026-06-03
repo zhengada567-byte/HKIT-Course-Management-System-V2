@@ -25,6 +25,53 @@ import type { ModuleTerm } from "../../types";
 type UploadType = "programme" | "teacher" | "module" | "approved_loading";
 type EmploymentType = "FT" | "PT" | "";
 
+const MODULE_UPLOAD_HEADERS = [
+  "Module Code",
+  "Module Name",
+  "Module Year",
+  "Module Term",
+  "Programme Code",
+  "Stream Code",
+  "Proposed Teacher",
+  "Teaching Status",
+  "Uses Computer",
+] as const;
+
+const MODULE_UPLOAD_EXAMPLE_ROW = [
+  "HD401",
+  "Introduction to IT",
+  "Year 1",
+  "Sep",
+  "HDC",
+  "Cyber Security",
+  "",
+  "",
+  "N",
+];
+
+function escapeCsvCell(value: string): string {
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+
+  return value;
+}
+
+function downloadModuleUploadTemplate() {
+  const csv = [
+    MODULE_UPLOAD_HEADERS.join(","),
+    MODULE_UPLOAD_EXAMPLE_ROW.map(escapeCsvCell).join(","),
+  ].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "module_upload_template.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 async function readExcelFile(file: File) {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer);
@@ -192,12 +239,15 @@ async function uploadModuleRows(params: {
       ])
     );
 
-    const expectedStudentNumber =
-      getNumberOrNull(row, "Enrollment Student Number", [
+    const expectedStudentNumber = getNumberOrNull(
+      row,
+      "Enrollment Student Number",
+      [
         "enrollment student number",
         "expected student number",
         "expected_student_number",
-      ]) ?? 0;
+      ]
+    );
 
     const actualStudentNumber = getNumberOrNull(row, "Actual Student Number", [
       "actual student number",
@@ -217,6 +267,11 @@ async function uploadModuleRows(params: {
         "ft/pt",
       ])
     );
+
+    const hasEnrollmentColumns =
+      expectedStudentNumber !== null || actualStudentNumber !== null;
+
+    const hasProposedTeacher = Boolean(proposedTeacher);
 
     const usesComputer = normalizeUsesComputerFlag(
       getText(row, "Uses Computer", [
@@ -239,43 +294,44 @@ async function uploadModuleRows(params: {
 
     moduleCount += 1;
 
-    enrollmentPayload.push({
-      academic_year: params.academicYear,
-      module_code: moduleCode,
-      module_term: moduleTerm,
-      programme_code: programmeCode,
-      stream_code: streamCode,
-      expected_student_number: expectedStudentNumber,
-      actual_student_number: actualStudentNumber,
-    });
-
-    const parsedTeacher = parseTeacherName(proposedTeacher);
-
-    defaultAssignmentPayload.push({
-      academic_year: params.academicYear,
-      module_code: moduleCode,
-      module_term: moduleTerm,
-      programme_code: programmeCode,
-      stream_code: streamCode,
-      teacher_name: parsedTeacher.teacher_name,
-      teacher_title: parsedTeacher.teacher_title,
-      teacher_family_name: parsedTeacher.teacher_family_name,
-      teacher_other_name: parsedTeacher.teacher_other_name,
-      teaching_status: teachingStatus,
-      mode: "Night",
-    });
-
-    if (
-      parsedTeacher.teacher_name &&
-      parsedTeacher.teacher_name.toLowerCase() !== "tbc"
-    ) {
-      teacherMap.set(parsedTeacher.teacher_name, {
-        title: parsedTeacher.teacher_title ?? "",
-        family_name: parsedTeacher.teacher_family_name ?? "",
-        other_name: parsedTeacher.teacher_other_name ?? "",
-        employment_type: (teachingStatus ?? "") as EmploymentType,
+    if (hasEnrollmentColumns) {
+      enrollmentPayload.push({
         academic_year: params.academicYear,
+        module_code: moduleCode,
+        module_term: moduleTerm,
+        programme_code: programmeCode,
+        stream_code: streamCode,
+        expected_student_number: expectedStudentNumber ?? 0,
+        actual_student_number: actualStudentNumber,
       });
+    }
+
+    if (hasProposedTeacher) {
+      const parsedTeacher = parseTeacherName(proposedTeacher);
+
+      defaultAssignmentPayload.push({
+        academic_year: params.academicYear,
+        module_code: moduleCode,
+        module_term: moduleTerm,
+        programme_code: programmeCode,
+        stream_code: streamCode,
+        teacher_name: parsedTeacher.teacher_name,
+        teacher_title: parsedTeacher.teacher_title,
+        teacher_family_name: parsedTeacher.teacher_family_name,
+        teacher_other_name: parsedTeacher.teacher_other_name,
+        teaching_status: teachingStatus,
+        mode: "Night",
+      });
+
+      if (parsedTeacher.teacher_name.toLowerCase() !== "tbc") {
+        teacherMap.set(parsedTeacher.teacher_name, {
+          title: parsedTeacher.teacher_title ?? "",
+          family_name: parsedTeacher.teacher_family_name ?? "",
+          other_name: parsedTeacher.teacher_other_name ?? "",
+          employment_type: (teachingStatus ?? "") as EmploymentType,
+          academic_year: params.academicYear,
+        });
+      }
     }
   }
 
@@ -295,11 +351,18 @@ async function uploadModuleRows(params: {
 }
 
 export function UploadExcelPage() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const { academicYear } = useAcademicYear();
   const { t } = useLanguage();
 
-  const [uploadType, setUploadType] = useState<UploadType>("programme");
+  const isProgrammeLeaderOnly = role === "programme_leader";
+  const allowedUploadTypes: UploadType[] = isProgrammeLeaderOnly
+    ? ["module"]
+    : ["programme", "teacher", "module", "approved_loading"];
+
+  const [uploadType, setUploadType] = useState<UploadType>(
+    isProgrammeLeaderOnly ? "module" : "programme"
+  );
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -315,13 +378,18 @@ export function UploadExcelPage() {
       return;
     }
 
+    if (isProgrammeLeaderOnly && uploadType !== "module") {
+      setMessage("Programme leaders may only upload Module Excel files.");
+      return;
+    }
+
     setUploading(true);
     setMessage("");
 
     try {
       const rows = await readExcelFile(file);
 
-      if (uploadType === "programme") {
+      if (uploadType === "programme" && !isProgrammeLeaderOnly) {
         let processedCount = 0;
         const uniqueProgrammeKeys = new Set<string>();
 
@@ -418,7 +486,7 @@ export function UploadExcelPage() {
         );
       }
 
-      if (uploadType === "teacher") {
+      if (uploadType === "teacher" && !isProgrammeLeaderOnly) {
         for (const row of rows) {
           const employmentType = normalizeEmploymentType(
             getText(row, "Employment Type", [
@@ -463,7 +531,7 @@ export function UploadExcelPage() {
         );
       }
 
-      if (uploadType === "approved_loading") {
+      if (uploadType === "approved_loading" && !isProgrammeLeaderOnly) {
         for (const row of rows) {
           await upsertApprovedLoading({
             teacher_title: getText(row, "Title", ["title"]),
@@ -532,26 +600,46 @@ export function UploadExcelPage() {
     <div className="page-container">
       <PageHeader
         title={t.uploadExcel}
-        description="Admin upload supports Programme, Teacher, Module and Approved Loading."
+        description={
+          isProgrammeLeaderOnly
+            ? "Upload module catalogue rows for your programmes. Download the template, fill in module details, then upload."
+            : "Admin upload supports Programme, Teacher, Module and Approved Loading."
+        }
       />
 
       <div className="card max-w-3xl">
         <div className="card-body space-y-4">
-          <div>
-            <label className="form-label">Upload Type</label>
-            <select
-              className="form-select"
-              value={uploadType}
-              onChange={(event) =>
-                setUploadType(event.target.value as UploadType)
-              }
-            >
-              <option value="programme">Programme</option>
-              <option value="teacher">Teacher</option>
-              <option value="module">Module</option>
-              <option value="approved_loading">Approved Loading</option>
-            </select>
-          </div>
+          {!isProgrammeLeaderOnly && (
+            <div>
+              <label className="form-label">Upload Type</label>
+              <select
+                className="form-select"
+                value={uploadType}
+                onChange={(event) =>
+                  setUploadType(event.target.value as UploadType)
+                }
+              >
+                {allowedUploadTypes.includes("programme") && (
+                  <option value="programme">Programme</option>
+                )}
+                {allowedUploadTypes.includes("teacher") && (
+                  <option value="teacher">Teacher</option>
+                )}
+                {allowedUploadTypes.includes("module") && (
+                  <option value="module">Module</option>
+                )}
+                {allowedUploadTypes.includes("approved_loading") && (
+                  <option value="approved_loading">Approved Loading</option>
+                )}
+              </select>
+            </div>
+          )}
+
+          {isProgrammeLeaderOnly && (
+            <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              Upload type: <strong>Module</strong>
+            </div>
+          )}
 
           <div>
             <label className="form-label">Excel File</label>
@@ -573,13 +661,26 @@ export function UploadExcelPage() {
             </div>
           )}
 
-          <button
-            className="btn btn-primary"
-            onClick={handleUpload}
-            disabled={uploading}
-          >
-            {uploading ? t.loading : t.uploadExcel}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {uploadType === "module" && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={downloadModuleUploadTemplate}
+              >
+                Download Module Template
+              </button>
+            )}
+
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleUpload}
+              disabled={uploading}
+            >
+              {uploading ? t.loading : t.uploadExcel}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -588,53 +689,75 @@ export function UploadExcelPage() {
           <div className="card-header font-semibold">Expected Excel Headers</div>
 
           <div className="card-body space-y-3 text-sm text-slate-600">
+            {!isProgrammeLeaderOnly && (
+              <>
+                <p>
+                  <strong>Programme:</strong> Programme Type, Programme Code,
+                  Programme Name, Programme Stream, Stream Abbr, Programme Leader,
+                  Articulation
+                </p>
+
+                <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                  <div className="font-semibold">Programme Articulation Format</div>
+                  <div className="mt-1">
+                    Use <code>HD_CODE:STREAM</code>. Multiple rules should be
+                    separated by semicolon.
+                  </div>
+                  <div className="mt-1">
+                    Examples: <code>HDBC:nil</code>,{" "}
+                    <code>HDAI:Artificial Intelligence</code>,{" "}
+                    <code>HDBC:nil;HDAI:Artificial Intelligence</code>
+                  </div>
+                </div>
+
+                <p>
+                  <strong>Teacher:</strong> Title, Family Name, Other Name,
+                  Employment Type
+                </p>
+              </>
+            )}
+
             <p>
-              <strong>Programme:</strong> Programme Type, Programme Code,
-              Programme Name, Programme Stream, Stream Abbr, Programme Leader,
-              Articulation
+              <strong>Module:</strong> {MODULE_UPLOAD_HEADERS.join(", ")}
             </p>
 
             <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
-              <div className="font-semibold">Programme Articulation Format</div>
+              <div className="font-semibold">Module upload notes</div>
               <div className="mt-1">
-                Use <code>HD_CODE:STREAM</code>. Multiple rules should be
-                separated by semicolon.
+                Module Term must be <code>Sep</code>, <code>Feb</code>, or{" "}
+                <code>Jun</code>. Stream Code empty is stored as <code>nil</code>.
+                Uses Computer: <code>Y</code> or <code>N</code>. Proposed Teacher
+                and Teaching Status may be left empty (filled later in timetable /
+                assignment). Student numbers are derived from study plans, not this
+                template.
               </div>
               <div className="mt-1">
-                Examples: <code>HDBC:nil</code>,{" "}
-                <code>HDAI:Artificial Intelligence</code>,{" "}
-                <code>HDBC:nil;HDAI:Artificial Intelligence</code>
+                Admin legacy files may still include Enrollment / Actual Student
+                Number columns; those are imported only when present.
               </div>
             </div>
 
-            <p>
-              <strong>Teacher:</strong> Title, Family Name, Other Name,
-              Employment Type
-            </p>
+            {!isProgrammeLeaderOnly && (
+              <>
+                <p>
+                  <strong>Approved Loading:</strong> Title, Family Name, Other
+                  Name, Sep Term Approved Max Loading, Feb Term Approved Max
+                  Loading, Jun Term Approved Max Loading
+                </p>
 
-            <p>
-              <strong>Module:</strong> Module Code, Module Name, Module Year,
-              Module Term, Programme Code, Stream Code, Enrollment Student
-              Number, Actual Student Number, Proposed Teacher, Teaching Status
-            </p>
-
-            <p>
-              <strong>Approved Loading:</strong> Title, Family Name, Other Name,
-              Sep Term Approved Max Loading, Feb Term Approved Max Loading, Jun
-              Term Approved Max Loading
-            </p>
-
-            <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              Lowercase and underscore headers are also accepted, for example:
-              <br />
-              <code>programme_code</code>, <code>programme_stream</code>,{" "}
-              <code>stream_abbr</code>, <code>articulation</code>,{" "}
-              <code>module code</code>, <code>module term</code>,{" "}
-              <code>stream</code>, <code>proposed teacher</code>,{" "}
-              <code>teaching status</code>,{" "}
-              <code>enrollment student number</code>,{" "}
-              <code>actual_student_number</code>.
-            </div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                  Lowercase and underscore headers are also accepted, for example:
+                  <br />
+                  <code>programme_code</code>, <code>programme_stream</code>,{" "}
+                  <code>stream_abbr</code>, <code>articulation</code>,{" "}
+                  <code>module code</code>, <code>module term</code>,{" "}
+                  <code>stream</code>, <code>proposed teacher</code>,{" "}
+                  <code>teaching status</code>,{" "}
+                  <code>enrollment student number</code>,{" "}
+                  <code>actual_student_number</code>, <code>uses_computer</code>.
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

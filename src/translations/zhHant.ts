@@ -24,6 +24,9 @@ export const zhHant = {
   programmeCode: "課程編號",
   programmeName: "課程名稱",
   programmeStream: "課程分流",
+  articulation: "升學銜接",
+  articulationHint:
+    "僅 HD：可升讀的 Degree 課程編號（例如 UWLCS 或 UWLBS/WUBM）。Degree 課程請留空。",
   moduleCode: "科目編號",
   moduleName: "科目名稱",
   moduleYear: "科目年級",

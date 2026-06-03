@@ -103,7 +103,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       to: "/admin/upload-excel",
       label: t.uploadExcel,
       icon: Upload,
-      roles: ["admin"],
+      roles: ["admin", "programme_leader"],
     },
     {
       to: "/admin/programmes",

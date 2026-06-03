@@ -20,6 +20,7 @@ const emptyForm: ProgrammeInput = {
   programme_name: "",
   programme_stream: "nil",
   programme_leader: "",
+  articulation: "",
 };
 
 export function ProgrammeManagementPage() {
@@ -140,6 +141,7 @@ export function ProgrammeManagementPage() {
       programme_name: row.programme_name ?? "",
       programme_stream: row.programme_stream,
       programme_leader: row.programme_leader ?? "",
+      articulation: row.articulation ?? "",
     });
 
     setMessage(`Editing programme: ${row.programme_code}`);
@@ -150,7 +152,7 @@ export function ProgrammeManagementPage() {
     <div className="page-container">
       <PageHeader
         title={t.programmeManagement}
-        description="Programme unique key: programme_code + programme_stream. Empty stream is stored as nil."
+        description="Programme unique key: programme_code + programme_stream. HD rows may set Articulation (target Degree codes, e.g. UWLCS)."
       />
 
       {message && (
@@ -273,6 +275,22 @@ export function ProgrammeManagementPage() {
                 />
               </div>
 
+              <div className="md:col-span-3 lg:col-span-2">
+                <label className="form-label">{t.articulation}</label>
+                <input
+                  className="form-input"
+                  value={form.articulation ?? ""}
+                  placeholder="e.g. UWLCS or UWLBS/WUBM"
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      articulation: event.target.value,
+                    }))
+                  }
+                />
+                <p className="mt-1 text-xs text-slate-500">{t.articulationHint}</p>
+              </div>
+
               <div className="flex items-end gap-2">
                 <button
                   className="btn btn-primary"
@@ -327,6 +345,11 @@ export function ProgrammeManagementPage() {
               key: "leader",
               header: t.programmeLeader,
               render: (row) => row.programme_leader ?? "-",
+            },
+            {
+              key: "articulation",
+              header: t.articulation,
+              render: (row) => row.articulation ?? "-",
             },
             {
               key: "actions",
