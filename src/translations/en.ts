@@ -107,6 +107,16 @@ export const en = {
   applyMakeupBackup: "Apply make-up (save)",
   saveMakeupHint: "Fill remark if needed, then click Save to store and re-order L/T labels.",
   scrollTableForRemarkSave: "Scroll right for Remark and Save →",
+  scrollTableHorizontally: "Scroll horizontally if needed →",
+  saveDailyModule: "Save module",
+  discardDailyModuleChanges: "Discard changes",
+  dailyModuleChangesDiscarded: "Unsaved changes for this module were discarded.",
+  dailyModuleUnsavedChanges:
+    "Unsaved changes — save once to update all sessions and email timetable@hkit.edu.hk.",
+  dailyModuleNoChanges: "No unsaved changes for this module.",
+  dailyDateViewSaveHint:
+    "Switch to View by module to save changes and send the notification email.",
+  applyMakeupDraft: "Draft make-up",
   excludeFromOffering: "Not Offered",
   restoreToOffering: "Restore to Offering",
   excludedModules: "Excluded from offering list",

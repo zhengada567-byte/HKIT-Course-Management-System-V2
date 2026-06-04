@@ -9,15 +9,17 @@ import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import {
-  applyDailyMakeupFromBackup,
   createDailyTimetableSession,
   loadProgrammeDailyTimetable,
   partitionDailyModuleEntries,
-  updateDailyTimetableSession,
   type DailyTimetableBuildResult,
   type DailyTimetableEntry,
   type DailyTimetableModulePlan,
 } from "../../services/dailyTimetableService";
+import {
+  moduleHasDraftChanges,
+  saveDailyTimetableModule,
+} from "../../services/dailyTimetableModuleSaveService";
 import { listProgrammes } from "../../services/programmeService";
 import {
   listTimetableClassrooms,
@@ -49,7 +51,7 @@ export function DailyTimetablePage() {
   const [selectedModuleId, setSelectedModuleId] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [loading, setLoading] = useState(false);
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [savingModule, setSavingModule] = useState(false);
   const [adding, setAdding] = useState(false);
   const [result, setResult] = useState<DailyTimetableBuildResult | null>(null);
   const [message, setMessage] = useState("");
@@ -117,6 +119,11 @@ export function DailyTimetablePage() {
     }
 
     return partitionDailyModuleEntries(selectedPlan.entries, drafts);
+  }, [selectedPlan, drafts]);
+
+  const moduleDirty = useMemo(() => {
+    if (!selectedPlan) return false;
+    return moduleHasDraftChanges(selectedPlan, drafts);
   }, [selectedPlan, drafts]);
 
   const availableDates = useMemo(() => {
@@ -230,99 +237,87 @@ export function DailyTimetablePage() {
     });
   }
 
-  async function handleSaveEntry(entry: DailyTimetableEntry) {
-    if (!entry.sessionId) return;
+  function handleDiscardModuleChanges() {
+    if (!selectedPlan) {
+      setMessage("Select a module first.");
+      return;
+    }
 
-    const draft = drafts[entry.sessionId];
-    if (!draft) return;
+    if (!moduleDirty) {
+      setMessage(t.dailyModuleNoChanges);
+      return;
+    }
 
-    setSavingId(entry.sessionId);
+    setDrafts((current) => {
+      const next = { ...current };
+
+      for (const entry of selectedPlan.entries) {
+        if (!entry.sessionId) continue;
+        next[entry.sessionId] = buildDraftFromEntry(entry);
+      }
+
+      return next;
+    });
+    setMessage(t.dailyModuleChangesDiscarded);
+  }
+
+  async function handleSaveModule() {
+    if (!selectedPlan || !result) {
+      setMessage("Select a module first.");
+      return;
+    }
+
+    if (!moduleDirty) {
+      setMessage("No unsaved changes for this module.");
+      return;
+    }
+
+    setSavingModule(true);
     setMessage("");
 
     try {
-      const modulePlan = result?.modules.find(
-        (plan) => plan.timetableModuleId === entry.timetableModuleId
-      );
-
-      const pendingCancels =
-        modulePlan?.entries.filter(
-          (row) =>
-            row.sessionId &&
-            row.sessionId !== entry.sessionId &&
-            drafts[row.sessionId]?.status === "cancel" &&
-            row.status !== "cancel"
-        ) ?? [];
-
-      for (const row of pendingCancels) {
-        const cancelDraft = drafts[row.sessionId!];
-        if (!cancelDraft) continue;
-
-        await updateDailyTimetableSession({
-          sessionId: row.sessionId!,
-          session_date: cancelDraft.session_date,
-          start_time: cancelDraft.start_time,
-          end_time: cancelDraft.end_time,
-          room_code: cancelDraft.room_code,
-          status: "cancel",
-          remark: cancelDraft.remark,
-          relabel: false,
-        });
-      }
-
-      await updateDailyTimetableSession({
-        sessionId: entry.sessionId,
-        session_date: draft.session_date,
-        start_time: draft.start_time,
-        end_time: draft.end_time,
-        room_code: draft.room_code,
-        status: draft.status,
-        remark: draft.remark,
-        relabel: true,
+      const saveResult = await saveDailyTimetableModule({
+        academicYear,
+        term,
+        plan: selectedPlan,
+        drafts,
+        changedBy: user?.username ?? null,
       });
 
       await reload();
-      setMessage(
-        pendingCancels.length > 0 && draft.status === "make_up"
-          ? `Saved cancel + make-up. ${entry.sessionLabel} should now appear under scheduled sessions with the vacated L/T label.`
-          : `Saved ${entry.sessionLabel} (${entry.moduleInstanceCode}). L/T labels re-ordered.`
-      );
+      setMessage(saveResult.message);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed.");
     } finally {
-      setSavingId(null);
+      setSavingModule(false);
     }
   }
 
-  async function handleApplyMakeup(
+  function handleApplyMakeupDraft(
     cancelledEntry: DailyTimetableEntry,
     backupSessionId: string
   ) {
     const backupDraft = drafts[backupSessionId];
-    if (!backupDraft) return;
+    if (!cancelledEntry.sessionId || !backupDraft) return;
 
-    setSavingId(cancelledEntry.sessionId);
-    setMessage("");
+    updateDraft(cancelledEntry.sessionId, { status: "cancel" });
 
-    try {
-      await applyDailyMakeupFromBackup({
-        cancelSessionId: cancelledEntry.sessionId!,
-        backupSessionId,
-        remark: backupDraft.remark || cancelledEntry.remark,
-        session_date: backupDraft.session_date,
-        start_time: backupDraft.start_time,
-        end_time: backupDraft.end_time,
-        room_code: backupDraft.room_code,
-      });
+    const remarkParts = [
+      cancelledEntry.sessionLabel &&
+      !cancelledEntry.sessionLabel.startsWith("Backup")
+        ? `Make-up for ${cancelledEntry.sessionLabel}`
+        : "Make-up session",
+      backupDraft.remark,
+    ].filter(Boolean);
 
-      await reload();
-      setMessage(
-        `Make-up applied using backup slot for ${cancelledEntry.sessionLabel}. Labels re-ordered by date.`
-      );
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Make-up failed.");
-    } finally {
-      setSavingId(null);
-    }
+    updateDraft(backupSessionId, {
+      status: "make_up",
+      remark: remarkParts.join(" — "),
+    });
+
+    setMessage(
+      "Make-up draft applied. Click Save module to store changes and send email."
+    );
   }
 
   async function handleAddSession() {
@@ -613,19 +608,44 @@ export function DailyTimetablePage() {
                 )}
 
                 {selectedPlan ? (
-                  <EditableDailyModuleSessions
-                    scheduled={selectedPlanPartitions.scheduled}
-                    backup={selectedPlanPartitions.backup}
-                    cancelled={selectedPlanPartitions.cancelled}
-                    drafts={drafts}
-                    classrooms={classrooms}
-                    savingId={savingId}
-                    onDraftChange={updateDraft}
-                    onSave={(row) => void handleSaveEntry(row)}
-                    onApplyMakeup={(cancelled, backupId) =>
-                      void handleApplyMakeup(cancelled, backupId)
-                    }
-                  />
+                  <>
+                    <div className="card">
+                      <div className="card-body flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm text-slate-600">
+                          {moduleDirty
+                            ? t.dailyModuleUnsavedChanges
+                            : t.dailyModuleNoChanges}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            disabled={savingModule || !moduleDirty}
+                            onClick={handleDiscardModuleChanges}
+                          >
+                            {t.discardDailyModuleChanges}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            disabled={savingModule || !moduleDirty}
+                            onClick={() => void handleSaveModule()}
+                          >
+                            {savingModule ? t.loading : t.saveDailyModule}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <EditableDailyModuleSessions
+                      scheduled={selectedPlanPartitions.scheduled}
+                      backup={selectedPlanPartitions.backup}
+                      cancelled={selectedPlanPartitions.cancelled}
+                      drafts={drafts}
+                      classrooms={classrooms}
+                      onDraftChange={updateDraft}
+                      onApplyMakeupDraft={handleApplyMakeupDraft}
+                    />
+                  </>
                 ) : (
                   <EmptyState message={t.selectModule} />
                 )}
@@ -656,15 +676,18 @@ export function DailyTimetablePage() {
 
               <div className="min-w-0">
                 {selectedDate && dateEntries.length > 0 ? (
-                  <EditableDailyTable
-                    rows={dateEntries}
-                    drafts={drafts}
-                    classrooms={classrooms}
-                    savingId={savingId}
-                    showModule
-                    onDraftChange={updateDraft}
-                    onSave={(row) => void handleSaveEntry(row)}
-                  />
+                  <>
+                    <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      {t.dailyDateViewSaveHint}
+                    </div>
+                    <EditableDailyTable
+                      rows={dateEntries}
+                      drafts={drafts}
+                      classrooms={classrooms}
+                      showModule
+                      onDraftChange={updateDraft}
+                    />
+                  </>
                 ) : (
                   <EmptyState message={t.selectDate} />
                 )}
@@ -695,6 +718,11 @@ function ModulePlanSummary({ plan }: { plan: DailyTimetableModulePlan }) {
       <p className="font-mono text-[11px] leading-snug">
         {plan.entries
           .filter((row) => !row.isBackup && row.status !== "cancel")
+          .sort((a, b) => {
+            const na = a.sessionNumber ?? 0;
+            const nb = b.sessionNumber ?? 0;
+            return na - nb;
+          })
           .map((row) => row.sessionLabel)
           .join(" → ")}
       </p>
@@ -728,20 +756,21 @@ function EditableDailyModuleSessions({
   cancelled,
   drafts,
   classrooms,
-  savingId,
+  showModule = false,
   onDraftChange,
-  onSave,
-  onApplyMakeup,
+  onApplyMakeupDraft,
 }: {
   scheduled: DailyTimetableEntry[];
   backup: DailyTimetableEntry[];
   cancelled: DailyTimetableEntry[];
   drafts: Record<string, SessionDraft>;
   classrooms: TimetableClassroomRow[];
-  savingId: string | null;
+  showModule?: boolean;
   onDraftChange: (sessionId: string, patch: Partial<SessionDraft>) => void;
-  onSave: (row: DailyTimetableEntry) => void;
-  onApplyMakeup: (cancelled: DailyTimetableEntry, backupSessionId: string) => void;
+  onApplyMakeupDraft: (
+    cancelled: DailyTimetableEntry,
+    backupSessionId: string
+  ) => void;
 }) {
   const { t } = useLanguage();
 
@@ -752,11 +781,10 @@ function EditableDailyModuleSessions({
         rows={scheduled}
         drafts={drafts}
         classrooms={classrooms}
-        savingId={savingId}
+        showModule={showModule}
         backupOptions={backup}
         onDraftChange={onDraftChange}
-        onSave={onSave}
-        onApplyMakeup={onApplyMakeup}
+        onApplyMakeupDraft={onApplyMakeupDraft}
       />
       {backup.length > 0 && (
         <SessionGroupTable
@@ -765,10 +793,9 @@ function EditableDailyModuleSessions({
           rows={backup}
           drafts={drafts}
           classrooms={classrooms}
-          savingId={savingId}
+          showModule={showModule}
           highlightBackup
           onDraftChange={onDraftChange}
-          onSave={onSave}
         />
       )}
       {cancelled.length > 0 && (
@@ -778,11 +805,10 @@ function EditableDailyModuleSessions({
           rows={cancelled}
           drafts={drafts}
           classrooms={classrooms}
-          savingId={savingId}
+          showModule={showModule}
           backupOptions={backup}
           onDraftChange={onDraftChange}
-          onSave={onSave}
-          onApplyMakeup={onApplyMakeup}
+          onApplyMakeupDraft={onApplyMakeupDraft}
         />
       )}
     </div>
@@ -795,26 +821,25 @@ function SessionGroupTable({
   rows,
   drafts,
   classrooms,
-  savingId,
   showModule = false,
   highlightBackup = false,
   backupOptions = [],
   onDraftChange,
-  onSave,
-  onApplyMakeup,
+  onApplyMakeupDraft,
 }: {
   title: string;
   description?: string;
   rows: DailyTimetableEntry[];
   drafts: Record<string, SessionDraft>;
   classrooms: TimetableClassroomRow[];
-  savingId: string | null;
   showModule?: boolean;
   highlightBackup?: boolean;
   backupOptions?: DailyTimetableEntry[];
   onDraftChange: (sessionId: string, patch: Partial<SessionDraft>) => void;
-  onSave: (row: DailyTimetableEntry) => void;
-  onApplyMakeup?: (cancelled: DailyTimetableEntry, backupSessionId: string) => void;
+  onApplyMakeupDraft?: (
+    cancelled: DailyTimetableEntry,
+    backupSessionId: string
+  ) => void;
 }) {
   const { t } = useLanguage();
 
@@ -827,10 +852,10 @@ function SessionGroupTable({
         {description ? (
           <p className="mt-0.5 text-xs text-slate-500">{description}</p>
         ) : null}
-        <p className="mt-1 text-xs text-slate-400">{t.scrollTableForRemarkSave}</p>
+        <p className="mt-1 text-xs text-slate-400">{t.scrollTableHorizontally}</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-[1020px] w-full text-sm">
+        <table className="min-w-[900px] w-full text-sm">
           <thead className="bg-slate-50">
             <tr>
               {showModule && (
@@ -852,11 +877,8 @@ function SessionGroupTable({
               <th className="whitespace-nowrap px-3 py-2 text-left">
                 {t.sessionStatus}
               </th>
-              <th className="min-w-[180px] whitespace-nowrap px-3 py-2 text-left">
+              <th className="min-w-[200px] whitespace-nowrap px-3 py-2 text-left">
                 {t.remark}
-              </th>
-              <th className="min-w-[140px] whitespace-nowrap px-3 py-2 text-left">
-                {t.action}
               </th>
             </tr>
           </thead>
@@ -874,10 +896,8 @@ function SessionGroupTable({
                 highlightBackup={highlightBackup}
                 backupOptions={backupOptions}
                 classrooms={classrooms}
-                savingId={savingId}
                 onDraftChange={onDraftChange}
-                onSave={onSave}
-                onApplyMakeup={onApplyMakeup}
+                onApplyMakeupDraft={onApplyMakeupDraft}
               />
             ))}
           </tbody>
@@ -894,10 +914,8 @@ function SessionEditRow({
   highlightBackup,
   backupOptions,
   classrooms,
-  savingId,
   onDraftChange,
-  onSave,
-  onApplyMakeup,
+  onApplyMakeupDraft,
 }: {
   row: DailyTimetableEntry;
   draft: SessionDraft | null;
@@ -905,10 +923,11 @@ function SessionEditRow({
   highlightBackup?: boolean;
   backupOptions?: DailyTimetableEntry[];
   classrooms: TimetableClassroomRow[];
-  savingId: string | null;
   onDraftChange: (sessionId: string, patch: Partial<SessionDraft>) => void;
-  onSave: (row: DailyTimetableEntry) => void;
-  onApplyMakeup?: (cancelled: DailyTimetableEntry, backupSessionId: string) => void;
+  onApplyMakeupDraft?: (
+    cancelled: DailyTimetableEntry,
+    backupSessionId: string
+  ) => void;
 }) {
   const { t } = useLanguage();
   const [selectedBackupId, setSelectedBackupId] = useState("");
@@ -917,7 +936,7 @@ function SessionEditRow({
     return (
       <tr className="border-t">
         <td
-          colSpan={showModule ? 9 : 7}
+          colSpan={showModule ? 8 : 6}
           className="px-3 py-2 text-slate-500"
         >
           {row.sessionLabel} — not linked to a saved session
@@ -942,7 +961,7 @@ function SessionEditRow({
     draft.status === "cancel" &&
     !row.isBackup &&
     backupChoices.length > 0 &&
-    onApplyMakeup;
+    onApplyMakeupDraft;
 
   return (
     <tr className={rowClass}>
@@ -1025,30 +1044,20 @@ function SessionEditRow({
         </select>
       </td>
       <td className="px-3 py-2">
-        <input
-          type="text"
-          className="form-input min-w-40"
-          placeholder={t.remarkPlaceholder}
-          value={draft.remark}
-          onChange={(event) =>
-            onDraftChange(sessionId, { remark: event.target.value })
-          }
-        />
-      </td>
-      <td className="px-3 py-2">
-        <div className="flex min-w-[120px] flex-col gap-1">
-          <button
-            type="button"
-            className="btn btn-primary py-1 text-xs"
-            disabled={savingId === sessionId}
-            onClick={() => onSave(row)}
-          >
-            {savingId === sessionId ? t.loading : t.save}
-          </button>
+        <div className="flex min-w-[200px] flex-col gap-1">
+          <input
+            type="text"
+            className="form-input w-full"
+            placeholder={t.remarkPlaceholder}
+            value={draft.remark}
+            onChange={(event) =>
+              onDraftChange(sessionId, { remark: event.target.value })
+            }
+          />
           {canApplyMakeup ? (
-            <>
+            <div className="flex flex-wrap items-center gap-1">
               <select
-                className="form-select text-xs"
+                className="form-select min-w-0 flex-1 text-xs"
                 value={selectedBackupId}
                 onChange={(event) => setSelectedBackupId(event.target.value)}
               >
@@ -1061,13 +1070,13 @@ function SessionEditRow({
               </select>
               <button
                 type="button"
-                className="btn btn-secondary py-1 text-xs"
-                disabled={!selectedBackupId || savingId === sessionId}
-                onClick={() => onApplyMakeup!(row, selectedBackupId)}
+                className="btn btn-secondary py-1 text-xs whitespace-nowrap"
+                disabled={!selectedBackupId}
+                onClick={() => onApplyMakeupDraft!(row, selectedBackupId)}
               >
-                {t.applyMakeupBackup}
+                {t.applyMakeupDraft}
               </button>
-            </>
+            </div>
           ) : null}
         </div>
       </td>
@@ -1079,18 +1088,14 @@ function EditableDailyTable({
   rows,
   drafts,
   classrooms,
-  savingId,
   showModule = false,
   onDraftChange,
-  onSave,
 }: {
   rows: DailyTimetableEntry[];
   drafts: Record<string, SessionDraft>;
   classrooms: TimetableClassroomRow[];
-  savingId: string | null;
   showModule?: boolean;
   onDraftChange: (sessionId: string, patch: Partial<SessionDraft>) => void;
-  onSave: (row: DailyTimetableEntry) => void;
 }) {
   const { scheduled, backup, cancelled } = partitionDailyModuleEntries(rows, drafts);
 
@@ -1101,10 +1106,9 @@ function EditableDailyTable({
       cancelled={[]}
       drafts={drafts}
       classrooms={classrooms}
-      savingId={savingId}
+      showModule={showModule}
       onDraftChange={onDraftChange}
-      onSave={onSave}
-      onApplyMakeup={() => undefined}
+      onApplyMakeupDraft={() => undefined}
     />
   );
 }

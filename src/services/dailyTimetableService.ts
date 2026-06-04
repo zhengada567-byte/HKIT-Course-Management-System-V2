@@ -23,6 +23,7 @@ import {
   type DailySessionKind,
   type DailySessionLabelSlot,
 } from "../lib/dailyTimetable";
+import { sortDailyTimetableEntries } from "../lib/dailyTimetableEntrySort";
 import { supabase } from "../lib/supabase";
 import { normalizeAcademicYear } from "../lib/utils";
 import {
@@ -97,7 +98,11 @@ export function partitionDailyModuleEntries(
     scheduled.push(entry);
   }
 
-  return { scheduled, backup, cancelled };
+  return {
+    scheduled: sortDailyTimetableEntries(scheduled),
+    backup: sortDailyTimetableEntries(backup),
+    cancelled: sortDailyTimetableEntries(cancelled),
+  };
 }
 
 export interface DailyTimetableModulePlan {
@@ -227,7 +232,7 @@ async function loadModuleCatalogHours() {
   return map;
 }
 
-async function loadTermCalendarContext(params: {
+export async function loadTermCalendarContext(params: {
   academicYear: string;
   term: TimetableScheduleTerm;
 }) {
@@ -655,7 +660,7 @@ export async function buildDailyTimetable(params: {
   };
 }
 
-async function loadModuleCatalogContext(timetableModuleId: string) {
+export async function loadModuleCatalogContext(timetableModuleId: string) {
   const { data: module, error } = await supabase
     .from("timetable_modules")
     .select("*")
@@ -897,15 +902,11 @@ export async function loadProgrammeDailyTimetable(params: {
 
     const hours = await loadModuleCatalogContext(module.id);
 
-    const entries = studySessions
-      .map((row) =>
+    const entries = sortDailyTimetableEntries(
+      studySessions.map((row) =>
         sessionRowToDailyEntry(row, module, hours.programmeType)
       )
-      .sort((a, b) => {
-        const dateCompare = a.sessionDate.localeCompare(b.sessionDate);
-        if (dateCompare !== 0) return dateCompare;
-        return a.startTime.localeCompare(b.startTime);
-      });
+    );
 
     const weekday =
       inferWeekdayFromSessions(
