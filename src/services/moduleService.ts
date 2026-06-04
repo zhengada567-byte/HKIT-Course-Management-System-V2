@@ -1,5 +1,11 @@
+import {
+  normalizeModuleContactHours,
+  resolveDefaultModuleTeachingTutorialHours,
+  type ModuleTeachingTutorialHours,
+} from "../lib/moduleContactHours";
 import { supabase } from "../lib/supabase";
 import { normalizeStream } from "../lib/utils";
+import { getProgrammeTypeByCode } from "./studyPlanService";
 import type { ModuleRow, ModuleTerm, ModuleUsesComputerFlag } from "../types";
 
 export interface ModuleInput {
@@ -11,6 +17,39 @@ export interface ModuleInput {
   programme_code: string;
   stream_code?: string | null;
   uses_computer?: ModuleUsesComputerFlag | null;
+  module_teaching_contact_hours?: number | null;
+  module_tutorial_contact_hours?: number | null;
+}
+
+export async function resolveModuleTeachingTutorialHoursForUpsert(
+  input: ModuleInput
+): Promise<ModuleTeachingTutorialHours> {
+  const teachingExplicit = normalizeModuleContactHours(
+    input.module_teaching_contact_hours
+  );
+  const tutorialExplicit = normalizeModuleContactHours(
+    input.module_tutorial_contact_hours
+  );
+
+  if (teachingExplicit !== null && tutorialExplicit !== null) {
+    return {
+      module_teaching_contact_hours: teachingExplicit,
+      module_tutorial_contact_hours: tutorialExplicit,
+    };
+  }
+
+  const programmeType = await getProgrammeTypeByCode(input.programme_code);
+  const defaults = resolveDefaultModuleTeachingTutorialHours({
+    programmeCode: input.programme_code,
+    programmeType,
+  });
+
+  return {
+    module_teaching_contact_hours:
+      teachingExplicit ?? defaults.module_teaching_contact_hours,
+    module_tutorial_contact_hours:
+      tutorialExplicit ?? defaults.module_tutorial_contact_hours,
+  };
 }
 
 export function normalizeUsesComputerFlag(
@@ -84,6 +123,8 @@ export async function loadModuleUsesComputerMap() {
 }
 
 export async function upsertModule(input: ModuleInput) {
+  const contactHours = await resolveModuleTeachingTutorialHoursForUpsert(input);
+
   const payload = {
     module_code: input.module_code.trim(),
     module_name: input.module_name?.trim() || null,
@@ -92,6 +133,8 @@ export async function upsertModule(input: ModuleInput) {
     programme_code: input.programme_code.trim(),
     stream_code: normalizeStream(input.stream_code),
     uses_computer: normalizeUsesComputerFlag(input.uses_computer),
+    module_teaching_contact_hours: contactHours.module_teaching_contact_hours,
+    module_tutorial_contact_hours: contactHours.module_tutorial_contact_hours,
   };
 
   if (input.id) {

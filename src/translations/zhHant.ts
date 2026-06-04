@@ -65,6 +65,48 @@ export const zhHant = {
   delete: "刪除",
   create: "新增",
   addNewModule: "新增科目",
+  moduleTeachingContactHours: "授課時數",
+  moduleTutorialContactHours: "導修時數",
+  moduleTeachingTutorialHoursHint:
+    "依課程預設：HD 授課 36／導修 21；UWLBS/UWLCS/UWLC/UWLCFI 授課 48／導修 27；WUBM/WUCS/WUAFM 授課 24／導修 51。",
+  dailyTimetable: "每日時間表",
+  weeklyDailyTimetable: "每周每日時間表",
+  weeklyDailyTimetableDescription:
+    "檢視及調整所有課程已儲存的周時間表，再產生 L/T 每日課節標籤。",
+  weeklyTimetableStep: "1. 周時間表",
+  weeklyTimetableStepHint:
+    "顯示所選學期全部課程；請先儲存，再於下方產生每日時間表。",
+  dailyTimetableStep: "2. 每日時間表",
+  dailyTimetableStepHint:
+    "依授課／導修時數及學習週日期產生 L/T 標籤（HD：L1–L9、T1–T3）。",
+  weeklyTimetableAdminInstanceHint:
+    "本學期所有模組實例；儲存後會寫入各課程的學習週課節。",
+  allProgrammes: "全部課程",
+  buildDailyTimetable: "產生每日時間表",
+  viewByModule: "按科目檢視",
+  viewByDate: "按日期檢視",
+  selectModule: "選擇科目",
+  selectDate: "選擇日期",
+  removeNonStudyWeekSessions: "移除非學習週課節",
+  plDailyTimetable: "每日時間表",
+  plDailyTimetableDescription:
+    "管理員產生每日時間表後，檢視及編輯本課程的 L/T 課節（可改狀態、新增課節；系統會按日期重新排序標籤）。",
+  loadDailyTimetable: "載入每日時間表",
+  addSession: "新增課節",
+  sessionStatus: "狀態",
+  remark: "備註",
+  remarkPlaceholder: "例如補課原因",
+  dailyScheduledSessions: "已編號課節（L/T）",
+  dailyBackupSessions: "後備課節（無 L/T 編號）",
+  dailyBackupSessionsHint:
+    "每週課節多於規定 L/T 數量的 spare slot。可設為 make_up，或在已取消課節上使用「套用後備補課」。",
+  dailyCancelledSessions: "已取消課節",
+  dailyCancelledSessionsHint:
+    "重新排序 L/T 時不參與編號；儲存後會清除 session number。",
+  selectBackupSession: "選擇後備課節",
+  applyMakeupBackup: "套用後備補課（儲存）",
+  saveMakeupHint: "可先填備註，再按「儲存」寫入資料庫並重新排序 L/T。",
+  scrollTableForRemarkSave: "向右捲動可見「備註」與「儲存」→",
   excludeFromOffering: "不開課",
   restoreToOffering: "還原開課",
   excludedModules: "已從本年度開課清單排除",

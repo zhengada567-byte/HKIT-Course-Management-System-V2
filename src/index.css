@@ -305,6 +305,37 @@ textarea {
     @apply w-full overflow-x-auto rounded-lg border border-blue-100 bg-white shadow-sm;
   }
 
+  /*
+    Scrollport for long wide tables: vertical + horizontal scroll in one box;
+    horizontal bar stays at the bottom of the visible area (not the page bottom).
+  */
+  .table-viewport {
+    @apply w-full overflow-auto rounded-lg border border-blue-100 bg-white shadow-sm;
+  }
+
+  .table-viewport--fill {
+    @apply min-h-0 flex-1;
+  }
+
+  .table-viewport thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    box-shadow: 0 1px 0 rgb(191 219 254);
+  }
+
+  .table-viewport .data-table thead th {
+    @apply bg-blue-100;
+  }
+
+  .page-container--fill {
+    @apply flex min-h-[calc(100vh-3.5rem)] min-w-0 flex-col;
+  }
+
+  .page-fill-panel {
+    @apply min-h-0 flex-1;
+  }
+
   .data-table {
     @apply min-w-full divide-y divide-blue-100 text-sm;
   }

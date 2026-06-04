@@ -49,9 +49,16 @@ export function WeeklyTimetableEditor(props: {
   classrooms: TimetableClassroomRow[];
   preferredStartByCode: Record<string, string>;
   startTimeOptions: string[];
+  /** collapsible: PL schedule step toggle; embedded: always visible (admin). */
+  variant?: "collapsible" | "embedded";
   open: boolean;
   onOpenChange: (open: boolean) => void;
   refreshToken?: string | number | null;
+  /** Admin: lock to all programmes, hide scope selector. */
+  forceViewScopeAll?: boolean;
+  instancePanelTitle?: string;
+  instancePanelDescription?: string;
+  onAfterSave?: () => void;
 }) {
   const { user } = useAuth();
   const {
@@ -62,16 +69,26 @@ export function WeeklyTimetableEditor(props: {
     classrooms,
     preferredStartByCode,
     startTimeOptions,
+    variant = "collapsible",
     open,
     onOpenChange,
     refreshToken,
+    forceViewScopeAll = false,
+    instancePanelTitle,
+    instancePanelDescription,
+    onAfterSave,
   } = props;
+
+  const isEmbedded = variant === "embedded";
+  const panelOpen = isEmbedded || open;
 
   const [weeklyLoading, setWeeklyLoading] = useState(false);
   const [weeklyError, setWeeklyError] = useState<string | null>(null);
   const [weeklyGrid, setWeeklyGrid] = useState<WeeklyGridState | null>(null);
   const [savedGrid, setSavedGrid] = useState<WeeklyGridState | null>(null);
-  const [viewScope, setViewScope] = useState<ViewScope>("all");
+  const [viewScope, setViewScope] = useState<ViewScope>(
+    forceViewScopeAll ? "all" : "all"
+  );
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [cellBusyKey, setCellBusyKey] = useState<string | null>(null);
@@ -89,10 +106,19 @@ export function WeeklyTimetableEditor(props: {
     [timetableInstances]
   );
 
-  const editableInstanceCodeSet = useMemo(
-    () => new Set(editableInstanceCodes.map((code) => code.toUpperCase())),
-    [editableInstanceCodes]
-  );
+  const editableInstanceCodeSet = useMemo(() => {
+    const codes = new Set(
+      editableInstanceCodes.map((code) => code.toUpperCase())
+    );
+
+    if (forceViewScopeAll && weeklyGrid) {
+      for (const placement of collectWeeklyPlacements(weeklyGrid)) {
+        codes.add(placement.moduleInstanceCode.toUpperCase());
+      }
+    }
+
+    return codes;
+  }, [editableInstanceCodes, forceViewScopeAll, weeklyGrid]);
 
   const instanceByCode = useMemo(() => {
     const map = new Map<string, TimetableModuleInstanceRow>();
@@ -158,7 +184,7 @@ export function WeeklyTimetableEditor(props: {
           continue;
         }
 
-        if (viewScope === "programme") {
+        if (!forceViewScopeAll && viewScope === "programme") {
           if (!programmeInstanceCodes.has(instanceCode)) continue;
           if (
             programmeCode &&
@@ -256,6 +282,7 @@ export function WeeklyTimetableEditor(props: {
     academicYear,
     editableInstanceCodes,
     preferredStartByCode,
+    forceViewScopeAll,
     programmeCode,
     startTimeOptions,
     term,
@@ -264,10 +291,10 @@ export function WeeklyTimetableEditor(props: {
   ]);
 
   useEffect(() => {
-    if (open) {
+    if (panelOpen) {
       void loadWeeklyTimetable();
     }
-  }, [refreshToken, open, viewScope, loadWeeklyTimetable]);
+  }, [refreshToken, panelOpen, viewScope, loadWeeklyTimetable]);
 
   const isDirty = useMemo(() => {
     if (!weeklyGrid || !savedGrid) return false;
@@ -422,12 +449,23 @@ export function WeeklyTimetableEditor(props: {
     setSaveMessage(null);
 
     try {
+      const codesToPersist = forceViewScopeAll
+        ? Array.from(
+            new Set([
+              ...editableInstanceCodes,
+              ...collectWeeklyPlacements(weeklyGrid).map(
+                (row) => row.moduleInstanceCode
+              ),
+            ])
+          )
+        : editableInstanceCodes;
+
       const result = await persistWeeklyTimetableDraft({
         academicYear,
         term,
         savedGrid,
         draftGrid: weeklyGrid,
-        editableInstanceCodes,
+        editableInstanceCodes: codesToPersist,
         instanceByCode,
         createdBy: user?.id ?? null,
       });
@@ -436,6 +474,7 @@ export function WeeklyTimetableEditor(props: {
       setSaveMessage(
         `已儲存至系統：新增 ${result.savedCount} 項，移除 ${result.removedCount} 項。其他 PL 自動排課會讀取這些已儲存時段。`
       );
+      onAfterSave?.();
     } catch (error) {
       setWeeklyError(
         error instanceof Error ? error.message : "Failed to save weekly timetable."
@@ -461,27 +500,29 @@ export function WeeklyTimetableEditor(props: {
   }, [savedGrid, weeklyGrid]);
 
   return (
-    <div className="mt-3 space-y-4">
-      <div>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => {
-            const next = !open;
-            onOpenChange(next);
-            if (next && !weeklyGrid && !weeklyLoading) {
-              void loadWeeklyTimetable();
-            }
-          }}
-          disabled={weeklyLoading}
-        >
-          {weeklyLoading
-            ? "Loading weekly timetable..."
-            : open
-              ? "Hide weekly timetable"
-              : "Show weekly timetable"}
-        </button>
-      </div>
+    <div className={isEmbedded ? "space-y-4" : "mt-3 space-y-4"}>
+      {!isEmbedded && (
+        <div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              const next = !open;
+              onOpenChange(next);
+              if (next && !weeklyGrid && !weeklyLoading) {
+                void loadWeeklyTimetable();
+              }
+            }}
+            disabled={weeklyLoading}
+          >
+            {weeklyLoading
+              ? "Loading weekly timetable..."
+              : open
+                ? "Hide weekly timetable"
+                : "Show weekly timetable"}
+          </button>
+        </div>
+      )}
 
       {weeklyError && (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -489,31 +530,37 @@ export function WeeklyTimetableEditor(props: {
         </div>
       )}
 
-      {open && weeklyGrid && (
+      {panelOpen && weeklyLoading && !weeklyGrid && (
+        <div className="text-sm text-slate-600">Loading weekly timetable...</div>
+      )}
+
+      {panelOpen && weeklyGrid && (
         <>
           <div className="flex flex-wrap items-end gap-3 rounded border border-slate-200 bg-slate-50 px-3 py-3">
-            <div>
-              <label className="form-label">顯示範圍</label>
-              <select
-                className="form-select"
-                title="Timetable view scope"
-                value={viewScope}
-                disabled={isDirty || weeklyLoading || saving}
-                onChange={(event) => {
-                  const next = event.target.value as ViewScope;
-                  if (isDirty) {
-                    setWeeklyError("請先 Save 再切換顯示範圍。");
-                    return;
-                  }
-                  setViewScope(next);
-                }}
-              >
-                <option value="all">全部課程（系統已儲存）</option>
-                <option value="programme">
-                  只看本 Programme{programmeCode ? `（${programmeCode}）` : ""}
-                </option>
-              </select>
-            </div>
+            {!forceViewScopeAll && (
+              <div>
+                <label className="form-label">顯示範圍</label>
+                <select
+                  className="form-select"
+                  title="Timetable view scope"
+                  value={viewScope}
+                  disabled={isDirty || weeklyLoading || saving}
+                  onChange={(event) => {
+                    const next = event.target.value as ViewScope;
+                    if (isDirty) {
+                      setWeeklyError("請先 Save 再切換顯示範圍。");
+                      return;
+                    }
+                    setViewScope(next);
+                  }}
+                >
+                  <option value="all">全部課程（系統已儲存）</option>
+                  <option value="programme">
+                    只看本 Programme{programmeCode ? `（${programmeCode}）` : ""}
+                  </option>
+                </select>
+              </div>
+            )}
 
             {isDirty && (
               <span className="text-sm font-medium text-amber-800">
@@ -661,11 +708,11 @@ export function WeeklyTimetableEditor(props: {
 
           <div className="rounded-lg border border-slate-200 bg-white p-4">
             <div className="text-sm font-medium text-slate-900">
-              待編時間表模組（{term}）
+              {instancePanelTitle ?? `待編時間表模組（${term}）`}
             </div>
             <div className="mt-1 text-xs text-slate-600">
-              編輯後請按 Save Timetable 才會寫入系統；下方列表顯示本 Programme 待排模組。
-              Save 後其他 PL 自動排課會避開已儲存的時段。
+              {instancePanelDescription ??
+                "編輯後請按 Save Timetable 才會寫入系統；下方列表顯示本 Programme 待排模組。Save 後其他 PL 自動排課會避開已儲存的時段。"}
             </div>
             <div className="mt-3 overflow-x-auto">
               <table className="min-w-full text-sm">

@@ -5,6 +5,7 @@ import { PageHeader } from "../../components/ui/PageHeader";
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
+import { normalizeModuleContactHours } from "../../lib/moduleContactHours";
 import { parseNumberOrNull } from "../../lib/utils";
 import { upsertApprovedLoading } from "../../services/approvedLoadingService";
 import {
@@ -35,6 +36,8 @@ const MODULE_UPLOAD_HEADERS = [
   "Proposed Teacher",
   "Teaching Status",
   "Uses Computer",
+  "Module Teaching Contact Hours",
+  "Module Tutorial Contact Hours",
 ] as const;
 
 const MODULE_UPLOAD_EXAMPLE_ROW = [
@@ -47,6 +50,8 @@ const MODULE_UPLOAD_EXAMPLE_ROW = [
   "",
   "",
   "N",
+  "",
+  "",
 ];
 
 function escapeCsvCell(value: string): string {
@@ -282,6 +287,24 @@ async function uploadModuleRows(params: {
       ])
     );
 
+    const moduleTeachingHours = normalizeModuleContactHours(
+      getNumberOrNull(row, "Module Teaching Contact Hours", [
+        "module teaching contact hours",
+        "module_teaching_contact_hours",
+        "teaching contact hours",
+        "teaching hours",
+      ])
+    );
+
+    const moduleTutorialHours = normalizeModuleContactHours(
+      getNumberOrNull(row, "Module Tutorial Contact Hours", [
+        "module tutorial contact hours",
+        "module_tutorial_contact_hours",
+        "tutorial contact hours",
+        "tutorial hours",
+      ])
+    );
+
     await upsertModule({
       module_code: moduleCode,
       module_name: moduleName,
@@ -290,6 +313,8 @@ async function uploadModuleRows(params: {
       programme_code: programmeCode,
       stream_code: streamCode,
       uses_computer: usesComputer,
+      module_teaching_contact_hours: moduleTeachingHours,
+      module_tutorial_contact_hours: moduleTutorialHours,
     });
 
     moduleCount += 1;
@@ -726,7 +751,9 @@ export function UploadExcelPage() {
               <div className="mt-1">
                 Module Term must be <code>Sep</code>, <code>Feb</code>, or{" "}
                 <code>Jun</code>. Stream Code empty is stored as <code>nil</code>.
-                Uses Computer: <code>Y</code> or <code>N</code>. Proposed Teacher
+                Uses Computer: <code>Y</code> or <code>N</code>. Teaching /
+                Tutorial contact hours are optional (HD 36/21; UWLBS/UWLCS/UWLC/
+                UWLCFI 48/27; WUBM/WUCS/WUAFM 24/51). Proposed Teacher
                 and Teaching Status may be left empty (filled later in timetable /
                 assignment). Student numbers are derived from study plans, not this
                 template.
@@ -754,7 +781,9 @@ export function UploadExcelPage() {
                   <code>stream</code>, <code>proposed teacher</code>,{" "}
                   <code>teaching status</code>,{" "}
                   <code>enrollment student number</code>,{" "}
-                  <code>actual_student_number</code>, <code>uses_computer</code>.
+                  <code>actual_student_number</code>, <code>uses_computer</code>,{" "}
+                  <code>module_teaching_contact_hours</code>,{" "}
+                  <code>module_tutorial_contact_hours</code>.
                 </div>
               </>
             )}

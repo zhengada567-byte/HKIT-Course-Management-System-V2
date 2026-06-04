@@ -6,8 +6,10 @@ import {
   parseIsoDate,
   toIsoDateString,
   type IsoDateString,
+  type WeekRange,
 } from "../lib/academicCalendar";
 import { normalizeAcademicYear } from "../lib/utils";
+import { listTimetableModules } from "./timetableService";
 import {
   getPublishedAcademicCalendar,
   listAcademicCalendarBreaks,
@@ -16,6 +18,9 @@ import {
 
 export type TimetableRoomType = "normal" | "computer";
 export type TimetableScheduleTerm = "Sep" | "Feb";
+
+/** Sep/Feb terms allocate 14 study weeks in the academic calendar plan. */
+export const MAX_STUDY_WEEKS_PER_TERM = 14;
 
 /** Extra seats allowed for computer rooms (e.g. SSP-103: 65 + 10). */
 export const COMPUTER_ROOM_EXTRA_SEATS = 10;
@@ -50,9 +55,14 @@ export interface TimetableSessionRow {
   room_code: string;
   status: "normal" | "cancel" | "make_up";
   session_number: number | null;
+  session_label: string | null;
+  session_kind: "teaching" | "tutorial" | null;
+  remark?: string | null;
   teacher_name: string | null;
   module_size: number | null;
 }
+
+export type TimetableSessionStatus = TimetableSessionRow["status"];
 
 export function defaultClassroomsForHKIT(): TimetableClassroomRow[] {
   return [
@@ -461,6 +471,7 @@ export async function buildExcludedIsoDatesForTerm(params: {
     throw new Error(`Failed to resolve term ${params.term} for ${params.academicYear}.`);
   }
 
+  const termWeeks = calendar.weeks.filter((week) => week.term === params.term);
   const start = termSummary.termStartDate;
   const end = termSummary.termEndDate;
 
@@ -478,12 +489,125 @@ export async function buildExcludedIsoDatesForTerm(params: {
   return {
     start,
     end,
+    termWeeks,
     publicHolidayIsoDates,
     schoolBreaks,
     christmasStart: christmasStart ?? null,
     christmasEnd: christmasEnd ?? null,
     cnyStart: cnyStart ?? null,
     cnyEnd: cnyEnd ?? null,
+  };
+}
+
+/** Valid class dates: given weekday within study weeks only (not revision/exam/marking). */
+export function buildStudyWeekDatesForWeekday(params: {
+  termWeeks: WeekRange[];
+  weekday: 1 | 2 | 3 | 4 | 5 | 6;
+  excluded: Awaited<ReturnType<typeof buildExcludedIsoDatesForTerm>>;
+}): IsoDateString[] {
+  const dates: IsoDateString[] = [];
+  const studyWeeks = params.termWeeks.filter((week) => week.category === "study");
+
+  for (const week of studyWeeks) {
+    for (let offset = 0; offset < 7; offset += 1) {
+      const date = addDays(week.startMonday, offset);
+
+      if (date.getDay() !== params.weekday) continue;
+      if (isDateExcludedForTeaching(date, params.excluded)) continue;
+
+      dates.push(toIsoDateString(date));
+    }
+  }
+
+  return dates;
+}
+
+export function isDateInTermStudyWeek(
+  date: Date,
+  termWeeks: WeekRange[]
+): boolean {
+  const time = date.getTime();
+
+  for (const week of termWeeks) {
+    if (week.category !== "study") continue;
+
+    if (
+      time >= week.startMonday.getTime() &&
+      time <= week.endSunday.getTime()
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function isIsoDateInTermStudyWeek(
+  isoDate: string,
+  termWeeks: WeekRange[]
+): boolean {
+  const parsed = parseIsoDate(normalizeSessionDate(isoDate));
+
+  if (!parsed) return false;
+
+  return isDateInTermStudyWeek(parsed, termWeeks);
+}
+
+export async function pruneTimetableSessionsOutsideStudyWeeks(params: {
+  academicYear: string;
+  term: TimetableScheduleTerm;
+  programmeCode?: string;
+}) {
+  const academicYear = normalizeAcademicYear(params.academicYear);
+  const excluded = await buildExcludedIsoDatesForTerm({
+    academicYear,
+    term: params.term,
+  });
+
+  const modules = await listTimetableModules({
+    academicYear,
+    programmeCode: params.programmeCode,
+  });
+
+  const moduleById = new Map(
+    modules
+      .filter((row) => row.module_term === params.term)
+      .map((row) => [row.id, row] as const)
+  );
+
+  const sessions = await listTimetableSessions({ academicYear });
+  const idsToDelete: string[] = [];
+
+  for (const session of sessions) {
+    if (session.status === "cancel") continue;
+
+    const module = moduleById.get(session.timetable_module_id);
+
+    if (!module) continue;
+
+    if (
+      !isIsoDateInTermStudyWeek(session.session_date, excluded.termWeeks)
+    ) {
+      idsToDelete.push(session.id);
+    }
+  }
+
+  if (idsToDelete.length === 0) {
+    return { deletedCount: 0, studyWeekCount: excluded.termWeeks.filter((w) => w.category === "study").length };
+  }
+
+  for (const batch of chunkValues(idsToDelete, 80)) {
+    const { error } = await supabase
+      .from("timetable_sessions")
+      .delete()
+      .in("id", batch);
+
+    if (error) throw error;
+  }
+
+  return {
+    deletedCount: idsToDelete.length,
+    studyWeekCount: excluded.termWeeks.filter((w) => w.category === "study").length,
   };
 }
 
@@ -543,35 +667,25 @@ export async function listFreeDatesForSlot(params: {
   });
 
   const sessions = await listTimetableSessions({ academicYear: params.academicYear });
+  const candidateDates = buildStudyWeekDatesForWeekday({
+    termWeeks: excluded.termWeeks,
+    weekday: params.weekday,
+    excluded,
+  });
 
-  const results: IsoDateString[] = [];
-  let cursor = new Date(excluded.start.getTime());
+  return candidateDates.filter((iso) => {
+    const occupied = sessions.some((s) => {
+      if (s.room_code !== params.roomCode) return false;
+      if (String(s.session_date).slice(0, 10) !== iso) return false;
+      if (s.status === "cancel") return false;
+      return overlaps(
+        { start: params.startTime, end: params.endTime },
+        { start: s.start_time.slice(0, 5), end: s.end_time.slice(0, 5) }
+      );
+    });
 
-  while (cursor.getTime() <= excluded.end.getTime()) {
-    const jsDay = cursor.getDay();
-
-    if (jsDay === params.weekday && !isDateExcludedForTeaching(cursor, excluded)) {
-      const iso = toIsoDateString(cursor);
-
-      const occupied = sessions.some((s) => {
-        if (s.room_code !== params.roomCode) return false;
-        if (String(s.session_date).slice(0, 10) !== iso) return false;
-        if (s.status === "cancel") return false;
-        return overlaps(
-          { start: params.startTime, end: params.endTime },
-          { start: s.start_time.slice(0, 5), end: s.end_time.slice(0, 5) }
-        );
-      });
-
-      if (!occupied) {
-        results.push(iso);
-      }
-    }
-
-    cursor = addDays(cursor, 1);
-  }
-
-  return results;
+    return !occupied;
+  });
 }
 
 export function addHoursToTime(startTime: string, hours: number) {
@@ -594,18 +708,11 @@ export async function buildTeachingDatesForWeekday(params: {
     term: params.term,
   });
 
-  const dates: IsoDateString[] = [];
-  let cursor = new Date(excluded.start.getTime());
-
-  while (cursor.getTime() <= excluded.end.getTime()) {
-    const jsDay = cursor.getDay();
-    if (jsDay === params.weekday && !isDateExcludedForTeaching(cursor, excluded)) {
-      dates.push(toIsoDateString(cursor));
-    }
-    cursor = addDays(cursor, 1);
-  }
-
-  return dates;
+  return buildStudyWeekDatesForWeekday({
+    termWeeks: excluded.termWeeks,
+    weekday: params.weekday,
+    excluded,
+  });
 }
 
 export async function deleteWeeklyPlacementSessions(params: {

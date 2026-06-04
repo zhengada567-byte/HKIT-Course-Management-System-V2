@@ -78,6 +78,8 @@ export interface ModuleRow {
   programme_code: string;
   stream_code: string;
   uses_computer: ModuleUsesComputerFlag;
+  module_teaching_contact_hours: number;
+  module_tutorial_contact_hours: number;
   created_at: string;
   updated_at: string;
 }

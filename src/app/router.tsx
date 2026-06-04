@@ -18,8 +18,10 @@ import { AdminPasswordManagementPage } from "../pages/admin/AdminPasswordManagem
 
 import { AcademicCalendarPage } from "../pages/AcademicCalendarPage";
 import { MakeTimetablePage } from "../pages/programme-leader/MakeTimetablePage";
+import { DailyTimetablePage as ProgrammeLeaderDailyTimetablePage } from "../pages/programme-leader/DailyTimetablePage";
 import MakeStudyPlanPage from "../pages/programme-leader/make-study-plan/MakeStudyPlanPage";
 import { AssignmentConfirmationMonitorPage } from "../pages/admin/AssignmentConfirmationMonitorPage";
+import { DailyTimetablePage } from "../pages/admin/DailyTimetablePage";
 
 import { ApprovedLoadingPage } from "../pages/president/ApprovedLoadingPage";
 import { PresidentPasswordPage } from "../pages/president/PresidentPasswordPage";
@@ -118,6 +120,14 @@ export const routes: RouteObject[] = [
         ),
       },
       {
+        path: "admin/daily-timetable",
+        element: (
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <DailyTimetablePage />
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: "admin/passwords",
         element: (
           <ProtectedRoute allowedRoles={["admin"]}>
@@ -138,6 +148,14 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute allowedRoles={["programme_leader", "admin"]}>
             <MakeTimetablePage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "programme-leader/daily-timetable",
+        element: (
+          <ProtectedRoute allowedRoles={["programme_leader", "admin"]}>
+            <ProgrammeLeaderDailyTimetablePage />
           </ProtectedRoute>
         ),
       },

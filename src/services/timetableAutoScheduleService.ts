@@ -1,12 +1,11 @@
 import type { TimetableModuleInstanceRow } from "./timetableModuleInstanceService";
 import type { TimetableClassroomRow, TimetableScheduleTerm, TimetableSessionRow } from "./timetableScheduleService";
 import {
-  buildExcludedIsoDatesForTerm,
+  buildTeachingDatesForWeekday,
   createTimetableSessions,
   deleteTimetableSessionsForInstanceCodes,
   deleteTimetableSessionsForModuleIds,
   effectiveRoomCapacity,
-  isDateExcludedForTeaching,
   listScheduledTimetableModuleIds,
   listTimetableSessions,
   normalizeSessionTime,
@@ -453,30 +452,6 @@ async function seedAutoScheduleFromExistingSessions(params: {
   }
 }
 
-async function buildTeachingDates(params: {
-  academicYear: string;
-  term: TimetableScheduleTerm;
-  weekday: Weekday;
-}) {
-  const excluded = await buildExcludedIsoDatesForTerm({
-    academicYear: params.academicYear,
-    term: params.term,
-  });
-
-  const dates: string[] = [];
-  let cursor = new Date(excluded.start.getTime());
-
-  while (cursor.getTime() <= excluded.end.getTime()) {
-    const jsDay = cursor.getDay();
-    if (jsDay === params.weekday && !isDateExcludedForTeaching(cursor, excluded)) {
-      dates.push(toIsoDateString(cursor));
-    }
-    cursor = addDays(cursor, 1);
-  }
-
-  return dates;
-}
-
 export async function autoScheduleInstances(params: {
   academicYear: string;
   term: TimetableScheduleTerm;
@@ -857,7 +832,7 @@ export async function autoScheduleInstances(params: {
         continue;
       }
 
-      const dates = await buildTeachingDates({
+      const dates = await buildTeachingDatesForWeekday({
         academicYear: params.academicYear,
         term: params.term,
         weekday,
@@ -956,7 +931,7 @@ export async function autoScheduleInstances(params: {
       for (const weekday of SCHEDULING_WEEKDAYS) {
         teachingDatesByWeekday.set(
           weekday,
-          await buildTeachingDates({
+          await buildTeachingDatesForWeekday({
             academicYear: params.academicYear,
             term: params.term,
             weekday,
@@ -1010,11 +985,11 @@ export async function autoScheduleInstances(params: {
   > = [];
 
   for (const s of scheduled) {
-    const dates = await buildTeachingDates({
-      academicYear: params.academicYear,
-      term: params.term,
-      weekday: s.weekday,
-    });
+      const dates = await buildTeachingDatesForWeekday({
+        academicYear: params.academicYear,
+        term: params.term,
+        weekday: s.weekday,
+      });
 
     for (const date of dates) {
       rowsToInsert.push({
@@ -1029,6 +1004,9 @@ export async function autoScheduleInstances(params: {
         room_code: s.roomCode,
         status: "normal",
         session_number: null,
+        session_label: null,
+        session_kind: null,
+        remark: null,
         teacher_name: s.teacherName,
         module_size: s.moduleSize,
       });

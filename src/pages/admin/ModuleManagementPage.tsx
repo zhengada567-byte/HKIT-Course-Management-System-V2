@@ -6,6 +6,12 @@ import { LoadingState } from "../../components/ui/LoadingState";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { useLanguage } from "../../contexts/LanguageContext";
 import {
+  formatModuleTeachingHoursDefaultHint,
+  formatModuleTutorialHoursDefaultHint,
+  normalizeModuleContactHours,
+  resolveDefaultModuleTeachingTutorialHours,
+} from "../../lib/moduleContactHours";
+import {
   deleteModule,
   listModules,
   upsertModule,
@@ -22,6 +28,8 @@ const emptyForm: ModuleInput = {
   programme_code: "",
   stream_code: "nil",
   uses_computer: "N",
+  module_teaching_contact_hours: null,
+  module_tutorial_contact_hours: null,
 };
 
 export function ModuleManagementPage() {
@@ -143,6 +151,8 @@ export function ModuleManagementPage() {
       programme_code: row.programme_code ?? "",
       stream_code: row.stream_code ?? "nil",
       uses_computer: normalizeUsesComputerFlag(row.uses_computer),
+      module_teaching_contact_hours: row.module_teaching_contact_hours,
+      module_tutorial_contact_hours: row.module_tutorial_contact_hours,
     });
 
     setMessage(`Editing module: ${row.module_code}`);
@@ -150,7 +160,7 @@ export function ModuleManagementPage() {
   }
 
   return (
-    <div className="page-container">
+    <div className="page-container page-container--fill">
       <PageHeader
         title={t.moduleManagement}
         description="Module unique key: module_code + programme_code + stream_code. module_term is catalog offered term only."
@@ -262,12 +272,25 @@ export function ModuleManagementPage() {
                   className="form-input"
                   value={form.programme_code}
                   disabled={isEditing}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const programmeCode = event.target.value;
+                    const defaults = resolveDefaultModuleTeachingTutorialHours({
+                      programmeCode,
+                    });
+
                     setForm((prev) => ({
                       ...prev,
-                      programme_code: event.target.value,
-                    }))
-                  }
+                      programme_code: programmeCode,
+                      ...(isEditing
+                        ? {}
+                        : {
+                            module_teaching_contact_hours:
+                              defaults.module_teaching_contact_hours,
+                            module_tutorial_contact_hours:
+                              defaults.module_tutorial_contact_hours,
+                          }),
+                    }));
+                  }}
                 />
               </div>
 
@@ -285,6 +308,57 @@ export function ModuleManagementPage() {
                     }))
                   }
                 />
+              </div>
+
+              <div>
+                <label className="form-label">{t.moduleTeachingContactHours}</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={form.module_teaching_contact_hours ?? ""}
+                  placeholder={
+                    form.programme_code
+                      ? formatModuleTeachingHoursDefaultHint(form.programme_code)
+                      : "36"
+                  }
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      module_teaching_contact_hours: normalizeModuleContactHours(
+                        event.target.value
+                      ),
+                    }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="form-label">{t.moduleTutorialContactHours}</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={form.module_tutorial_contact_hours ?? ""}
+                  placeholder={
+                    form.programme_code
+                      ? formatModuleTutorialHoursDefaultHint(form.programme_code)
+                      : "21"
+                  }
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      module_tutorial_contact_hours: normalizeModuleContactHours(
+                        event.target.value
+                      ),
+                    }))
+                  }
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  {t.moduleTeachingTutorialHoursHint}
+                </p>
               </div>
 
               <div>
@@ -324,9 +398,11 @@ export function ModuleManagementPage() {
       ) : rows.length === 0 ? (
         <EmptyState />
       ) : (
-        <DataTable
-          rows={rows}
-          rowKey={(row) => row.id}
+        <div className="page-fill-panel">
+          <DataTable
+            viewportSize="fill"
+            rows={rows}
+            rowKey={(row) => row.id}
           columns={[
             {
               key: "programme",
@@ -395,6 +471,24 @@ export function ModuleManagementPage() {
               ),
             },
             {
+              key: "teachingHours",
+              header: t.moduleTeachingContactHours,
+              render: (row) => (
+                <span className="block w-[40px] whitespace-nowrap font-medium">
+                  {row.module_teaching_contact_hours}
+                </span>
+              ),
+            },
+            {
+              key: "tutorialHours",
+              header: t.moduleTutorialContactHours,
+              render: (row) => (
+                <span className="block w-[40px] whitespace-nowrap font-medium">
+                  {row.module_tutorial_contact_hours}
+                </span>
+              ),
+            },
+            {
               key: "computer",
               header: "Computer",
               render: (row) => (
@@ -427,7 +521,8 @@ export function ModuleManagementPage() {
               ),
             },
           ]}
-        />
+          />
+        </div>
       )}
     </div>
   );

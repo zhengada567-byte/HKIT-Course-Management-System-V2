@@ -7,6 +7,10 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { useAcademicYear } from "../contexts/AcademicYearContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useLanguage } from "../contexts/LanguageContext";
+import {
+  normalizeModuleContactHours,
+  resolveDefaultModuleTeachingTutorialHours,
+} from "../lib/moduleContactHours";
 import { listProgrammes } from "../services/programmeService";
 import {
   normalizeUsesComputerFlag,
@@ -28,7 +32,8 @@ const termOptions: ModuleTerm[] = ["Sep", "Feb", "Jun"];
 
 function defaultNewModuleForm(
   programmeCode: string,
-  streamCode: string
+  streamCode: string,
+  programmeType?: string | null
 ): ModuleInput {
   return {
     module_code: "",
@@ -38,6 +43,15 @@ function defaultNewModuleForm(
     programme_code: programmeCode,
     stream_code: streamCode || "nil",
     uses_computer: "N",
+    ...(programmeCode
+      ? resolveDefaultModuleTeachingTutorialHours({
+          programmeCode,
+          programmeType,
+        })
+      : {
+          module_teaching_contact_hours: null,
+          module_tutorial_contact_hours: null,
+        }),
   };
 }
 
@@ -130,6 +144,20 @@ export function CourseSearchPage() {
       ],
     [programmes]
   );
+
+  const programmeTypeByCode = useMemo(() => {
+    const map = new Map<string, string | null>();
+
+    for (const programme of programmes) {
+      const code = normalizeText(programme.programme_code);
+
+      if (!code || map.has(code)) continue;
+
+      map.set(code, programme.programme_type ?? null);
+    }
+
+    return map;
+  }, [programmes]);
 
   const streamOptions = programmes
     .filter((p) => !programmeCode || p.programme_code === programmeCode)
@@ -248,7 +276,13 @@ export function CourseSearchPage() {
   function openAddModuleForm() {
     if (!programmeCode) return;
 
-    setNewModuleForm(defaultNewModuleForm(programmeCode, streamCode));
+    setNewModuleForm(
+      defaultNewModuleForm(
+        programmeCode,
+        streamCode,
+        programmeTypeByCode.get(programmeCode)
+      )
+    );
     setShowAddForm(true);
     setMessage("");
 
@@ -286,10 +320,18 @@ export function CourseSearchPage() {
         programme_code: newModuleForm.programme_code.trim(),
         stream_code: newModuleForm.stream_code || "nil",
         uses_computer: newModuleForm.uses_computer,
+        module_teaching_contact_hours: newModuleForm.module_teaching_contact_hours,
+        module_tutorial_contact_hours: newModuleForm.module_tutorial_contact_hours,
       });
 
       setShowAddForm(false);
-      setNewModuleForm(defaultNewModuleForm(programmeCode, streamCode));
+      setNewModuleForm(
+      defaultNewModuleForm(
+        programmeCode,
+        streamCode,
+        programmeTypeByCode.get(programmeCode)
+      )
+    );
       await loadRows();
       setMessage(`Created module ${newModuleForm.module_code.trim()}.`);
     } catch (error) {
@@ -325,7 +367,7 @@ export function CourseSearchPage() {
   }
 
   return (
-    <div className="page-container">
+    <div className="page-container page-container--fill">
       <PageHeader
         title={t.courseSearch}
         description="Search module catalogue by programme. Programme leaders: select a programme, then edit and Save, or Delete mistaken modules."
@@ -547,6 +589,44 @@ export function CourseSearchPage() {
               </div>
 
               <div>
+                <label className="form-label">{t.moduleTeachingContactHours}</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={newModuleForm.module_teaching_contact_hours ?? ""}
+                  onChange={(event) =>
+                    setNewModuleForm((prev) => ({
+                      ...prev,
+                      module_teaching_contact_hours: normalizeModuleContactHours(
+                        event.target.value
+                      ),
+                    }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="form-label">{t.moduleTutorialContactHours}</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={newModuleForm.module_tutorial_contact_hours ?? ""}
+                  onChange={(event) =>
+                    setNewModuleForm((prev) => ({
+                      ...prev,
+                      module_tutorial_contact_hours: normalizeModuleContactHours(
+                        event.target.value
+                      ),
+                    }))
+                  }
+                />
+              </div>
+
+              <div>
                 <label className="form-label">Uses Computer</label>
                 <select
                   className="form-select"
@@ -631,9 +711,11 @@ export function CourseSearchPage() {
       ) : rows.length === 0 ? (
         <EmptyState />
       ) : (
-        <DataTable
-          rows={rows}
-          rowKey={(row) => row.module_id}
+        <div className="page-fill-panel">
+          <DataTable
+            viewportSize="fill"
+            rows={rows}
+            rowKey={(row) => row.module_id}
           columns={[
             {
               key: "programme",
@@ -737,6 +819,52 @@ export function CourseSearchPage() {
                 ),
             },
             {
+              key: "teachingHours",
+              header: t.moduleTeachingContactHours,
+              render: (row) =>
+                canManageModules ? (
+                  <input
+                    className="form-input min-w-20"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={drafts[row.module_id]?.module_teaching_contact_hours ?? ""}
+                    onChange={(event) =>
+                      updateDraft(row.module_id, {
+                        module_teaching_contact_hours:
+                          normalizeModuleContactHours(event.target.value) ??
+                          row.module_teaching_contact_hours,
+                      })
+                    }
+                  />
+                ) : (
+                  row.module_teaching_contact_hours
+                ),
+            },
+            {
+              key: "tutorialHours",
+              header: t.moduleTutorialContactHours,
+              render: (row) =>
+                canManageModules ? (
+                  <input
+                    className="form-input min-w-20"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={drafts[row.module_id]?.module_tutorial_contact_hours ?? ""}
+                    onChange={(event) =>
+                      updateDraft(row.module_id, {
+                        module_tutorial_contact_hours:
+                          normalizeModuleContactHours(event.target.value) ??
+                          row.module_tutorial_contact_hours,
+                      })
+                    }
+                  />
+                ) : (
+                  row.module_tutorial_contact_hours
+                ),
+            },
+            {
               key: "usesComputer",
               header: "Uses Computer",
               render: (row) =>
@@ -788,7 +916,8 @@ export function CourseSearchPage() {
                 ]
               : []),
           ]}
-        />
+          />
+        </div>
       )}
     </div>
   );

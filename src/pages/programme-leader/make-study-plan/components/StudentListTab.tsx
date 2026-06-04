@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 
+import { TableViewport } from "../../../../components/tables/TableViewport";
 import type { StudyPlanStudent } from "../types";
 import { deleteStudyPlanStudent } from "../../../../services/studyPlanService";
 import {
@@ -140,8 +141,8 @@ export default function StudentListTab({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="flex shrink-0 justify-between items-center">
         <div>
           <h2 className="text-lg font-semibold">Student List</h2>
           <p className="text-sm text-muted-foreground">
@@ -158,7 +159,7 @@ export default function StudentListTab({
         </button>
       </div>
 
-      <div className="rounded-md border bg-white p-4">
+      <div className="shrink-0 rounded-md border bg-white p-4">
         <div className="grid gap-3 md:grid-cols-2">
           <div>
             <label className="mb-1 block text-sm font-medium">
@@ -241,7 +242,7 @@ export default function StudentListTab({
         </div>
       </div>
 
-      <div className="rounded-md border bg-white p-4 space-y-3">
+      <div className="shrink-0 rounded-md border bg-white p-4 space-y-3">
         <div>
           <h3 className="text-sm font-semibold">Export Study Plan (CSV)</h3>
           <p className="text-xs text-muted-foreground">
@@ -298,21 +299,41 @@ export default function StudentListTab({
         </div>
       </div>
 
-      <div className="rounded-md border overflow-x-auto">
+      <TableViewport size="fill" className="min-h-0 flex-1">
         <table className="w-full text-sm">
-          <thead className="bg-muted">
+          <thead>
             <tr>
-              <th className="p-2 text-left">Student ID</th>
-              <th className="p-2 text-left">Student Name</th>
-              <th className="p-2 text-left">Programme</th>
-              <th className="p-2 text-left">Stream</th>
-              <th className="p-2 text-left">Intake Year</th>
-              <th className="p-2 text-left">Intake Level</th>
-              <th className="p-2 text-left">Mode</th>
-              <th className="p-2 text-left">Intake Term</th>
-              <th className="p-2 text-left">Graduate Term</th>
-              <th className="p-2 text-left">Status</th>
-              <th className="p-2 text-left">Actions</th>
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+                Student ID
+              </th>
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+                Student Name
+              </th>
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+                Programme
+              </th>
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+                Stream
+              </th>
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+                Intake Year
+              </th>
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+                Intake Level
+              </th>
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">Mode</th>
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+                Intake Term
+              </th>
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+                Graduate Term
+              </th>
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+                Status
+              </th>
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+                Actions
+              </th>
             </tr>
           </thead>
 
@@ -402,7 +423,7 @@ export default function StudentListTab({
               ))}
           </tbody>
         </table>
-      </div>
+      </TableViewport>
     </div>
   );
 }

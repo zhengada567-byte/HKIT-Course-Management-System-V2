@@ -65,6 +65,48 @@ export const en = {
   delete: "Delete",
   create: "Create",
   addNewModule: "Add New Module",
+  moduleTeachingContactHours: "Teaching hours",
+  moduleTutorialContactHours: "Tutorial hours",
+  moduleTeachingTutorialHoursHint:
+    "Defaults: HD teaching 36 / tutorial 21; UWLBS/UWLCS/UWLC/UWLCFI teaching 48 / tutorial 27; WUBM/WUCS/WUAFM teaching 24 / tutorial 51.",
+  dailyTimetable: "Daily Timetable",
+  weeklyDailyTimetable: "Weekly & Daily Timetable",
+  weeklyDailyTimetableDescription:
+    "Review and adjust the saved weekly timetable across all programmes, then generate L/T daily session labels.",
+  weeklyTimetableStep: "1. Weekly timetable",
+  weeklyTimetableStepHint:
+    "All programmes for the selected term. Save changes before generating the daily timetable below.",
+  dailyTimetableStep: "2. Daily timetable",
+  dailyTimetableStepHint:
+    "Assigns L1–L9 / T1–T3 (HD) or teaching+tutorial labels from contact hours, using study-week dates only.",
+  weeklyTimetableAdminInstanceHint:
+    "All module instances for this term. Save Timetable writes study-week sessions for any programme.",
+  allProgrammes: "All programmes",
+  buildDailyTimetable: "Generate daily timetable",
+  viewByModule: "View by module",
+  viewByDate: "View by date",
+  selectModule: "Select module",
+  selectDate: "Select date",
+  removeNonStudyWeekSessions: "Remove non-study-week sessions",
+  plDailyTimetable: "Daily Timetable",
+  plDailyTimetableDescription:
+    "View and edit daily L/T sessions for your programme after admin generates the daily timetable.",
+  loadDailyTimetable: "Load daily timetable",
+  addSession: "Add session",
+  sessionStatus: "Status",
+  remark: "Remark",
+  remarkPlaceholder: "e.g. make-up reason",
+  dailyScheduledSessions: "Scheduled sessions (L/T)",
+  dailyBackupSessions: "Backup sessions (no L/T number)",
+  dailyBackupSessionsHint:
+    "Extra weekly slots beyond the required L/T count. Set status to make_up or use “Apply make-up” on a cancelled session.",
+  dailyCancelledSessions: "Cancelled sessions",
+  dailyCancelledSessionsHint:
+    "Not included when re-ordering L/T labels; session number is cleared on save.",
+  selectBackupSession: "Choose backup slot",
+  applyMakeupBackup: "Apply make-up (save)",
+  saveMakeupHint: "Fill remark if needed, then click Save to store and re-order L/T labels.",
+  scrollTableForRemarkSave: "Scroll right for Remark and Save →",
   excludeFromOffering: "Not Offered",
   restoreToOffering: "Restore to Offering",
   excludedModules: "Excluded from offering list",

@@ -6,6 +6,7 @@ import {
   BookOpenCheck,
   CalendarCog,
   CalendarDays,
+  CalendarRange,
   ClipboardCheck,
   FileSpreadsheet,
   Gauge,
@@ -124,6 +125,12 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       roles: ["admin"],
     },
     {
+      to: "/admin/daily-timetable",
+      label: t.weeklyDailyTimetable,
+      icon: CalendarRange,
+      roles: ["admin"],
+    },
+    {
       to: "/programme-leader/make-study-plan",
       label: "學生學習計劃",
       icon: BookOpenCheck,
@@ -133,6 +140,12 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       to: "/programme-leader/make-timetable",
       label: t.makeTimetable,
       icon: FileSpreadsheet,
+      roles: ["programme_leader", "admin"],
+    },
+    {
+      to: "/programme-leader/daily-timetable",
+      label: t.plDailyTimetable,
+      icon: CalendarDays,
       roles: ["programme_leader", "admin"],
     },
     {
