@@ -6,7 +6,8 @@ export type TableViewportSize =
   | "page"
   | "filters"
   | "tallFilters"
-  | "studyPlanStudents";
+  | "studyPlanStudents"
+  | "courseSearch";
 
 const MAX_HEIGHT: Record<Exclude<TableViewportSize, "fill">, string> = {
   page: "calc(100vh - 11rem)",
@@ -14,6 +15,8 @@ const MAX_HEIGHT: Record<Exclude<TableViewportSize, "fill">, string> = {
   tallFilters: "calc(100vh - 26rem)",
   /** Study plan: title, tabs, programme filters (export is collapsible). */
   studyPlanStudents: "calc(100vh - 24rem)",
+  /** Course search: compact filter row; breakdown optional/collapsed. */
+  courseSearch: "calc(100vh - 13rem)",
 };
 
 interface TableViewportProps {

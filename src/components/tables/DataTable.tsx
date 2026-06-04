@@ -14,6 +14,7 @@ interface DataTableProps<T> {
   rowKey: (row: T) => string;
   /** Scroll in a viewport-sized panel (see TableViewportSize). */
   viewportSize?: TableViewportSize | false;
+  viewportClassName?: string;
 }
 
 export function DataTable<T>({
@@ -21,6 +22,7 @@ export function DataTable<T>({
   rows,
   rowKey,
   viewportSize = false,
+  viewportClassName = "",
 }: DataTableProps<T>) {
   const table = (
       <table className="data-table">
@@ -45,7 +47,11 @@ export function DataTable<T>({
   );
 
   if (viewportSize) {
-    return <TableViewport size={viewportSize}>{table}</TableViewport>;
+    return (
+      <TableViewport size={viewportSize} className={viewportClassName}>
+        {table}
+      </TableViewport>
+    );
   }
 
   return <div className="table-wrap">{table}</div>;

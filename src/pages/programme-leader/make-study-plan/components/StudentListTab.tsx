@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { TableViewport } from "../../../../components/tables/TableViewport";
+import { getTermIndex } from "../helpers";
 import type { StudyPlanStudent } from "../types";
 import { deleteStudyPlanStudent } from "../../../../services/studyPlanService";
 import {
@@ -21,6 +22,126 @@ function normalizeStream(value: unknown): string {
   return text || "nil";
 }
 
+type StudentSortKey =
+  | "studentId"
+  | "studentName"
+  | "programmeCode"
+  | "programmeStream"
+  | "intakeYear"
+  | "intakeLevel"
+  | "studyMode"
+  | "intakeTerm"
+  | "graduateTerm"
+  | "studentStatus";
+
+type SortDirection = "asc" | "desc";
+
+function compareStudents(
+  a: StudyPlanStudent,
+  b: StudyPlanStudent,
+  key: StudentSortKey,
+  direction: SortDirection
+): number {
+  const sign = direction === "asc" ? 1 : -1;
+
+  const text = (left: string | undefined, right: string | undefined) =>
+    String(left ?? "").localeCompare(String(right ?? ""), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+
+  let result = 0;
+
+  switch (key) {
+    case "studentId":
+      result = text(a.studentId, b.studentId);
+      break;
+    case "studentName":
+      result = text(a.studentName, b.studentName);
+      break;
+    case "programmeCode":
+      result = text(a.programmeCode, b.programmeCode);
+      break;
+    case "programmeStream":
+      result = text(
+        normalizeStream(a.programmeStream),
+        normalizeStream(b.programmeStream)
+      );
+      break;
+    case "intakeYear": {
+      const left = Number(a.intakeYear);
+      const right = Number(b.intakeYear);
+      const leftNum = Number.isFinite(left) ? left : -Infinity;
+      const rightNum = Number.isFinite(right) ? right : -Infinity;
+      result = leftNum - rightNum || text(a.intakeYear, b.intakeYear);
+      break;
+    }
+    case "intakeLevel":
+      result = text(a.intakeLevel, b.intakeLevel);
+      break;
+    case "studyMode":
+      result = text(a.studyMode, b.studyMode);
+      break;
+    case "intakeTerm":
+      result =
+        getTermIndex(a.intakeTerm ?? "") - getTermIndex(b.intakeTerm ?? "") ||
+        text(a.intakeTerm, b.intakeTerm);
+      break;
+    case "graduateTerm":
+      result =
+        getTermIndex(a.graduateTerm ?? "") -
+          getTermIndex(b.graduateTerm ?? "") ||
+        text(a.graduateTerm, b.graduateTerm);
+      break;
+    case "studentStatus":
+      result = text(a.studentStatus ?? "potential", b.studentStatus ?? "potential");
+      break;
+  }
+
+  return result * sign;
+}
+
+function SortableHeader({
+  label,
+  sortKey,
+  activeSortKey,
+  sortDirection,
+  onSort,
+}: {
+  label: string;
+  sortKey: StudentSortKey;
+  activeSortKey: StudentSortKey;
+  sortDirection: SortDirection;
+  onSort: (key: StudentSortKey) => void;
+}) {
+  const isActive = activeSortKey === sortKey;
+
+  return (
+    <th className="sticky top-0 z-10 bg-slate-100 p-0 text-left whitespace-nowrap">
+      <button
+        type="button"
+        className="flex w-full items-center gap-1 px-2 py-2 text-left text-sm font-semibold text-slate-900 hover:bg-slate-200/80"
+        onClick={() => onSort(sortKey)}
+        aria-sort={
+          isActive
+            ? sortDirection === "asc"
+              ? "ascending"
+              : "descending"
+            : "none"
+        }
+      >
+        <span>{label}</span>
+        <span
+          className={`text-xs ${isActive ? "text-blue-700" : "text-slate-400"}`}
+          aria-hidden
+        >
+          {isActive ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}
+        </span>
+      </button>
+    </th>
+  );
+}
+
 export default function StudentListTab({
   students,
   loading,
@@ -34,6 +155,18 @@ export default function StudentListTab({
     useState<StudyPlanExportScope>("stream");
   const [exportProgrammeType, setExportProgrammeType] = useState("Degree");
   const [exporting, setExporting] = useState(false);
+  const [sortKey, setSortKey] = useState<StudentSortKey>("studentId");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
+  function handleSortColumn(key: StudentSortKey) {
+    if (sortKey === key) {
+      setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setSortKey(key);
+    setSortDirection("asc");
+  }
 
   const programmeCodes = useMemo(() => {
     return Array.from(
@@ -69,6 +202,12 @@ export default function StudentListTab({
       );
     });
   }, [students, selectedProgrammeCode, selectedProgrammeStream]);
+
+  const sortedStudents = useMemo(() => {
+    return [...filteredStudents].sort((a, b) =>
+      compareStudents(a, b, sortKey, sortDirection)
+    );
+  }, [filteredStudents, sortKey, sortDirection]);
 
   async function handleDelete(student: StudyPlanStudent) {
     if (!student.id) return;
@@ -303,36 +442,76 @@ export default function StudentListTab({
         <table className="data-table min-w-max text-sm">
           <thead>
             <tr>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
-                Student ID
-              </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
-                Student Name
-              </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
-                Programme
-              </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
-                Stream
-              </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
-                Intake Year
-              </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
-                Intake Level
-              </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
-                Mode
-              </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
-                Intake Term
-              </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
-                Graduate Term
-              </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
-                Status
-              </th>
+              <SortableHeader
+                label="Student ID"
+                sortKey="studentId"
+                activeSortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={handleSortColumn}
+              />
+              <SortableHeader
+                label="Student Name"
+                sortKey="studentName"
+                activeSortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={handleSortColumn}
+              />
+              <SortableHeader
+                label="Programme"
+                sortKey="programmeCode"
+                activeSortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={handleSortColumn}
+              />
+              <SortableHeader
+                label="Stream"
+                sortKey="programmeStream"
+                activeSortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={handleSortColumn}
+              />
+              <SortableHeader
+                label="Intake Year"
+                sortKey="intakeYear"
+                activeSortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={handleSortColumn}
+              />
+              <SortableHeader
+                label="Intake Level"
+                sortKey="intakeLevel"
+                activeSortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={handleSortColumn}
+              />
+              <SortableHeader
+                label="Mode"
+                sortKey="studyMode"
+                activeSortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={handleSortColumn}
+              />
+              <SortableHeader
+                label="Intake Term"
+                sortKey="intakeTerm"
+                activeSortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={handleSortColumn}
+              />
+              <SortableHeader
+                label="Graduate Term"
+                sortKey="graduateTerm"
+                activeSortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={handleSortColumn}
+              />
+              <SortableHeader
+                label="Status"
+                sortKey="studentStatus"
+                activeSortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={handleSortColumn}
+              />
               <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
                 Actions
               </th>
@@ -378,7 +557,7 @@ export default function StudentListTab({
             {!loading &&
               selectedProgrammeCode &&
               selectedProgrammeStream &&
-              filteredStudents.map((student) => (
+              sortedStudents.map((student) => (
                 <tr key={student.id ?? student.studentId} className="border-t">
                   <td className="whitespace-nowrap p-2">{student.studentId}</td>
                   <td className="whitespace-nowrap p-2">{student.studentName}</td>

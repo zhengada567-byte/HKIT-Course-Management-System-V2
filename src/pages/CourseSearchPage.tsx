@@ -368,7 +368,7 @@ export function CourseSearchPage() {
   }
 
   return (
-    <div className="page-container page-container--fill">
+    <div className="page-container">
       <PageHeader
         title={t.courseSearch}
         description="Search module catalogue by programme. Programme leaders: select a programme, then edit and Save, or Delete mistaken modules."
@@ -387,9 +387,9 @@ export function CourseSearchPage() {
         </div>
       )}
 
-      <div className="card mb-4">
-        <div className="card-body grid gap-3 md:grid-cols-4">
-          <div>
+      <div className="card mb-2">
+        <div className="card-body flex flex-wrap items-end gap-3">
+          <div className="w-full min-w-[9rem] flex-1 sm:max-w-[14rem]">
             <label className="form-label">{t.programmeCode}</label>
             <select
               className="form-select"
@@ -408,7 +408,7 @@ export function CourseSearchPage() {
             </select>
           </div>
 
-          <div>
+          <div className="w-full min-w-[9rem] flex-1 sm:max-w-[14rem]">
             <label className="form-label">{t.programmeStream}</label>
             <select
               className="form-select"
@@ -424,10 +424,10 @@ export function CourseSearchPage() {
             </select>
           </div>
 
-          <div className="flex flex-wrap items-end gap-2">
+          <div className="flex shrink-0 flex-nowrap items-center gap-2">
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn btn-primary whitespace-nowrap"
               disabled={isBusy}
               onClick={() => void loadRows()}
             >
@@ -437,7 +437,7 @@ export function CourseSearchPage() {
             {canManageModules && (
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="btn btn-secondary whitespace-nowrap"
                 disabled={isBusy || loading || !programmeCode}
                 onClick={openAddModuleForm}
               >
@@ -445,11 +445,11 @@ export function CourseSearchPage() {
               </button>
             )}
 
-            {canManageModules && rows.length > 0 && (
+            {canManageModules && (
               <button
                 type="button"
-                className="btn btn-secondary"
-                disabled={isBusy || loading}
+                className="btn btn-secondary whitespace-nowrap"
+                disabled={isBusy || loading || rows.length === 0}
                 onClick={() => void handleSaveAll()}
               >
                 {savingAll ? t.loading : t.saveAll}
@@ -661,22 +661,14 @@ export function CourseSearchPage() {
       )}
 
       {programmeCode && moduleBreakdown && !loading && (
-        <div className="card mb-4">
-          <div className="card-body space-y-3">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <div className="text-sm font-semibold text-slate-900">
-                Module breakdown
-              </div>
-              <div className="text-sm text-slate-600">
-                {programmeCode}
-                {streamCode ? ` · ${streamCode}` : " · All streams"}
-                {" · "}
-                <span className="font-semibold text-slate-900">
-                  {moduleBreakdown.total} modules
-                </span>
-              </div>
-            </div>
-
+        <details className="card mb-2">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-900">
+            Module breakdown — {programmeCode}
+            {streamCode ? ` · ${streamCode}` : " · All streams"}
+            {" · "}
+            <span className="font-semibold">{moduleBreakdown.total} modules</span>
+          </summary>
+          <div className="card-body space-y-3 border-t pt-0">
             {moduleBreakdown.buckets.length === 0 ? (
               <p className="text-sm text-slate-500">
                 No modules with year and term for this selection.
@@ -704,7 +696,7 @@ export function CourseSearchPage() {
               </p>
             )}
           </div>
-        </div>
+        </details>
       )}
 
       {loading ? (
@@ -712,9 +704,9 @@ export function CourseSearchPage() {
       ) : rows.length === 0 ? (
         <EmptyState />
       ) : (
-        <div className="page-fill-panel">
-          <DataTable
-            viewportSize="fill"
+        <DataTable
+            viewportSize="courseSearch"
+            viewportClassName="min-h-[28rem] w-full"
             rows={rows}
             rowKey={(row) => row.module_id}
           columns={[
@@ -917,8 +909,7 @@ export function CourseSearchPage() {
                 ]
               : []),
           ]}
-          />
-        </div>
+        />
       )}
     </div>
   );
