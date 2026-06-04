@@ -141,7 +141,7 @@ export default function StudentListTab({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
+    <div className="space-y-4">
       <div className="flex shrink-0 justify-between items-center">
         <div>
           <h2 className="text-lg font-semibold">Student List</h2>
@@ -242,16 +242,16 @@ export default function StudentListTab({
         </div>
       </div>
 
-      <div className="shrink-0 rounded-md border bg-white p-4 space-y-3">
-        <div>
-          <h3 className="text-sm font-semibold">Export Study Plan (CSV)</h3>
-          <p className="text-xs text-muted-foreground">
-            One row per student. Bridging module pairs come first, then degree
-            programme module pairs, sorted by study term order.
-          </p>
-        </div>
+      <details className="rounded-md border bg-white p-4">
+        <summary className="cursor-pointer text-sm font-semibold">
+          Export Study Plan (CSV)
+        </summary>
+        <p className="mt-2 text-xs text-muted-foreground">
+          One row per student. Bridging module pairs come first, then degree
+          programme module pairs, sorted by study term order.
+        </p>
 
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
           <div>
             <label className="mb-1 block text-sm font-medium">Export Scope</label>
             <select
@@ -297,41 +297,43 @@ export default function StudentListTab({
             </button>
           </div>
         </div>
-      </div>
+      </details>
 
-      <TableViewport size="fill" className="min-h-0 flex-1">
-        <table className="w-full text-sm">
+      <TableViewport size="studyPlanStudents" className="min-h-[20rem] w-full">
+        <table className="data-table min-w-max text-sm">
           <thead>
             <tr>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
                 Student ID
               </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
                 Student Name
               </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
                 Programme
               </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
                 Stream
               </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
                 Intake Year
               </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
                 Intake Level
               </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">Mode</th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
+                Mode
+              </th>
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
                 Intake Term
               </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
                 Graduate Term
               </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
                 Status
               </th>
-              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left">
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
                 Actions
               </th>
             </tr>
@@ -378,23 +380,23 @@ export default function StudentListTab({
               selectedProgrammeStream &&
               filteredStudents.map((student) => (
                 <tr key={student.id ?? student.studentId} className="border-t">
-                  <td className="p-2">{student.studentId}</td>
-                  <td className="p-2">{student.studentName}</td>
-                  <td className="p-2">{student.programmeCode}</td>
-                  <td className="p-2">
+                  <td className="whitespace-nowrap p-2">{student.studentId}</td>
+                  <td className="whitespace-nowrap p-2">{student.studentName}</td>
+                  <td className="whitespace-nowrap p-2">{student.programmeCode}</td>
+                  <td className="whitespace-nowrap p-2">
                     {normalizeStream(student.programmeStream)}
                   </td>
-                  <td className="p-2">{student.intakeYear || "-"}</td>
-                  <td className="p-2">{student.intakeLevel || "-"}</td>
-                  <td className="p-2">{student.studyMode}</td>
-                  <td className="p-2">{student.intakeTerm || "-"}</td>
-                  <td className="p-2">{student.graduateTerm || "-"}</td>
-                  <td className="p-2">
+                  <td className="whitespace-nowrap p-2">{student.intakeYear || "-"}</td>
+                  <td className="whitespace-nowrap p-2">{student.intakeLevel || "-"}</td>
+                  <td className="whitespace-nowrap p-2">{student.studyMode}</td>
+                  <td className="whitespace-nowrap p-2">{student.intakeTerm || "-"}</td>
+                  <td className="whitespace-nowrap p-2">{student.graduateTerm || "-"}</td>
+                  <td className="whitespace-nowrap p-2">
                     <span className="rounded-full bg-muted px-2 py-1 text-xs">
                       {student.studentStatus ?? "potential"}
                     </span>
                   </td>
-                  <td className="p-2 space-x-2">
+                  <td className="whitespace-nowrap p-2 space-x-2">
                     <button
                       className="px-3 py-1 rounded-md bg-muted text-xs"
                       onClick={() => student.id && onEdit(student.id)}

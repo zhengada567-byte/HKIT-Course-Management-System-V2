@@ -24,7 +24,7 @@ export function AppLayout() {
             onMobileClose={() => setMobileNavOpen(false)}
           />
 
-          <main className="flex min-h-[calc(100vh-3.5rem)] min-w-0 flex-1 flex-col overflow-hidden">
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
             <Outlet />
           </main>
         </div>

@@ -314,7 +314,7 @@ textarea {
   }
 
   .table-viewport--fill {
-    @apply min-h-0 flex-1;
+    @apply min-h-0 flex-1 basis-0 overflow-auto;
   }
 
   .table-viewport thead th {
@@ -329,11 +329,11 @@ textarea {
   }
 
   .page-container--fill {
-    @apply flex min-h-[calc(100vh-3.5rem)] min-w-0 flex-col;
+    @apply flex h-[calc(100vh-3.5rem)] max-h-[calc(100vh-3.5rem)] min-h-0 min-w-0 flex-col;
   }
 
   .page-fill-panel {
-    @apply min-h-0 flex-1;
+    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
   }
 
   .data-table {

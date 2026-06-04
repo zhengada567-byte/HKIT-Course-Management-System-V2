@@ -168,7 +168,7 @@ export default function MakeStudyPlanPage() {
   }, [activeTab, setCollapsed]);
 
   return (
-    <div className="flex min-h-[calc(100vh-3.5rem)] flex-col p-6">
+    <div className="page-container px-6 py-4">
       <div className="shrink-0">
         <h1 className="text-2xl font-bold tracking-tight">
           學生學習計劃
@@ -178,7 +178,7 @@ export default function MakeStudyPlanPage() {
         </p>
       </div>
 
-      <div className="mt-6 flex shrink-0 flex-wrap gap-2 border-b pb-2">
+      <div className="mt-4 flex shrink-0 flex-wrap gap-2 border-b pb-2">
         <button
           type="button"
           className={`px-4 py-2 rounded-md text-sm ${
@@ -255,7 +255,7 @@ export default function MakeStudyPlanPage() {
       <div
         className={
           activeTab === "students"
-            ? "mt-6 flex min-h-0 flex-1 flex-col"
+            ? "mt-4 block"
             : "hidden"
         }
       >
