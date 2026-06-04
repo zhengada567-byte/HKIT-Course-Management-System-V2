@@ -17,6 +17,7 @@ import {
   TableProperties,
   Upload,
   UserCog,
+  UserPen,
   Users,
 } from "lucide-react";
 
@@ -34,10 +35,20 @@ interface SidebarProps {
 interface NavItem {
   to: string;
   label: string;
+  /** Override label for specific roles (e.g. PL sees 課程總覽). */
+  labelByRole?: Partial<Record<UserRole, string>>;
   icon: React.ComponentType<{ className?: string }>;
   roles?: UserRole[];
   disabled?: boolean;
   disabledReason?: string;
+}
+
+function resolveNavLabel(item: NavItem, role: UserRole | null) {
+  if (role && item.labelByRole?.[role]) {
+    return item.labelByRole[role]!;
+  }
+
+  return item.label;
 }
 
 export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
@@ -63,9 +74,24 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       icon: LayoutDashboard,
     },
     {
+      to: "/admin/programmes",
+      label: t.programmeManagement,
+      labelByRole: {
+        programme_leader: t.programmeOverview,
+      },
+      icon: GraduationCap,
+      roles: ["admin", "programme_leader"],
+    },
+    {
       to: "/course-search",
       label: t.courseSearch,
       icon: Search,
+    },
+    {
+      to: "/programme-leader/module-teachers",
+      label: t.moduleTeacherAssignment,
+      icon: UserPen,
+      roles: ["programme_leader", "admin"],
     },
     {
       to: "/academic-calendar",
@@ -104,12 +130,6 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       to: "/admin/upload-excel",
       label: t.uploadExcel,
       icon: Upload,
-      roles: ["admin", "programme_leader"],
-    },
-    {
-      to: "/admin/programmes",
-      label: t.programmeManagement,
-      icon: GraduationCap,
       roles: ["admin", "programme_leader"],
     },
     {
@@ -194,7 +214,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
               className="flex w-full cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-400 transition hover:bg-slate-50"
             >
               <Icon className="h-4 w-4" />
-              <span>{item.label}</span>
+              <span>{resolveNavLabel(item, role)}</span>
             </button>
           );
         }
@@ -214,7 +234,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             }
           >
             <Icon className="h-4 w-4" />
-            <span>{item.label}</span>
+            <span>{resolveNavLabel(item, role)}</span>
           </NavLink>
         );
       })}

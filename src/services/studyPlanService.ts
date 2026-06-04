@@ -2187,29 +2187,8 @@ export async function loadStudyPlanExportBundles(
     return [];
   }
 
-  const { data: moduleRows, error: moduleError } = await supabase
-    .from("study_plan_modules")
-    .select("*")
-    .in("student_profile_id", profileIds)
-    .order("plan_stage", { ascending: false })
-    .order("module_year", { ascending: true })
-    .order("module_term", { ascending: true })
-    .order("module_sequence", { ascending: true })
-    .order("module_code", { ascending: true });
-
-  if (moduleError) throw moduleError;
-
-  const modulesByProfileId = new Map<string, StudyPlanModule[]>();
-
-  for (const row of moduleRows ?? []) {
-    const profileId = String(row.student_profile_id ?? "");
-
-    if (!profileId) continue;
-
-    const existing = modulesByProfileId.get(profileId) ?? [];
-    existing.push(fromModuleRow(row));
-    modulesByProfileId.set(profileId, existing);
-  }
+  // Batch by profile id — a single .in(...) with hundreds of UUIDs exceeds URL limits (400).
+  const modulesByProfileId = await loadStudyPlanModulesByProfileIds(profileIds);
 
   const metadataInputs = studentsWithType.flatMap((student) => {
     if (!student.id) return [];

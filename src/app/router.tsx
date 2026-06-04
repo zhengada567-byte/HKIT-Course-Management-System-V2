@@ -20,6 +20,7 @@ import { AcademicCalendarPage } from "../pages/AcademicCalendarPage";
 import { MakeTimetablePage } from "../pages/programme-leader/MakeTimetablePage";
 import { DailyTimetablePage as ProgrammeLeaderDailyTimetablePage } from "../pages/programme-leader/DailyTimetablePage";
 import MakeStudyPlanPage from "../pages/programme-leader/make-study-plan/MakeStudyPlanPage";
+import { ModuleTeacherAssignmentPage } from "../pages/programme-leader/ModuleTeacherAssignmentPage";
 import { AssignmentConfirmationMonitorPage } from "../pages/admin/AssignmentConfirmationMonitorPage";
 import { DailyTimetablePage } from "../pages/admin/DailyTimetablePage";
 
@@ -140,6 +141,14 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute allowedRoles={["programme_leader", "admin"]}>
             <MakeStudyPlanPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "programme-leader/module-teachers",
+        element: (
+          <ProtectedRoute allowedRoles={["programme_leader", "admin"]}>
+            <ModuleTeacherAssignmentPage />
           </ProtectedRoute>
         ),
       },

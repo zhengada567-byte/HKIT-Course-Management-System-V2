@@ -5,15 +5,53 @@ export const en = {
   username: "Username",
   password: "Password",
   dashboard: "Dashboard",
+  plDashboardWelcome:
+    "Welcome to HKIT Course Management. Below is a short guide to each sidebar item; click to open the page.",
+  plDashboardCurrentTerm: "Current term settings",
+  plDashboardTermHint:
+    "Maintained by admin under Academic Year settings. Study Term drives study plans; offered term (Sep/Feb/Jun) drives modules and timetabling.",
+  plDashboardFeatures: "Features",
+  academicCalendar: "Academic Calendar",
+  studyPlan: "Student Study Plan",
+  downloadAllStudyPlans: "Download All Student Study Plans",
+  guidePlProgrammeOverview:
+    "Browse programme codes, streams, leaders, and articulation.",
+  guidePlCourseSearch:
+    "Search the module catalogue by programme; view or edit modules and contact hours.",
+  guidePlModuleTeachers:
+    "Set proposed teachers per module for your programmes; pick from the catalog or add new teachers.",
+  guidePlAcademicCalendar: "View learning weeks, holidays, and key dates this year.",
+  guidePlTeacherLoading:
+    "View teachers' actual teaching load for the current academic year.",
+  guidePlUploadExcel:
+    "Upload module Excel to update catalogue, enrolments, and proposed teachers.",
+  guidePlStudyPlan:
+    "Manage student study plans, modules, and terms; export plans or quota reports.",
+  guidePlMakeTimetable:
+    "Combine/split classes, set teacher availability, and auto-schedule weekly timetables.",
+  guidePlDailyTimetable:
+    "View and edit daily L/T sessions for your programme (status, makeup, remarks).",
   courseSearch: "Course Search",
   teacherLoading: "Teacher Loading",
   uploadExcel: "Upload Excel",
   academicYear: "Academic Year",
   programmeManagement: "Programme Management",
+  programmeOverview: "Programme Overview",
   teacherManagement: "Teacher Management",
   moduleManagement: "Module Management",
   passwordManagement: "Password Management",
   makeTimetable: "Make Timetable",
+  moduleTeacherAssignment: "Module Teacher Assignment",
+  moduleTeacherAssignmentDescription:
+    "Select a programme to load proposed (default) teachers per module. Change teachers from the dropdown and save. New teachers are saved to the database and appear in the dropdown immediately.",
+  loadModuleTeachers: "Load Modules",
+  proposedTeacher: "Proposed Teacher",
+  newTeacher: "New Teacher",
+  allStreams: "All streams",
+  moduleTeacherAssignmentEmpty:
+    "No modules found for this programme and stream.",
+  moduleTeacherAssignmentSelectProgramme:
+    "Select a programme code, then click Load Modules.",
   approvedLoading: "Approved Loading",
   selectUser: "Select user",
   passwordRequired: "Please enter your password",

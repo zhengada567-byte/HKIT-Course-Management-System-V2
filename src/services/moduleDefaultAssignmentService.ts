@@ -1,6 +1,10 @@
+import { buildTeacherName } from "../lib/utils";
 import { supabase } from "../lib/supabase";
+import { listModules } from "./moduleService";
 import type {
   ModuleDefaultAssignmentRow,
+  ModuleRow,
+  TeacherRow,
   TeachingMode,
   TeachingStatus,
 } from "../types";
@@ -113,4 +117,123 @@ export async function listModuleDefaultAssignments(params: {
   if (error) throw error;
 
   return (data ?? []) as ModuleDefaultAssignmentRow[];
+}
+
+export function moduleDefaultAssignmentKey(
+  moduleCode: string,
+  streamCode: string | null | undefined
+) {
+  return `${moduleCode}|${normalizeDefaultAssignmentStream(streamCode)}`;
+}
+
+export function buildModuleDefaultAssignmentInput(params: {
+  academicYear: string;
+  module: Pick<
+    ModuleRow,
+    "module_code" | "module_term" | "programme_code" | "stream_code"
+  >;
+  teacherName: string;
+  teachingStatus: TeachingStatus | null;
+  teachers: TeacherRow[];
+  mode?: TeachingMode;
+}): ModuleDefaultAssignmentInput {
+  const trimmedName = String(params.teacherName ?? "").trim() || "TBC";
+  const catalogTeacher = params.teachers.find(
+    (teacher) => teacher.teacher_name === trimmedName
+  );
+
+  if (catalogTeacher) {
+    const employment = normalizeTeachingStatus(
+      catalogTeacher.employment_type ?? undefined
+    );
+
+    return {
+      academic_year: params.academicYear,
+      module_code: params.module.module_code,
+      module_term: params.module.module_term,
+      programme_code: params.module.programme_code,
+      stream_code: params.module.stream_code,
+      teacher_name: catalogTeacher.teacher_name,
+      teacher_title: catalogTeacher.title,
+      teacher_family_name: catalogTeacher.family_name,
+      teacher_other_name: catalogTeacher.other_name,
+      teaching_status: params.teachingStatus ?? employment ?? "PT",
+      mode: params.mode ?? "Night",
+    };
+  }
+
+  const parsed = parseTeacherName(trimmedName);
+
+  return {
+    academic_year: params.academicYear,
+    module_code: params.module.module_code,
+    module_term: params.module.module_term,
+    programme_code: params.module.programme_code,
+    stream_code: params.module.stream_code,
+    teacher_name: parsed.teacher_name,
+    teacher_title: parsed.teacher_title,
+    teacher_family_name: parsed.teacher_family_name,
+    teacher_other_name: parsed.teacher_other_name,
+    teaching_status: params.teachingStatus ?? "PT",
+    mode: params.mode ?? "Night",
+  };
+}
+
+export interface ProgrammeModuleTeacherRow {
+  module: ModuleRow;
+  assignment: ModuleDefaultAssignmentRow | null;
+}
+
+export async function listProgrammeModuleTeacherRows(params: {
+  academicYear: string;
+  programmeCode: string;
+  streamCode?: string;
+}): Promise<ProgrammeModuleTeacherRow[]> {
+  const [modules, assignments] = await Promise.all([
+    listModules({
+      programme_code: params.programmeCode,
+      stream_code: params.streamCode || undefined,
+    }),
+    listModuleDefaultAssignments({
+      academicYear: params.academicYear,
+      programmeCode: params.programmeCode,
+    }),
+  ]);
+
+  const assignmentByKey = new Map(
+    assignments.map((row) => [
+      moduleDefaultAssignmentKey(row.module_code, row.stream_code),
+      row,
+    ])
+  );
+
+  const filteredModules = params.streamCode
+    ? modules.filter(
+        (module) =>
+          normalizeDefaultAssignmentStream(module.stream_code) ===
+          normalizeDefaultAssignmentStream(params.streamCode)
+      )
+    : modules;
+
+  return filteredModules.map((module) => ({
+    module,
+    assignment:
+      assignmentByKey.get(
+        moduleDefaultAssignmentKey(module.module_code, module.stream_code)
+      ) ?? null,
+  }));
+}
+
+export function teacherNameFromAssignment(
+  assignment: ModuleDefaultAssignmentRow | null
+) {
+  if (!assignment) return "TBC";
+
+  const built = buildTeacherName(
+    assignment.teacher_title,
+    assignment.teacher_family_name,
+    assignment.teacher_other_name
+  );
+
+  return String(assignment.teacher_name ?? built ?? "").trim() || "TBC";
 }

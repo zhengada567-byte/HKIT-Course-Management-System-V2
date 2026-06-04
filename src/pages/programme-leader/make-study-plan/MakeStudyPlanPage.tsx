@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { useLanguage } from "../../../contexts/LanguageContext";
 import { useSidebarLayout } from "../../../contexts/SidebarLayoutContext";
 import type { StudyPlanModule, StudyPlanStudent } from "./types";
 
+import { downloadStudyPlanCsv } from "../../../services/studyPlanExportService";
 import {
   getStudyPlanStudent,
   getStudyPlanStudentByStudentId,
@@ -20,8 +22,10 @@ type TabKey = "students" | "search" | "quota" | "upload" | "editor" | "reports";
 type EditorOrigin = "list" | "search" | "new";
 
 export default function MakeStudyPlanPage() {
+  const { t } = useLanguage();
   const { setCollapsed } = useSidebarLayout();
   const [activeTab, setActiveTab] = useState<TabKey>("students");
+  const [exportingAll, setExportingAll] = useState(false);
   const [editorOrigin, setEditorOrigin] = useState<EditorOrigin>("list");
   const [students, setStudents] = useState<StudyPlanStudent[]>([]);
   const [selectedStudent, setSelectedStudent] =
@@ -155,6 +159,25 @@ export default function MakeStudyPlanPage() {
     goToTab("students");
   }
 
+  async function handleDownloadAllStudyPlans() {
+    setExportingAll(true);
+
+    try {
+      const result = await downloadStudyPlanCsv({ scope: "all" });
+
+      alert(
+        `已匯出 ${result.rowCount} 份學生學習計劃至 ${result.fileName}。`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to export study plans.";
+
+      alert(`匯出失敗：\n\n${message}`);
+    } finally {
+      setExportingAll(false);
+    }
+  }
+
   useEffect(() => {
     void refreshStudents();
   }, []);
@@ -169,13 +192,24 @@ export default function MakeStudyPlanPage() {
 
   return (
     <div className="page-container px-6 py-4">
-      <div className="shrink-0">
-        <h1 className="text-2xl font-bold tracking-tight">
-          學生學習計劃
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          管理學生學習計劃、科目狀態、修讀學期及實際學生人數。
-        </p>
+      <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">
+            學生學習計劃
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            管理學生學習計劃、科目狀態、修讀學期及實際學生人數。
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="shrink-0 rounded-md bg-emerald-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+          disabled={exportingAll || loading}
+          onClick={() => void handleDownloadAllStudyPlans()}
+        >
+          {exportingAll ? t.loading : t.downloadAllStudyPlans}
+        </button>
       </div>
 
       <div className="mt-4 flex shrink-0 flex-wrap gap-2 border-b pb-2">

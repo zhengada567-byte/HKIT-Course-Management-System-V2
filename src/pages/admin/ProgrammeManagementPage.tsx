@@ -24,8 +24,10 @@ const emptyForm: ProgrammeInput = {
 };
 
 export function ProgrammeManagementPage() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const { t } = useLanguage();
+  const pageTitle =
+    role === "programme_leader" ? t.programmeOverview : t.programmeManagement;
   const formRef = useRef<HTMLFormElement | null>(null);
 
   const [rows, setRows] = useState<ProgrammeRow[]>([]);
@@ -151,7 +153,7 @@ export function ProgrammeManagementPage() {
   return (
     <div className="page-container">
       <PageHeader
-        title={t.programmeManagement}
+        title={pageTitle}
         description="Programme unique key: programme_code + programme_stream. HD rows may set Articulation (target Degree codes, e.g. UWLCS)."
       />
 
