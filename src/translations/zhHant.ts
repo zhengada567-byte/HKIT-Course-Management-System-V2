@@ -68,7 +68,7 @@ export const zhHant = {
   moduleTeachingContactHours: "授課時數",
   moduleTutorialContactHours: "導修時數",
   moduleTeachingTutorialHoursHint:
-    "依課程預設：HD 授課 36／導修 21；UWLBS/UWLCS/UWLC/UWLCFI 授課 48／導修 27；WUBM/WUCS/WUAFM 授課 24／導修 51。",
+    "依課程預設：HD 授課 36／導修 21；UWLBS/UWLCS/WUBM 授課 48 或 24／導修 0；UWLC/UWLCFI 48／27；WUCS/WUAFM 24／51。",
   dailyTimetable: "每日時間表",
   weeklyDailyTimetable: "每周每日時間表",
   weeklyDailyTimetableDescription:
@@ -83,6 +83,9 @@ export const zhHant = {
     "本學期所有模組實例；儲存後會寫入各課程的學習週課節。",
   allProgrammes: "全部課程",
   buildDailyTimetable: "產生每日時間表",
+  exportWeeklyDailyTimetableExcel: "匯出每周及每日 Excel",
+  exportWeeklyDailyTimetableHint:
+    "每周工作表：每個科目一行（星期、時段、課室）。每日工作表：各科目每個 L/T 課節（不含後備與已取消）。",
   viewByModule: "按科目檢視",
   viewByDate: "按日期檢視",
   selectModule: "選擇科目",

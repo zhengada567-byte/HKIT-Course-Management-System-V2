@@ -14,7 +14,6 @@ import {
   listAssignments,
   saveAssignmentDraft,
 } from "../../services/assignmentService";
-import { downloadTimetableExcel } from "../../services/exportService";
 import {
   createManualCombineGroup,
   deleteManualCombineGroup,
@@ -1426,24 +1425,6 @@ export function MakeTimetablePage() {
     }
   }
 
-  async function handleExportExcel() {
-    if (!user) {
-      setMessage("Please login before exporting timetable.");
-      return;
-    }
-
-    try {
-      await downloadTimetableExcel({
-        academicYear,
-        exportedBy: user.id,
-        programmeCode: programmeCode || undefined,
-      });
-    } catch (error) {
-      console.error("[MakeTimetablePage] Export failed:", error);
-      setMessage(error instanceof Error ? error.message : "Export failed");
-    }
-  }
-
   useEffect(() => {
     let requestId = 0;
 
@@ -1624,11 +1605,6 @@ export function MakeTimetablePage() {
       <PageHeader
         title={t.makeTimetable}
         description="Workflow: sync student numbers → auto/manual combine → split → schedule."
-        actions={
-          <button type="button" className="btn btn-primary" onClick={handleExportExcel}>
-            {t.downloadTimetableExcel}
-          </button>
-        }
       />
 
       {message && (

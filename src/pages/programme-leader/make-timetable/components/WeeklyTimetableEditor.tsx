@@ -6,9 +6,9 @@ import { useAuth } from "../../../../contexts/AuthContext";
 import type { TimetableModuleInstanceRow } from "../../../../services/timetableModuleInstanceService";
 import {
   buildDraftWeeklyPlacement,
+  buildWeeklyTimetableGridFromSessions,
   cloneWeeklyGridState,
   collectWeeklyPlacements,
-  mergeWeeklySlotRows,
   persistWeeklyTimetableDraft,
   wouldWeeklyPlacementConflict,
   type WeeklyGridItem,
@@ -168,107 +168,37 @@ export function WeeklyTimetableEditor(props: {
       }
       setModuleMetaByCode(metaRecord);
 
-      const collapsed = new Map<
-        string,
-        WeeklyGridItem & { weekday: number; start: string; end: string }
-      >();
-      const sessionSlots: Array<{ start: string; end: string }> = [];
-
-      for (const session of sessions) {
-        if (session.status === "cancel") continue;
+      const filteredSessions = sessions.filter((session) => {
+        if (session.status === "cancel") return false;
 
         const instanceCode = String(session.module_instance_code ?? "").trim();
         const timetableModule = moduleByInstanceCode.get(instanceCode);
 
         if (!timetableModule || timetableModule.module_term !== term) {
-          continue;
+          return false;
         }
 
         if (!forceViewScopeAll && viewScope === "programme") {
-          if (!programmeInstanceCodes.has(instanceCode)) continue;
+          if (!programmeInstanceCodes.has(instanceCode)) return false;
           if (
             programmeCode &&
             String(timetableModule.programme_code ?? "").trim() !== programmeCode
           ) {
-            continue;
+            return false;
           }
         }
 
-        const dateIso = String(session.session_date ?? "").slice(0, 10);
-        if (!dateIso) continue;
+        return true;
+      });
 
-        const jsDay = new Date(`${dateIso}T00:00:00`).getDay();
-        if (jsDay === 0) continue;
-
-        const weekday = jsDay;
-        const start = String(session.start_time ?? "").slice(0, 5);
-        const end = String(session.end_time ?? "").slice(0, 5);
-        const roomCode = String(session.room_code ?? "").trim();
-
-        if (!start || !end || !roomCode) continue;
-
-        sessionSlots.push({ start, end });
-
-        const key = [weekday, start, end, roomCode, instanceCode].join("|");
-        if (collapsed.has(key)) continue;
-
-        collapsed.set(key, {
-          weekday,
-          start,
-          end,
-          moduleInstanceCode: instanceCode,
-          moduleCode: String(session.module_code ?? "").trim(),
-          moduleName: String(session.module_name ?? "").trim(),
-          teacherName: String(session.teacher_name ?? "").trim(),
-          roomCode,
-          programmeCode: String(timetableModule.programme_code ?? "").trim(),
-          streamCode: String(timetableModule.stream_code ?? "").trim(),
-          moduleYear: String(timetableModule.module_year ?? "").trim(),
-        });
-      }
-
-      const slotKey = (start: string, end: string) => `${start}-${end}`;
-      const itemsBySlotAndWeekday: WeeklyGridState["itemsBySlotAndWeekday"] = {};
-
-      for (const item of collapsed.values()) {
-        const sk = slotKey(item.start, item.end);
-        itemsBySlotAndWeekday[sk] ||= {};
-        itemsBySlotAndWeekday[sk][item.weekday] ||= [];
-        itemsBySlotAndWeekday[sk][item.weekday]!.push({
-          moduleInstanceCode: item.moduleInstanceCode,
-          moduleCode: item.moduleCode,
-          moduleName: item.moduleName,
-          teacherName: item.teacherName,
-          roomCode: item.roomCode,
-          programmeCode: item.programmeCode,
-          streamCode: item.streamCode,
-          moduleYear: item.moduleYear,
-        });
-      }
-
-      for (const sk of Object.keys(itemsBySlotAndWeekday)) {
-        for (const day of Object.keys(itemsBySlotAndWeekday[sk] ?? {})) {
-          itemsBySlotAndWeekday[sk]![Number(day)]!.sort((a, b) => {
-            if (a.roomCode !== b.roomCode) {
-              return a.roomCode.localeCompare(b.roomCode);
-            }
-            return a.moduleInstanceCode.localeCompare(b.moduleInstanceCode);
-          });
-        }
-      }
-
-      const uniqueSessionSlots = Array.from(
-        new Map(sessionSlots.map((slot) => [`${slot.start}-${slot.end}`, slot])).values()
-      );
-
-      const slots = mergeWeeklySlotRows({
-        sessionSlots: uniqueSessionSlots,
-        instances: timetableInstances,
+      const nextGrid = buildWeeklyTimetableGridFromSessions({
+        term,
+        sessions: filteredSessions,
+        moduleByInstanceCode,
+        timetableInstances,
         preferredStartByCode,
         startTimeOptions,
       });
-
-      const nextGrid = { slots, itemsBySlotAndWeekday };
       setWeeklyGrid(nextGrid);
       setSavedGrid(cloneWeeklyGridState(nextGrid));
     } catch (error) {

@@ -1,5 +1,6 @@
 import {
   normalizeModuleContactHours,
+  normalizeModuleTutorialContactHours,
   resolveDefaultModuleTeachingTutorialHours,
   type ModuleTeachingTutorialHours,
 } from "../lib/moduleContactHours";
@@ -27,7 +28,7 @@ export async function resolveModuleTeachingTutorialHoursForUpsert(
   const teachingExplicit = normalizeModuleContactHours(
     input.module_teaching_contact_hours
   );
-  const tutorialExplicit = normalizeModuleContactHours(
+  const tutorialExplicit = normalizeModuleTutorialContactHours(
     input.module_tutorial_contact_hours
   );
 

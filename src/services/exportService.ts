@@ -21,20 +21,42 @@ import type {
   TimetableStudentNumberRow,
 } from "../types";
 
+const APP_USER_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function resolveExportLogUserId(exportedBy?: string | null) {
+  const value = String(exportedBy ?? "").trim();
+  return APP_USER_UUID_RE.test(value) ? value : null;
+}
+
 export async function logExport(params: {
   exportType: "timetable_excel" | "approved_loading_pdf";
   academicYear: string;
-  exportedBy: string;
+  /** app_users.id (UUID). Usernames are stored in metadata.exported_by_label instead. */
+  exportedBy?: string | null;
+  exportedByLabel?: string | null;
   metadata?: Record<string, unknown>;
 }) {
+  const exportedByUuid = resolveExportLogUserId(params.exportedBy);
+  const label = String(params.exportedByLabel ?? "").trim();
+  const metadata: Record<string, unknown> = { ...(params.metadata ?? {}) };
+
+  if (label) {
+    metadata.exported_by_label = label;
+  } else if (params.exportedBy && !exportedByUuid) {
+    metadata.exported_by_label = String(params.exportedBy).trim();
+  }
+
   const { error } = await supabase.from("export_logs").insert({
     export_type: params.exportType,
     academic_year: params.academicYear,
-    exported_by: params.exportedBy,
-    metadata: params.metadata ?? {},
+    exported_by: exportedByUuid,
+    metadata,
   });
 
-  if (error) throw error;
+  if (error) {
+    console.warn("[export] export_logs insert failed:", error.message);
+  }
 }
 
 export async function downloadTimetableExcel(params: {

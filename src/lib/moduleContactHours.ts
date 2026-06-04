@@ -3,20 +3,27 @@ import {
   isHDProgrammeType,
 } from "../pages/programme-leader/make-study-plan/helpers";
 
-/** Degree programmes: teaching 24h, tutorial = 75 - 24. */
+/** Degree programmes: teaching 24h, tutorial = 75 - 24 (except zero-tutorial list). */
 export const MODULE_TEACHING_24_PROGRAMMES = [
   "WUCS",
   "WUBM",
   "WUAFM",
 ] as const;
 
-/** Degree programmes: teaching 48h, tutorial = 75 - 48. */
+/** Degree programmes: teaching 48h, tutorial = 75 - 48 (except zero-tutorial list). */
 export const MODULE_TEACHING_48_PROGRAMMES = [
   "UWLBS",
   "UWLBM",
   "UWLCFI",
   "UWLC",
   "UWLCS",
+] as const;
+
+/** No tutorial contact hours in module catalogue. */
+export const MODULE_ZERO_TUTORIAL_PROGRAMMES = [
+  "UWLCS",
+  "UWLBS",
+  "WUBM",
 ] as const;
 
 export const DEGREE_MODULE_TOTAL_CONTACT_HOURS = 75;
@@ -30,6 +37,9 @@ const TEACHING_24_SET = new Set(
 );
 const TEACHING_48_SET = new Set(
   MODULE_TEACHING_48_PROGRAMMES.map((code) => code.toUpperCase())
+);
+const ZERO_TUTORIAL_SET = new Set(
+  MODULE_ZERO_TUTORIAL_PROGRAMMES.map((code) => code.toUpperCase())
 );
 
 export interface ModuleTeachingTutorialHours {
@@ -61,6 +71,23 @@ export function normalizeModuleContactHours(
   return Math.round(parsed);
 }
 
+/** Tutorial hours may be zero (e.g. UWLCS / UWLBS / WUBM). */
+export function normalizeModuleTutorialContactHours(
+  value: number | string | null | undefined
+): number | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+
+  return Math.round(parsed);
+}
+
 /**
  * Default teaching + tutorial hours by programme (catalog rule).
  */
@@ -69,6 +96,22 @@ export function resolveDefaultModuleTeachingTutorialHours(params: {
   programmeType?: string | null;
 }): ModuleTeachingTutorialHours {
   const code = normalizeProgrammeCodeKey(params.programmeCode);
+
+  if (ZERO_TUTORIAL_SET.has(code)) {
+    if (TEACHING_24_SET.has(code)) {
+      return {
+        module_teaching_contact_hours: DEGREE_24_MODULE_TEACHING_HOURS_DEFAULT,
+        module_tutorial_contact_hours: 0,
+      };
+    }
+
+    if (TEACHING_48_SET.has(code)) {
+      return {
+        module_teaching_contact_hours: DEGREE_48_MODULE_TEACHING_HOURS_DEFAULT,
+        module_tutorial_contact_hours: 0,
+      };
+    }
+  }
 
   if (TEACHING_24_SET.has(code)) {
     return {

@@ -5,7 +5,10 @@ import { PageHeader } from "../../components/ui/PageHeader";
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
-import { normalizeModuleContactHours } from "../../lib/moduleContactHours";
+import {
+  normalizeModuleContactHours,
+  normalizeModuleTutorialContactHours,
+} from "../../lib/moduleContactHours";
 import { parseNumberOrNull } from "../../lib/utils";
 import { upsertApprovedLoading } from "../../services/approvedLoadingService";
 import {
@@ -296,7 +299,7 @@ async function uploadModuleRows(params: {
       ])
     );
 
-    const moduleTutorialHours = normalizeModuleContactHours(
+    const moduleTutorialHours = normalizeModuleTutorialContactHours(
       getNumberOrNull(row, "Module Tutorial Contact Hours", [
         "module tutorial contact hours",
         "module_tutorial_contact_hours",
@@ -752,8 +755,8 @@ export function UploadExcelPage() {
                 Module Term must be <code>Sep</code>, <code>Feb</code>, or{" "}
                 <code>Jun</code>. Stream Code empty is stored as <code>nil</code>.
                 Uses Computer: <code>Y</code> or <code>N</code>. Teaching /
-                Tutorial contact hours are optional (HD 36/21; UWLBS/UWLCS/UWLC/
-                UWLCFI 48/27; WUBM/WUCS/WUAFM 24/51). Proposed Teacher
+                Tutorial contact hours are optional (HD 36/21; UWLBS/UWLCS/WUBM
+                48/0 or 24/0; UWLC/UWLCFI 48/27; WUCS/WUAFM 24/51). Proposed Teacher
                 and Teaching Status may be left empty (filled later in timetable /
                 assignment). Student numbers are derived from study plans, not this
                 template.

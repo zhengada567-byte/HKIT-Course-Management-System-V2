@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Loader2, RefreshCw } from "lucide-react";
+import { CalendarDays, Download, Loader2, RefreshCw } from "lucide-react";
 
 import { DataTable } from "../../components/tables/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -7,7 +7,9 @@ import { LoadingState } from "../../components/ui/LoadingState";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { buildDayClassStartTimeOptions } from "../../lib/timetableStartTimeOptions";
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
+import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
+import { downloadWeeklyDailyTimetableExcel } from "../../services/dailyTimetableExportService";
 import { WeeklyTimetableEditor } from "../programme-leader/make-timetable/components/WeeklyTimetableEditor";
 import {
   buildDailyTimetable,
@@ -33,6 +35,7 @@ const termOptions: TimetableScheduleTerm[] = ["Sep", "Feb"];
 
 export function DailyTimetablePage() {
   const { academicYear } = useAcademicYear();
+  const { user } = useAuth();
   const { t } = useLanguage();
 
   const [term, setTerm] = useState<TimetableScheduleTerm>("Sep");
@@ -49,6 +52,7 @@ export function DailyTimetablePage() {
   const [pruning, setPruning] = useState(false);
   const [result, setResult] = useState<DailyTimetableBuildResult | null>(null);
   const [message, setMessage] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   const startTimeOptions = useMemo(() => buildDayClassStartTimeOptions(), []);
 
@@ -191,11 +195,50 @@ export function DailyTimetablePage() {
     setResult(null);
   }
 
+  async function handleExportExcel() {
+    if (!user) {
+      setMessage("Please login before exporting.");
+      return;
+    }
+
+    setExporting(true);
+    setMessage("");
+
+    try {
+      await downloadWeeklyDailyTimetableExcel({
+        academicYear,
+        term,
+        exportedByUserId: user.id,
+        exportedByLabel: user.username,
+      });
+      setMessage("Weekly and daily timetable Excel downloaded.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="page-container">
       <PageHeader
         title={t.weeklyDailyTimetable}
         description={t.weeklyDailyTimetableDescription}
+        actions={
+          <button
+            type="button"
+            className="btn btn-primary inline-flex items-center gap-2"
+            disabled={exporting || contextLoading}
+            onClick={() => void handleExportExcel()}
+          >
+            {exporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {exporting ? t.loading : t.exportWeeklyDailyTimetableExcel}
+          </button>
+        }
       />
 
       <div className="card mb-4">
@@ -275,7 +318,23 @@ export function DailyTimetablePage() {
             </p>
           </div>
 
+          <p className="text-xs text-slate-500">{t.exportWeeklyDailyTimetableHint}</p>
+
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn btn-secondary inline-flex items-center gap-2"
+              disabled={exporting || contextLoading}
+              onClick={() => void handleExportExcel()}
+            >
+              {exporting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              {exporting ? t.loading : t.exportWeeklyDailyTimetableExcel}
+            </button>
+
             <button
               type="button"
               className="btn btn-primary inline-flex items-center gap-2"

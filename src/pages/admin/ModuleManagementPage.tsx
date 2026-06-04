@@ -9,6 +9,7 @@ import {
   formatModuleTeachingHoursDefaultHint,
   formatModuleTutorialHoursDefaultHint,
   normalizeModuleContactHours,
+  normalizeModuleTutorialContactHours,
   resolveDefaultModuleTeachingTutorialHours,
 } from "../../lib/moduleContactHours";
 import {
@@ -350,7 +351,7 @@ export function ModuleManagementPage() {
                   onChange={(event) =>
                     setForm((prev) => ({
                       ...prev,
-                      module_tutorial_contact_hours: normalizeModuleContactHours(
+                      module_tutorial_contact_hours: normalizeModuleTutorialContactHours(
                         event.target.value
                       ),
                     }))

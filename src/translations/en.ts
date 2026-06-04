@@ -68,7 +68,7 @@ export const en = {
   moduleTeachingContactHours: "Teaching hours",
   moduleTutorialContactHours: "Tutorial hours",
   moduleTeachingTutorialHoursHint:
-    "Defaults: HD teaching 36 / tutorial 21; UWLBS/UWLCS/UWLC/UWLCFI teaching 48 / tutorial 27; WUBM/WUCS/WUAFM teaching 24 / tutorial 51.",
+    "Defaults: HD teaching 36 / tutorial 21; UWLBS/UWLCS/WUBM teaching 48 or 24 / tutorial 0; UWLC/UWLCFI 48 / 27; WUCS/WUAFM 24 / 51.",
   dailyTimetable: "Daily Timetable",
   weeklyDailyTimetable: "Weekly & Daily Timetable",
   weeklyDailyTimetableDescription:
@@ -83,6 +83,9 @@ export const en = {
     "All module instances for this term. Save Timetable writes study-week sessions for any programme.",
   allProgrammes: "All programmes",
   buildDailyTimetable: "Generate daily timetable",
+  exportWeeklyDailyTimetableExcel: "Export weekly & daily Excel",
+  exportWeeklyDailyTimetableHint:
+    "Weekly sheet: one row per module timeslot (weekday, time, room). Daily sheet: every L/T session per module (no backup or cancelled).",
   viewByModule: "View by module",
   viewByDate: "View by date",
   selectModule: "Select module",

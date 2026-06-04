@@ -9,6 +9,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useLanguage } from "../contexts/LanguageContext";
 import {
   normalizeModuleContactHours,
+  normalizeModuleTutorialContactHours,
   resolveDefaultModuleTeachingTutorialHours,
 } from "../lib/moduleContactHours";
 import { listProgrammes } from "../services/programmeService";
@@ -618,7 +619,7 @@ export function CourseSearchPage() {
                   onChange={(event) =>
                     setNewModuleForm((prev) => ({
                       ...prev,
-                      module_tutorial_contact_hours: normalizeModuleContactHours(
+                      module_tutorial_contact_hours: normalizeModuleTutorialContactHours(
                         event.target.value
                       ),
                     }))
@@ -855,7 +856,7 @@ export function CourseSearchPage() {
                     onChange={(event) =>
                       updateDraft(row.module_id, {
                         module_tutorial_contact_hours:
-                          normalizeModuleContactHours(event.target.value) ??
+                          normalizeModuleTutorialContactHours(event.target.value) ??
                           row.module_tutorial_contact_hours,
                       })
                     }
