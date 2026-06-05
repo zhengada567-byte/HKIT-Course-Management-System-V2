@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DataTable } from "../components/tables/DataTable";
+import { FeatureUpdateLockBanner } from "../components/admin/FeatureUpdateLockBanner";
 import { EmptyState } from "../components/ui/EmptyState";
 import { LoadingState } from "../components/ui/LoadingState";
 import { PageHeader } from "../components/ui/PageHeader";
 import { useAcademicYear } from "../contexts/AcademicYearContext";
 import { useAuth } from "../contexts/AuthContext";
+import { useFeatureUpdateLocks } from "../contexts/FeatureUpdateLockContext";
 import { useLanguage } from "../contexts/LanguageContext";
+import { assertFeatureUpdatesAllowed } from "../services/featureLockService";
 import { formatProgrammeYearDisplay } from "../lib/programmeYear";
 import {
   normalizeModuleContactHours,
@@ -77,6 +80,7 @@ export function CourseSearchPage() {
   const { user, role } = useAuth();
   const { academicYear } = useAcademicYear();
   const { t } = useLanguage();
+  const { locks } = useFeatureUpdateLocks();
 
   const [programmes, setProgrammes] = useState<ProgrammeRow[]>([]);
   const [programmeCode, setProgrammeCode] = useState("");
@@ -101,8 +105,11 @@ export function CourseSearchPage() {
     savingAll || Boolean(savingId) || Boolean(deletingId) || creatingModule;
 
   const canEdit = role === "programme_leader" || role === "admin";
+  const updatesLocked = locks.courseSearchLocked;
   const canManageModules =
-    canEdit && (role === "admin" || Boolean(programmeCode));
+    canEdit &&
+    !updatesLocked &&
+    (role === "admin" || Boolean(programmeCode));
 
   async function loadProgrammes() {
     const data = await listProgrammes();
@@ -316,6 +323,8 @@ export function CourseSearchPage() {
     setMessage("");
 
     try {
+      await assertFeatureUpdatesAllowed("courseSearch");
+
       await upsertModule({
         module_code: newModuleForm.module_code.trim(),
         module_name: newModuleForm.module_name?.trim() || null,
@@ -383,6 +392,8 @@ export function CourseSearchPage() {
           {message}
         </div>
       )}
+
+      <FeatureUpdateLockBanner feature="courseSearch" locked={updatesLocked} />
 
       {canEdit && role === "programme_leader" && !programmeCode && (
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -496,12 +507,25 @@ export function CourseSearchPage() {
                   className="form-input font-mono"
                   value={newModuleForm.module_code}
                   required
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const module_code = event.target.value;
+                    const defaults = resolveDefaultModuleTeachingTutorialHours({
+                      programmeCode: newModuleForm.programme_code,
+                      programmeType: programmeTypeByCode.get(
+                        newModuleForm.programme_code
+                      ),
+                      moduleCode: module_code,
+                    });
+
                     setNewModuleForm((prev) => ({
                       ...prev,
-                      module_code: event.target.value,
-                    }))
-                  }
+                      module_code,
+                      module_teaching_contact_hours:
+                        defaults.module_teaching_contact_hours,
+                      module_tutorial_contact_hours:
+                        defaults.module_tutorial_contact_hours,
+                    }));
+                  }}
                 />
               </div>
 

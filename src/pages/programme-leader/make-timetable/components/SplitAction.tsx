@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { canSplit } from "../../../../services/splitClassService";
 
 export function SplitAction({
   expected,
@@ -10,7 +11,7 @@ export function SplitAction({
   onSplit: (count: number) => void;
 }) {
   const [count, setCount] = useState(2);
-  const allowSplit = expected > 40;
+  const allowSplit = canSplit(expected);
 
   const safeCount = Number.isFinite(count) && count >= 2 ? count : 2;
 

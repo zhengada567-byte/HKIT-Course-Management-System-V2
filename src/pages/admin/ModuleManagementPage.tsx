@@ -220,12 +220,26 @@ export function ModuleManagementPage() {
                   className="form-input"
                   value={form.module_code}
                   disabled={isEditing}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const module_code = event.target.value;
+                    const defaults = resolveDefaultModuleTeachingTutorialHours({
+                      programmeCode: form.programme_code,
+                      moduleCode: module_code,
+                    });
+
                     setForm((prev) => ({
                       ...prev,
-                      module_code: event.target.value,
-                    }))
-                  }
+                      module_code,
+                      ...(isEditing
+                        ? {}
+                        : {
+                            module_teaching_contact_hours:
+                              defaults.module_teaching_contact_hours,
+                            module_tutorial_contact_hours:
+                              defaults.module_tutorial_contact_hours,
+                          }),
+                    }));
+                  }}
                 />
               </div>
 
@@ -286,6 +300,7 @@ export function ModuleManagementPage() {
                     const programmeCode = event.target.value;
                     const defaults = resolveDefaultModuleTeachingTutorialHours({
                       programmeCode,
+                      moduleCode: form.module_code,
                     });
 
                     setForm((prev) => ({
@@ -330,7 +345,10 @@ export function ModuleManagementPage() {
                   value={form.module_teaching_contact_hours ?? ""}
                   placeholder={
                     form.programme_code
-                      ? formatModuleTeachingHoursDefaultHint(form.programme_code)
+                      ? formatModuleTeachingHoursDefaultHint(
+                          form.programme_code,
+                          form.module_code
+                        )
                       : "36"
                   }
                   onChange={(event) =>
@@ -354,7 +372,10 @@ export function ModuleManagementPage() {
                   value={form.module_tutorial_contact_hours ?? ""}
                   placeholder={
                     form.programme_code
-                      ? formatModuleTutorialHoursDefaultHint(form.programme_code)
+                      ? formatModuleTutorialHoursDefaultHint(
+                          form.programme_code,
+                          form.module_code
+                        )
                       : "21"
                   }
                   onChange={(event) =>

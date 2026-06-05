@@ -50,6 +50,7 @@ export async function resolveModuleTeachingTutorialHoursForUpsert(
   const defaults = resolveDefaultModuleTeachingTutorialHours({
     programmeCode: input.programme_code,
     programmeType,
+    moduleCode: input.module_code,
   });
 
   return {

@@ -1,19 +1,22 @@
 import {
-  isDegreeProgrammeType,
-  isHDProgrammeType,
-} from "../pages/programme-leader/make-study-plan/helpers";
-import {
   addDays,
   toIsoDateString,
   type TermSummary,
   type WeekRange,
 } from "./academicCalendar";
+import {
+  isDegreeProgrammeType,
+  isHDProgrammeType,
+} from "../pages/programme-leader/make-study-plan/helpers";
+import { buildSessionLabelSequenceFromContactHours } from "./dailyTimetablePlan";
 
 export type DailySessionKind = "teaching" | "tutorial";
 
 export interface DailySessionLabelSlot {
   kind: DailySessionKind;
   label: string;
+  /** Session duration in hours when derived from contact-hour rules. */
+  durationHours?: number;
 }
 
 /** HD contact-hour sequence: L1–L3, T1, L4–L6, T2, L7–L9, T3. */
@@ -34,6 +37,32 @@ export const HD_DAILY_SESSION_LABELS: DailySessionLabelSlot[] = [
 
 export const HD_TEACHING_SESSION_COUNT = 9;
 export const HD_TUTORIAL_SESSION_COUNT = 3;
+
+/** HD401 / HD402 / HD405 legacy helper — prefer contact-hour plan. */
+export function buildHdLectureOnlySessionLabelSequence(
+  lectureCount = 12
+): DailySessionLabelSlot[] {
+  const slots: DailySessionLabelSlot[] = [];
+
+  for (let index = 1; index <= lectureCount; index += 1) {
+    slots.push({ kind: "teaching", label: `L${index}` });
+  }
+
+  return slots;
+}
+
+export function describeSessionLabelSequence(
+  labelSequence: DailySessionLabelSlot[]
+) {
+  const teaching = labelSequence.filter((slot) => slot.kind === "teaching").length;
+  const tutorial = labelSequence.filter((slot) => slot.kind === "tutorial").length;
+
+  if (tutorial === 0) {
+    return `${teaching} lecture${teaching === 1 ? "" : "s"} (no tutorials)`;
+  }
+
+  return `${teaching} teaching + ${tutorial} tutorial`;
+}
 
 export function isHdDailyTimetableModule(params: {
   programmeCode: string;
@@ -133,24 +162,18 @@ export function buildDegreeSessionLabelSequence(
 export function buildSessionLabelSequence(params: {
   programmeCode: string;
   programmeType?: string | null;
+  moduleCode?: string | null;
   teachingContactHours: number;
+  tutorialContactHours?: number;
   studyWeekdayOccurrences: number;
 }): DailySessionLabelSlot[] {
-  if (
-    isHdDailyTimetableModule({
-      programmeCode: params.programmeCode,
-      programmeType: params.programmeType,
-    })
-  ) {
-    return HD_DAILY_SESSION_LABELS;
-  }
-
-  const { teachingCount, tutorialCount } = computeDegreeSessionCounts({
+  return buildSessionLabelSequenceFromContactHours({
+    programmeCode: params.programmeCode,
+    programmeType: params.programmeType,
     teachingContactHours: params.teachingContactHours,
-    studyWeekdayOccurrences: params.studyWeekdayOccurrences,
+    tutorialContactHours: params.tutorialContactHours ?? 0,
+    maxSlots: params.studyWeekdayOccurrences,
   });
-
-  return buildDegreeSessionLabelSequence(teachingCount, tutorialCount);
 }
 
 export function weekdayLabel(jsDay: number) {

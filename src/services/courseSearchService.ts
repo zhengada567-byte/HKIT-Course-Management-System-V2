@@ -1,5 +1,6 @@
 import { normalizeProgrammeYear } from "../lib/programmeYear";
 import { supabase } from "../lib/supabase";
+import { assertFeatureUpdatesAllowed } from "./featureLockService";
 import {
   deleteModule,
   normalizeModuleType,
@@ -316,6 +317,8 @@ export async function saveCourseSearchModule(params: {
   academicYear: string;
   updatedBy: string;
 }) {
+  await assertFeatureUpdatesAllowed("courseSearch");
+
   const { draft, academicYear, updatedBy } = params;
   const streamCode = normalizeStream(draft.stream_code);
 
@@ -396,6 +399,8 @@ async function deleteModuleRelatedDefaultAssignments(module: {
 
 /** Removes module master row and related enrollment / default-assignment rows. */
 export async function deleteCourseSearchModule(row: CourseSearchRow) {
+  await assertFeatureUpdatesAllowed("courseSearch");
+
   await deleteModuleRelatedEnrollmentRows({
     module_code: row.module_code,
     programme_code: row.programme_code,

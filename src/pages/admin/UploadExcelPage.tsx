@@ -2,9 +2,12 @@ import { useState } from "react";
 import * as XLSX from "xlsx";
 
 import { PageHeader } from "../../components/ui/PageHeader";
+import { FeatureUpdateLockBanner } from "../../components/admin/FeatureUpdateLockBanner";
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useAuth } from "../../contexts/AuthContext";
+import { useFeatureUpdateLocks } from "../../contexts/FeatureUpdateLockContext";
 import { useLanguage } from "../../contexts/LanguageContext";
+import { assertFeatureUpdatesAllowed } from "../../services/featureLockService";
 import {
   normalizeModuleContactHours,
   normalizeModuleTutorialContactHours,
@@ -394,6 +397,9 @@ export function UploadExcelPage() {
   const { user, role } = useAuth();
   const { academicYear } = useAcademicYear();
   const { t } = useLanguage();
+  const { locks } = useFeatureUpdateLocks();
+  const uploadLocked = locks.uploadExcelLocked;
+  const canUpload = !uploadLocked;
 
   const isProgrammeLeaderOnly = role === "programme_leader";
   const allowedUploadTypes: UploadType[] = isProgrammeLeaderOnly
@@ -415,6 +421,18 @@ export function UploadExcelPage() {
 
     if (!user) {
       setMessage("Please login before uploading.");
+      return;
+    }
+
+    if (!canUpload) {
+      setMessage(t.featureUpdateLocksUploadExcelBanner);
+      return;
+    }
+
+    try {
+      await assertFeatureUpdatesAllowed("uploadExcel");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Upload is locked.");
       return;
     }
 
@@ -647,6 +665,8 @@ export function UploadExcelPage() {
         }
       />
 
+      <FeatureUpdateLockBanner feature="uploadExcel" locked={uploadLocked} />
+
       <div className="card max-w-3xl">
         <div className="card-body space-y-4">
           {!isProgrammeLeaderOnly && (
@@ -655,6 +675,7 @@ export function UploadExcelPage() {
               <select
                 className="form-select"
                 value={uploadType}
+                disabled={!canUpload}
                 onChange={(event) =>
                   setUploadType(event.target.value as UploadType)
                 }
@@ -687,6 +708,7 @@ export function UploadExcelPage() {
               className="form-input"
               type="file"
               accept=".xlsx,.xls"
+              disabled={!canUpload}
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
             />
           </div>
@@ -716,7 +738,7 @@ export function UploadExcelPage() {
               type="button"
               className="btn btn-primary"
               onClick={handleUpload}
-              disabled={uploading}
+              disabled={uploading || !canUpload}
             >
               {uploading ? t.loading : t.uploadExcel}
             </button>

@@ -1,5 +1,6 @@
 import { buildTeacherName } from "../lib/utils";
 import { supabase } from "../lib/supabase";
+import { assertFeatureUpdatesAllowed } from "./featureLockService";
 import { listModules } from "./moduleService";
 import type {
   ModuleDefaultAssignmentRow,
@@ -78,6 +79,8 @@ export async function upsertModuleDefaultAssignments(
   rows: ModuleDefaultAssignmentInput[]
 ) {
   if (rows.length === 0) return [];
+
+  await assertFeatureUpdatesAllowed("moduleTeacher");
 
   const payload = rows.map((row) => ({
     ...row,

@@ -24,6 +24,7 @@ import { ModuleTeacherAssignmentPage } from "../pages/programme-leader/ModuleTea
 import { AssignmentConfirmationMonitorPage } from "../pages/admin/AssignmentConfirmationMonitorPage";
 import { DailyTimetablePage } from "../pages/admin/DailyTimetablePage";
 import { StudyPlanEnrollmentPage } from "../pages/admin/StudyPlanEnrollmentPage";
+import { FeatureUpdateLocksPage } from "../pages/admin/FeatureUpdateLocksPage";
 
 import { ApprovedLoadingPage } from "../pages/president/ApprovedLoadingPage";
 import { PresidentPasswordPage } from "../pages/president/PresidentPasswordPage";
@@ -134,6 +135,14 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute allowedRoles={["admin"]}>
             <StudyPlanEnrollmentPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "admin/feature-update-locks",
+        element: (
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <FeatureUpdateLocksPage />
           </ProtectedRoute>
         ),
       },

@@ -109,7 +109,7 @@ export const en = {
   moduleTeachingContactHours: "Teaching hours",
   moduleTutorialContactHours: "Tutorial hours",
   moduleTeachingTutorialHoursHint:
-    "Defaults: HD teaching 36 / tutorial 21; UWLBS/UWLCS/WUBM teaching 48 or 24 / tutorial 0; UWLC/UWLCFI 48 / 27; WUCS/WUAFM 24 / 51.",
+    "Defaults: HD teaching 36 / tutorial 21 (HD401/HD402/HD405: 48 teaching / 0 tutorial, L1–L12 only); UWLBS/UWLCS/WUBM 48 or 24 / 0; UWLC/UWLCFI 48 / 27; WUCS/WUAFM 24 / 51.",
   dailyTimetable: "Daily Timetable",
   weeklyDailyTimetable: "Weekly & Daily Timetable",
   weeklyDailyTimetableDescription:
@@ -119,7 +119,7 @@ export const en = {
     "All programmes for the selected term. Save changes before generating the daily timetable below.",
   dailyTimetableStep: "2. Daily timetable",
   dailyTimetableStepHint:
-    "Assigns L1–L9 / T1–T3 (HD) or teaching+tutorial labels from contact hours, using study-week dates only.",
+    "Assigns L1–L9 / T1–T3 (most HD), L1–L12 only (HD401/HD402/HD405), or teaching+tutorial labels from contact hours, using study-week dates only.",
   weeklyTimetableAdminInstanceHint:
     "All module instances for this term. Save Timetable writes study-week sessions for any programme.",
   allProgrammes: "All programmes",
@@ -142,6 +142,9 @@ export const en = {
   selectModule: "Select module",
   selectDate: "Select date",
   removeNonStudyWeekSessions: "Remove non-study-week sessions",
+  mixedProgramme: "Mixed",
+  mixedProgrammeHint:
+    "Cross-programme combined classes and modules without a registered programme code.",
   plDailyTimetable: "Daily Timetable",
   plDailyTimetableDescription:
     "View and edit daily L/T sessions for your programme after admin generates the daily timetable.",
@@ -219,4 +222,30 @@ export const en = {
   pending: "Pending",
   status: "Status",
   action: "Action",
+  featureUpdateLocksTitle: "Feature Update Locks",
+  featureUpdateLocksDescription:
+    "Lock or unlock update/add actions for programme leaders. When locked, users cannot save or create on that page until admin unlocks it.",
+  featureUpdateLocksCourseSearchTitle: "Course Search",
+  featureUpdateLocksCourseSearchDescription:
+    "Controls editing, creating, and deleting modules on the Course Search page.",
+  featureUpdateLocksModuleTeacherTitle: "Module Teacher Assignment",
+  featureUpdateLocksModuleTeacherDescription:
+    "Controls saving proposed teachers and adding teachers on the Module Teacher Assignment page.",
+  featureUpdateLocksStatusLocked: "Locked",
+  featureUpdateLocksStatusOpen: "Open",
+  featureUpdateLocksLockButton: "Lock updates",
+  featureUpdateLocksUnlockButton: "Unlock updates",
+  featureUpdateLocksSaved: "Lock settings saved.",
+  featureUpdateLocksCourseSearchBanner:
+    "Course Search updates are locked by admin. Saving, creating, and deleting modules is disabled.",
+  featureUpdateLocksModuleTeacherBanner:
+    "Module teacher updates are locked by admin. Saving proposed teachers and adding teachers is disabled.",
+  featureUpdateLocksUploadExcelTitle: "Upload Excel",
+  featureUpdateLocksUploadExcelDescription:
+    "Controls Excel uploads from the sidebar Upload Excel page (programme, teacher, module, approved loading).",
+  featureUpdateLocksUploadExcelBanner:
+    "Upload Excel is locked by admin. File upload and import are disabled.",
+  featureUpdateLocksUploadExcelSidebarHint:
+    "Upload Excel is locked by admin.",
+  loginRequired: "Please login first.",
 };

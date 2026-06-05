@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { TableViewport } from "../../components/tables/TableViewport";
+import { FeatureUpdateLockBanner } from "../../components/admin/FeatureUpdateLockBanner";
 import { LoadingState } from "../../components/ui/LoadingState";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
+import { useFeatureUpdateLocks } from "../../contexts/FeatureUpdateLockContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import { normalizeStream } from "../../lib/utils";
 import {
@@ -45,6 +47,9 @@ function buildEmptyTeacherForm(academicYear: string) {
 export function ModuleTeacherAssignmentPage() {
   const { academicYear } = useAcademicYear();
   const { t } = useLanguage();
+  const { locks } = useFeatureUpdateLocks();
+  const updatesLocked = locks.moduleTeacherLocked;
+  const canUpdateTeachers = !updatesLocked;
 
   const [programmes, setProgrammes] = useState<ProgrammeRow[]>([]);
   const [programmeCode, setProgrammeCode] = useState("");
@@ -176,6 +181,11 @@ export function ModuleTeacherAssignmentPage() {
   async function handleCreateTeacher(event: React.FormEvent) {
     event.preventDefault();
 
+    if (!canUpdateTeachers) {
+      setMessage(t.featureUpdateLocksModuleTeacherBanner);
+      return;
+    }
+
     if (!newTeacherForm.family_name.trim()) {
       setMessage("Family name is required.");
       return;
@@ -221,6 +231,11 @@ export function ModuleTeacherAssignmentPage() {
   async function handleSaveAll() {
     if (!programmeCode || rows.length === 0) return;
 
+    if (!canUpdateTeachers) {
+      setMessage(t.featureUpdateLocksModuleTeacherBanner);
+      return;
+    }
+
     setSaving(true);
     setMessage("");
 
@@ -253,6 +268,7 @@ export function ModuleTeacherAssignmentPage() {
   }
 
   const isBusy = loading || saving || creatingTeacher;
+  const controlsDisabled = isBusy || !canUpdateTeachers;
 
   return (
     <div className="page-container">
@@ -266,6 +282,8 @@ export function ModuleTeacherAssignmentPage() {
           {message}
         </div>
       )}
+
+      <FeatureUpdateLockBanner feature="moduleTeacher" locked={updatesLocked} />
 
       <div className="card mb-2">
         <div className="card-body flex flex-wrap items-end gap-3">
@@ -321,7 +339,7 @@ export function ModuleTeacherAssignmentPage() {
             <button
               type="button"
               className="btn btn-secondary whitespace-nowrap"
-              disabled={isBusy}
+              disabled={controlsDisabled}
               onClick={() => {
                 setShowNewTeacherForm((open) => !open);
                 setMessage("");
@@ -333,7 +351,7 @@ export function ModuleTeacherAssignmentPage() {
             <button
               type="button"
               className="btn btn-secondary whitespace-nowrap"
-              disabled={isBusy || rows.length === 0}
+              disabled={controlsDisabled || rows.length === 0}
               onClick={() => void handleSaveAll()}
             >
               {saving ? t.loading : t.saveAll}
@@ -342,7 +360,7 @@ export function ModuleTeacherAssignmentPage() {
         </div>
       </div>
 
-      {showNewTeacherForm && (
+      {showNewTeacherForm && canUpdateTeachers && (
         <form className="card mb-2" onSubmit={(event) => void handleCreateTeacher(event)}>
           <div className="card-body space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -476,6 +494,7 @@ export function ModuleTeacherAssignmentPage() {
                       <InstanceTeacherSelect
                         value={draft.teacherName}
                         teachers={sortedTeachers}
+                        disabled={!canUpdateTeachers}
                         onChange={(teacherName) =>
                           handleTeacherChange(key, teacherName)
                         }
@@ -485,6 +504,7 @@ export function ModuleTeacherAssignmentPage() {
                       <select
                         className="form-select min-w-20"
                         value={draft.teachingStatus}
+                        disabled={!canUpdateTeachers}
                         onChange={(event) =>
                           updateDraft(key, {
                             teachingStatus: event.target.value as TeachingStatus,

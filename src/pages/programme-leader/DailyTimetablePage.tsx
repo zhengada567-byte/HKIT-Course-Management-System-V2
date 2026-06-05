@@ -27,6 +27,12 @@ import {
   type TimetableClassroomRow,
   type TimetableScheduleTerm,
 } from "../../services/timetableScheduleService";
+import {
+  formatProgrammeCodeOptionLabel,
+  isMixedProgrammeCode,
+  MIXED_PROGRAMME_CODE,
+  MIXED_STREAM_CODE,
+} from "../../lib/timetableProgramme";
 import { normalizeStream } from "../../lib/utils";
 import type { ProgrammeRow } from "../../types";
 import type { TimetableSessionStatus } from "../../lib/dailyTimetableSessionLabels";
@@ -96,8 +102,17 @@ export function DailyTimetablePage() {
     [programmes]
   );
 
+  const programmeCodeOptions = useMemo(
+    () => [...programmeCodes, MIXED_PROGRAMME_CODE],
+    [programmeCodes]
+  );
+
   const streamOptions = useMemo(() => {
     if (!programmeCode) return [];
+
+    if (isMixedProgrammeCode(programmeCode)) {
+      return [MIXED_STREAM_CODE];
+    }
 
     const streams = programmes
       .filter((row) => row.programme_code === programmeCode)
@@ -174,6 +189,7 @@ export function DailyTimetablePage() {
         term,
         programmeCode,
         streamCode: streamCode || undefined,
+        knownProgrammeCodes: programmeCodes,
       });
 
       setResult(data);
@@ -202,6 +218,7 @@ export function DailyTimetablePage() {
       term,
       programmeCode,
       streamCode: streamCode || undefined,
+      knownProgrammeCodes: programmeCodes,
     });
 
     setResult(data);
@@ -430,12 +447,15 @@ export function DailyTimetablePage() {
               }}
             >
               <option value="">—</option>
-              {programmeCodes.map((code) => (
+              {programmeCodeOptions.map((code) => (
                 <option key={code} value={code}>
-                  {code}
+                  {formatProgrammeCodeOptionLabel(code)}
                 </option>
               ))}
             </select>
+            {isMixedProgrammeCode(programmeCode) && (
+              <p className="mt-1 text-xs text-slate-500">{t.mixedProgrammeHint}</p>
+            )}
           </div>
 
           <div>
@@ -449,7 +469,9 @@ export function DailyTimetablePage() {
               <option value="">All</option>
               {streamOptions.map((stream) => (
                 <option key={stream} value={stream}>
-                  {displayStream(stream)}
+                  {isMixedProgrammeCode(stream)
+                    ? formatProgrammeCodeOptionLabel(stream)
+                    : displayStream(stream)}
                 </option>
               ))}
             </select>

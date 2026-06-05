@@ -19,8 +19,11 @@ import { confirmReadyAssignments } from "./assignmentService";
 type DefaultTeachingStatus = "FT" | "PT";
 type DefaultTeachingMode = "Day" | "Night" | "Saturday";
 
+/** Minimum expected students before split class is allowed (> this value). */
+export const SPLIT_MIN_STUDENT_THRESHOLD = 29;
+
 export function canSplit(expectedStudentNumber: number | null | undefined) {
-  return Number(expectedStudentNumber ?? 0) > 40;
+  return Number(expectedStudentNumber ?? 0) > SPLIT_MIN_STUDENT_THRESHOLD;
 }
 
 function normalizeCodePart(value: string | null | undefined) {
@@ -492,7 +495,9 @@ export async function createSplitSingleModule(params: {
   createdBy: string;
 }) {
   if (!canSplit(params.expectedStudentNumber)) {
-    throw new Error("Split is allowed only when expected student number > 40.");
+    throw new Error(
+      `Split is allowed only when expected student number > ${SPLIT_MIN_STUDENT_THRESHOLD}.`
+    );
   }
 
   if (!Number.isFinite(params.numberOfClasses) || params.numberOfClasses < 2) {
@@ -602,7 +607,9 @@ export async function createCombinedTimetableModules(params: {
   const expected = params.combineGroup.total_expected_student_number ?? 0;
 
   if (params.numberOfClasses > 1 && !canSplit(expected)) {
-    throw new Error("Split is allowed only when expected student number > 40.");
+    throw new Error(
+      `Split is allowed only when expected student number > ${SPLIT_MIN_STUDENT_THRESHOLD}.`
+    );
   }
 
   if (!Number.isFinite(params.numberOfClasses) || params.numberOfClasses < 1) {

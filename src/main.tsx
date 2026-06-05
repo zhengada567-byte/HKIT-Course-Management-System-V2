@@ -6,6 +6,7 @@ import { App } from "./app/App";
 import { AuthProvider } from "./contexts/AuthContext";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { AcademicYearProvider } from "./contexts/AcademicYearContext";
+import { FeatureUpdateLockProvider } from "./contexts/FeatureUpdateLockContext";
 
 import "./index.css";
 
@@ -15,7 +16,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <LanguageProvider>
         <AuthProvider>
           <AcademicYearProvider>
-            <App />
+            <FeatureUpdateLockProvider>
+              <App />
+            </FeatureUpdateLockProvider>
           </AcademicYearProvider>
         </AuthProvider>
       </LanguageProvider>

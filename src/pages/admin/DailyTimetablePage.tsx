@@ -6,6 +6,11 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingState } from "../../components/ui/LoadingState";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { buildDayClassStartTimeOptions } from "../../lib/timetableStartTimeOptions";
+import {
+  formatProgrammeCodeOptionLabel,
+  isMixedProgrammeCode,
+  MIXED_PROGRAMME_CODE,
+} from "../../lib/timetableProgramme";
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
@@ -22,12 +27,14 @@ import {
   listTimetableModuleInstances,
   type TimetableModuleInstanceRow,
 } from "../../services/timetableModuleInstanceService";
+import { listProgrammes } from "../../services/programmeService";
 import {
   listTimetableClassrooms,
   pruneTimetableSessionsOutsideStudyWeeks,
   type TimetableClassroomRow,
   type TimetableScheduleTerm,
 } from "../../services/timetableScheduleService";
+import type { ProgrammeRow } from "../../types";
 
 type ViewMode = "module" | "date";
 
@@ -39,6 +46,8 @@ export function DailyTimetablePage() {
   const { t } = useLanguage();
 
   const [term, setTerm] = useState<TimetableScheduleTerm>("Sep");
+  const [programmes, setProgrammes] = useState<ProgrammeRow[]>([]);
+  const [programmeFilter, setProgrammeFilter] = useState("");
   const [instances, setInstances] = useState<TimetableModuleInstanceRow[]>([]);
   const [classrooms, setClassrooms] = useState<TimetableClassroomRow[]>([]);
   const [contextLoading, setContextLoading] = useState(true);
@@ -91,21 +100,88 @@ export function DailyTimetablePage() {
 
   useEffect(() => {
     void loadWeeklyContext();
+    void listProgrammes().then(setProgrammes);
   }, [academicYear]);
 
   useEffect(() => {
     setResult(null);
     setSelectedModuleId("");
     setSelectedDate("");
+    setProgrammeFilter("");
   }, [term]);
 
-  const filteredModules = useMemo(() => result?.modules ?? [], [result]);
+  const programmeCodes = useMemo(
+    () =>
+      [
+        ...new Set(
+          programmes.map((row) => String(row.programme_code ?? "").trim()).filter(Boolean)
+        ),
+      ].sort(),
+    [programmes]
+  );
+
+  const programmeFilterOptions = useMemo(
+    () => [...programmeCodes, MIXED_PROGRAMME_CODE],
+    [programmeCodes]
+  );
+
+  const filteredModules = useMemo(() => {
+    const modules = result?.modules ?? [];
+
+    if (!programmeFilter) {
+      return modules;
+    }
+
+    if (isMixedProgrammeCode(programmeFilter)) {
+      const knownProgrammeCodes = new Set(
+        programmeCodes.map((code) => code.toUpperCase())
+      );
+
+      return modules.filter((row) => {
+        const code = String(row.programmeCode ?? "").trim().toUpperCase();
+
+        if (!code || isMixedProgrammeCode(code)) {
+          return true;
+        }
+
+        return !knownProgrammeCodes.has(code);
+      });
+    }
+
+    return modules.filter((row) => row.programmeCode === programmeFilter);
+  }, [programmeCodes, programmeFilter, result]);
+
+  const filteredModuleIds = useMemo(
+    () => new Set(filteredModules.map((row) => row.timetableModuleId)),
+    [filteredModules]
+  );
 
   const availableDates = useMemo(() => {
     if (!result) return [];
 
-    return Array.from(result.entriesByDate.keys()).sort();
-  }, [result]);
+    const dates = new Set<string>();
+
+    for (const plan of filteredModules) {
+      for (const entry of plan.entries) {
+        dates.add(entry.sessionDate);
+      }
+    }
+
+    return Array.from(dates).sort();
+  }, [filteredModules, result]);
+
+  useEffect(() => {
+    if (!result) return;
+
+    if (
+      selectedModuleId &&
+      filteredModules.some((row) => row.timetableModuleId === selectedModuleId)
+    ) {
+      return;
+    }
+
+    setSelectedModuleId(filteredModules[0]?.timetableModuleId ?? "");
+  }, [filteredModules, result, selectedModuleId]);
 
   const selectedPlan = useMemo(() => {
     if (!result || !selectedModuleId) return null;
@@ -119,8 +195,10 @@ export function DailyTimetablePage() {
   const dateEntries = useMemo(() => {
     if (!result || !selectedDate) return [];
 
-    return result.entriesByDate.get(selectedDate) ?? [];
-  }, [result, selectedDate]);
+    return (result.entriesByDate.get(selectedDate) ?? []).filter((row) =>
+      filteredModuleIds.has(row.timetableModuleId)
+    );
+  }, [filteredModuleIds, result, selectedDate]);
 
   async function handlePruneOutsideStudyWeeks() {
     const ok = window.confirm(
@@ -388,7 +466,23 @@ export function DailyTimetablePage() {
 
           {result && result.modules.length > 0 && (
             <>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="form-label">{t.programmeCode}</label>
+                  <select
+                    className="form-select min-w-36"
+                    value={programmeFilter}
+                    onChange={(event) => setProgrammeFilter(event.target.value)}
+                  >
+                    <option value="">{t.allProgrammes}</option>
+                    {programmeFilterOptions.map((code) => (
+                      <option key={code} value={code}>
+                        {formatProgrammeCodeOptionLabel(code)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <button
                   type="button"
                   className={`btn ${viewMode === "module" ? "btn-primary" : "btn-secondary"}`}

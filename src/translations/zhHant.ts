@@ -113,7 +113,7 @@ export const zhHant = {
     "顯示所選學期全部課程；請先儲存，再於下方產生每日時間表。",
   dailyTimetableStep: "2. 每日時間表",
   dailyTimetableStepHint:
-    "依授課／導修時數及學習週日期產生 L/T 標籤（HD：L1–L9、T1–T3）。",
+    "依授課／導修時數及學習週日期產生 L/T 標籤（一般 HD：L1–L9、T1–T3；HD401/HD402/HD405：僅 L1–L12）。",
   weeklyTimetableAdminInstanceHint:
     "本學期所有模組實例；儲存後會寫入各課程的學習週課節。",
   allProgrammes: "全部課程",
@@ -135,6 +135,9 @@ export const zhHant = {
   selectModule: "選擇科目",
   selectDate: "選擇日期",
   removeNonStudyWeekSessions: "移除非學習週課節",
+  mixedProgramme: "混合課程",
+  mixedProgrammeHint:
+    "跨課程合班科目，以及未登記於任何課程編號的科目。",
   plDailyTimetable: "每日時間表",
   plDailyTimetableDescription:
     "管理員產生每日時間表後，檢視及編輯本課程的 L/T 課節（可改狀態、新增課節；系統會按日期重新排序標籤）。",
@@ -211,4 +214,30 @@ export const zhHant = {
   pending: "待處理",
   status: "狀態",
   action: "操作",
+  featureUpdateLocksTitle: "功能更新鎖定",
+  featureUpdateLocksDescription:
+    "分別鎖定課程領導可更新／新增的功能。鎖定後不可儲存或新增，須由 admin 解鎖。",
+  featureUpdateLocksCourseSearchTitle: "課程搜索",
+  featureUpdateLocksCourseSearchDescription:
+    "控制課程搜索頁面的編輯、新增及刪除科目。",
+  featureUpdateLocksModuleTeacherTitle: "科目教師設定",
+  featureUpdateLocksModuleTeacherDescription:
+    "控制科目教師設定頁面的儲存建議教師及新增教師。",
+  featureUpdateLocksStatusLocked: "已鎖定",
+  featureUpdateLocksStatusOpen: "開放",
+  featureUpdateLocksLockButton: "鎖定更新",
+  featureUpdateLocksUnlockButton: "解鎖更新",
+  featureUpdateLocksSaved: "鎖定設定已儲存。",
+  featureUpdateLocksCourseSearchBanner:
+    "課程搜索更新已由 admin 鎖定，暫不可儲存、新增或刪除科目。",
+  featureUpdateLocksModuleTeacherBanner:
+    "科目教師設定已由 admin 鎖定，暫不可儲存建議教師或新增教師。",
+  featureUpdateLocksUploadExcelTitle: "上載 Excel",
+  featureUpdateLocksUploadExcelDescription:
+    "控制側邊欄「上載 Excel」頁面的 Excel 上載（課程、教師、科目、核准工作量等）。",
+  featureUpdateLocksUploadExcelBanner:
+    "上載 Excel 已由 admin 鎖定，暫不可選擇檔案或匯入。",
+  featureUpdateLocksUploadExcelSidebarHint:
+    "上載 Excel 已由 admin 鎖定。",
+  loginRequired: "請先登入。",
 };

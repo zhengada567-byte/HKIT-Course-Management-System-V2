@@ -47,10 +47,12 @@ export function InstanceTeacherSelect({
   value,
   teachers,
   onChange,
+  disabled = false,
 }: {
   value: string | null | undefined;
   teachers: TeacherRow[];
   onChange: (teacherName: string) => void;
+  disabled?: boolean;
 }) {
   const selectedValue = resolveInstanceTeacherSelectValue(value, teachers);
 
@@ -65,6 +67,7 @@ export function InstanceTeacherSelect({
     <select
       className="form-select min-w-48"
       value={selectedValue}
+      disabled={disabled}
       title={showUploadOption ? `From upload: ${selectedValue}` : "Teacher"}
       onChange={(event) => {
         onChange(event.target.value === "TBC" ? "TBC" : event.target.value);

@@ -1,6 +1,6 @@
 // src/components/layout/Sidebar.tsx
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   BookOpenCheck,
@@ -13,6 +13,7 @@ import {
   GraduationCap,
   KeyRound,
   LayoutDashboard,
+  Lock,
   Search,
   TableProperties,
   Upload,
@@ -24,6 +25,7 @@ import {
 
 import { cn } from "../../lib/utils";
 import { useAuth } from "../../contexts/AuthContext";
+import { useFeatureUpdateLocks } from "../../contexts/FeatureUpdateLockContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import { useSidebarLayout } from "../../contexts/SidebarLayoutContext";
 import type { UserRole } from "../../types";
@@ -55,6 +57,7 @@ function resolveNavLabel(item: NavItem, role: UserRole | null) {
 export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const { role } = useAuth();
   const { t } = useLanguage();
+  const { locks } = useFeatureUpdateLocks();
   const navigate = useNavigate();
   const { collapsed } = useSidebarLayout();
 
@@ -68,7 +71,8 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const teacherLoadingDisabled =
     checkingTeacherLoading || !teacherLoadingReady;
 
-  const items: NavItem[] = [
+  const items: NavItem[] = useMemo(
+    () => [
     {
       to: "/dashboard",
       label: t.dashboard,
@@ -132,6 +136,8 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       label: t.uploadExcel,
       icon: Upload,
       roles: ["admin", "programme_leader"],
+      disabled: locks.uploadExcelLocked,
+      disabledReason: t.featureUpdateLocksUploadExcelSidebarHint,
     },
     {
       to: "/admin/teachers",
@@ -182,6 +188,12 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       roles: ["president"],
     },
     {
+      to: "/admin/feature-update-locks",
+      label: t.featureUpdateLocksTitle,
+      icon: Lock,
+      roles: ["admin"],
+    },
+    {
       to: "/admin/passwords",
       label: t.passwordManagement,
       icon: KeyRound,
@@ -193,7 +205,9 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       icon: KeyRound,
       roles: ["president"],
     },
-  ];
+  ],
+    [locks.uploadExcelLocked, t, teacherLoadingDisabled]
+  );
 
   const visibleItems = items.filter((item) => {
     if (!item.roles) return true;
