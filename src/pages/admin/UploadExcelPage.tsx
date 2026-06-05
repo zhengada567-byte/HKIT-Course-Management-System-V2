@@ -19,6 +19,7 @@ import {
 } from "../../services/moduleDefaultAssignmentService";
 import { upsertModuleEnrollments } from "../../services/moduleEnrollmentService";
 import {
+  normalizeModuleType,
   normalizeUsesComputerFlag,
   upsertModule,
 } from "../../services/moduleService";
@@ -290,6 +291,16 @@ async function uploadModuleRows(params: {
       ])
     );
 
+    const moduleType = normalizeModuleType(
+      getText(row, "Module Type", [
+        "module type",
+        "module_type",
+        "core or optional",
+        "core/optional",
+        "requirement",
+      ])
+    );
+
     const moduleTeachingHours = normalizeModuleContactHours(
       getNumberOrNull(row, "Module Teaching Contact Hours", [
         "module teaching contact hours",
@@ -316,6 +327,7 @@ async function uploadModuleRows(params: {
       programme_code: programmeCode,
       stream_code: streamCode,
       uses_computer: usesComputer,
+      module_type: moduleType,
       module_teaching_contact_hours: moduleTeachingHours,
       module_tutorial_contact_hours: moduleTutorialHours,
     });
@@ -785,6 +797,7 @@ export function UploadExcelPage() {
                   <code>teaching status</code>,{" "}
                   <code>enrollment student number</code>,{" "}
                   <code>actual_student_number</code>, <code>uses_computer</code>,{" "}
+                  <code>module_type</code> (core/optional),{" "}
                   <code>module_teaching_contact_hours</code>,{" "}
                   <code>module_tutorial_contact_hours</code>.
                 </div>

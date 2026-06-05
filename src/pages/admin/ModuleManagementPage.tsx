@@ -15,11 +15,17 @@ import {
 import {
   deleteModule,
   listModules,
+  normalizeModuleType,
+  normalizeUsesComputerFlag,
   upsertModule,
   type ModuleInput,
 } from "../../services/moduleService";
-import type { ModuleRow, ModuleTerm, ModuleUsesComputerFlag } from "../../types";
-import { normalizeUsesComputerFlag } from "../../services/moduleService";
+import type {
+  ModuleRow,
+  ModuleTerm,
+  ModuleType,
+  ModuleUsesComputerFlag,
+} from "../../types";
 
 const emptyForm: ModuleInput = {
   module_code: "",
@@ -29,6 +35,7 @@ const emptyForm: ModuleInput = {
   programme_code: "",
   stream_code: "nil",
   uses_computer: "N",
+  module_type: "core",
   module_teaching_contact_hours: null,
   module_tutorial_contact_hours: null,
 };
@@ -152,6 +159,7 @@ export function ModuleManagementPage() {
       programme_code: row.programme_code ?? "",
       stream_code: row.stream_code ?? "nil",
       uses_computer: normalizeUsesComputerFlag(row.uses_computer),
+      module_type: normalizeModuleType(row.module_type),
       module_teaching_contact_hours: row.module_teaching_contact_hours,
       module_tutorial_contact_hours: row.module_tutorial_contact_hours,
     });
@@ -380,6 +388,24 @@ export function ModuleManagementPage() {
                 </select>
               </div>
 
+              <div>
+                <label className="form-label">{t.moduleType}</label>
+                <select
+                  className="form-select"
+                  value={form.module_type ?? "core"}
+                  title={t.moduleType}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      module_type: event.target.value as ModuleType,
+                    }))
+                  }
+                >
+                  <option value="core">{t.moduleTypeCore}</option>
+                  <option value="optional">{t.moduleTypeOptional}</option>
+                </select>
+              </div>
+
               <div className="flex items-end gap-2">
                 <button
                   className="btn btn-primary"
@@ -495,6 +521,17 @@ export function ModuleManagementPage() {
               render: (row) => (
                 <span className="block w-[40px] whitespace-nowrap font-medium">
                   {normalizeUsesComputerFlag(row.uses_computer)}
+                </span>
+              ),
+            },
+            {
+              key: "moduleType",
+              header: t.moduleType,
+              render: (row) => (
+                <span className="block w-[70px] whitespace-nowrap font-medium">
+                  {row.module_type === "optional"
+                    ? t.moduleTypeOptional
+                    : t.moduleTypeCore}
                 </span>
               ),
             },

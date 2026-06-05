@@ -1,3 +1,5 @@
+import type { ModuleType } from "../../../types/common";
+
 export type StudyMode = "FT" | "PT";
 
 export type StudyPlanModuleStatus =
@@ -76,6 +78,9 @@ export interface StudyPlanModule {
    * Catalog offered term from modules table (Sep / Feb / Jun).
    */
   moduleTerm?: string;
+
+  /** Catalog module type from modules table (core / optional). */
+  moduleType?: ModuleType;
 
   /**
    * Kept for backward compatibility with old UI/service code.

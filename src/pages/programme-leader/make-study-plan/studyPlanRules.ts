@@ -294,6 +294,51 @@ function sortModulesByProgrammeStructure(
  *
  * This does NOT impose workload capacity.
  */
+const UWLCFI_PROGRAMME_CODE = "UWLCFI";
+
+function isUwlcfiProgramme(student: StudyPlanStudent): boolean {
+  return (
+    String(student.programmeCode ?? "").trim().toUpperCase() ===
+    UWLCFI_PROGRAMME_CODE
+  );
+}
+
+/**
+ * UWLCFI auto-generation keeps all core modules and one default optional
+ * per catalog offered term (Sep and Feb — usually the first in sort order).
+ */
+function filterUwlcfiModulesForAutoGenerate(params: {
+  student: StudyPlanStudent;
+  modules: StudyPlanModule[];
+}): StudyPlanModule[] {
+  const { student, modules } = params;
+
+  if (!isUwlcfiProgramme(student)) {
+    return modules;
+  }
+
+  const coreModules = modules.filter((module) => module.moduleType !== "optional");
+  const optionalModules = modules.filter(
+    (module) => module.moduleType === "optional"
+  );
+
+  const defaultOptionals: StudyPlanModule[] = [];
+
+  for (const offeredTerm of ["Sep", "Feb"] as const) {
+    const sorted = sortModulesByProgrammeStructure(
+      optionalModules.filter(
+        (module) => getModuleOfferedTermName(module) === offeredTerm
+      )
+    );
+
+    if (sorted[0]) {
+      defaultOptionals.push(sorted[0]);
+    }
+  }
+
+  return [...coreModules, ...defaultOptionals];
+}
+
 function filterModulesByProgrammeLevel(params: {
   student: StudyPlanStudent;
   modules: StudyPlanModule[];
@@ -353,8 +398,13 @@ export function generateStudyPlanForStudent({
     modules: programmeModules,
   });
 
+  const autoGenerateModules = filterUwlcfiModulesForAutoGenerate({
+    student,
+    modules: filteredProgrammeModules,
+  });
+
   const sortedProgrammeModules = sortModulesByProgrammeStructure(
-    filteredProgrammeModules
+    autoGenerateModules
   );
 
   const generatedProgrammeModules = sortedProgrammeModules.map((module) => {

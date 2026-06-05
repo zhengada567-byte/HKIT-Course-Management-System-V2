@@ -8,6 +8,7 @@ import type {
   CombineType,
   EmploymentType,
   ModuleTerm,
+  ModuleType,
   PlanningOfferingStatus,
   SplitStatus,
   TeachingMode,
@@ -78,6 +79,7 @@ export interface ModuleRow {
   programme_code: string;
   stream_code: string;
   uses_computer: ModuleUsesComputerFlag;
+  module_type: ModuleType;
   module_teaching_contact_hours: number;
   module_tutorial_contact_hours: number;
   created_at: string;

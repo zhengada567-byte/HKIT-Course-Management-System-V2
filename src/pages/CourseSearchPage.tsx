@@ -14,6 +14,7 @@ import {
 } from "../lib/moduleContactHours";
 import { listProgrammes } from "../services/programmeService";
 import {
+  normalizeModuleType,
   normalizeUsesComputerFlag,
   upsertModule,
   type ModuleInput,
@@ -44,6 +45,7 @@ function defaultNewModuleForm(
     programme_code: programmeCode,
     stream_code: streamCode || "nil",
     uses_computer: "N",
+    module_type: "core",
     ...(programmeCode
       ? resolveDefaultModuleTeachingTutorialHours({
           programmeCode,
@@ -321,6 +323,7 @@ export function CourseSearchPage() {
         programme_code: newModuleForm.programme_code.trim(),
         stream_code: newModuleForm.stream_code || "nil",
         uses_computer: newModuleForm.uses_computer,
+        module_type: newModuleForm.module_type,
         module_teaching_contact_hours: newModuleForm.module_teaching_contact_hours,
         module_tutorial_contact_hours: newModuleForm.module_tutorial_contact_hours,
       });
@@ -646,6 +649,23 @@ export function CourseSearchPage() {
                 </select>
               </div>
 
+              <div>
+                <label className="form-label">{t.moduleType}</label>
+                <select
+                  className="form-select"
+                  value={newModuleForm.module_type ?? "core"}
+                  onChange={(event) =>
+                    setNewModuleForm((prev) => ({
+                      ...prev,
+                      module_type: normalizeModuleType(event.target.value),
+                    }))
+                  }
+                >
+                  <option value="core">{t.moduleTypeCore}</option>
+                  <option value="optional">{t.moduleTypeOptional}</option>
+                </select>
+              </div>
+
               <div className="flex items-end">
                 <button
                   type="submit"
@@ -878,6 +898,29 @@ export function CourseSearchPage() {
                   </select>
                 ) : (
                   row.uses_computer
+                ),
+            },
+            {
+              key: "moduleType",
+              header: t.moduleType,
+              render: (row) =>
+                canManageModules ? (
+                  <select
+                    className="form-select min-w-24"
+                    value={drafts[row.module_id]?.module_type ?? "core"}
+                    onChange={(event) =>
+                      updateDraft(row.module_id, {
+                        module_type: normalizeModuleType(event.target.value),
+                      })
+                    }
+                  >
+                    <option value="core">{t.moduleTypeCore}</option>
+                    <option value="optional">{t.moduleTypeOptional}</option>
+                  </select>
+                ) : row.module_type === "optional" ? (
+                  t.moduleTypeOptional
+                ) : (
+                  t.moduleTypeCore
                 ),
             },
             ...(canManageModules

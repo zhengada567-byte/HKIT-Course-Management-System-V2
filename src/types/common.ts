@@ -1,5 +1,8 @@
 export type ModuleTerm = "Sep" | "Feb" | "Jun";
 
+/** Catalog module requirement: core (required) or optional (elective). */
+export type ModuleType = "core" | "optional";
+
 export type TeachingStatus = "FT" | "PT";
 
 export type EmploymentType = "FT" | "PT" | "";

@@ -46,6 +46,8 @@ import {
   getDegreeStartTermAfterBridging,
 } from "../pages/programme-leader/make-study-plan/studyPlanRules";
 
+import { normalizeModuleType } from "./moduleService";
+
 import {
   getBaseModuleCode,
   inferPlanStageFromModuleCode,
@@ -2890,6 +2892,7 @@ export async function loadProgrammeModules(
       module_name,
       module_year,
       module_term,
+      module_type,
       programme_code,
       stream_code
       `
@@ -2953,6 +2956,7 @@ export async function loadProgrammeModules(
 
       moduleTerm,
       moduleTermPattern: moduleTerm,
+      moduleType: normalizeModuleType(row.module_type),
 
       deliveryMode: undefined,
 

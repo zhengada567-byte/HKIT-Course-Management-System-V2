@@ -1,6 +1,7 @@
 import { supabase } from "../lib/supabase";
 import {
   deleteModule,
+  normalizeModuleType,
   normalizeUsesComputerFlag,
   upsertModule,
   type ModuleInput,
@@ -14,6 +15,7 @@ import type {
   ModuleAdjustmentRow,
   ModuleRow,
   ModuleTerm,
+  ModuleType,
   ModuleUsesComputerFlag,
 } from "../types";
 
@@ -24,6 +26,7 @@ export interface CourseSearchRow {
   module_code: string;
   module_name: string | null;
   uses_computer: ModuleUsesComputerFlag;
+  module_type: ModuleType;
   module_teaching_contact_hours: number;
   module_tutorial_contact_hours: number;
   original_module_year: string | null;
@@ -43,6 +46,7 @@ export type CourseSearchModuleDraft = {
   module_year: string;
   module_term: ModuleTerm;
   uses_computer: ModuleUsesComputerFlag;
+  module_type: ModuleType;
   module_teaching_contact_hours: number;
   module_tutorial_contact_hours: number;
   adjusted_module_year: string;
@@ -212,6 +216,7 @@ export async function searchCourses(params: {
       module_code: module.module_code,
       module_name: module.module_name,
       uses_computer: normalizeUsesComputerFlag(module.uses_computer),
+      module_type: normalizeModuleType(module.module_type),
       module_teaching_contact_hours: Number(
         module.module_teaching_contact_hours ?? 0
       ),
@@ -292,6 +297,7 @@ export function buildCourseSearchDraft(row: CourseSearchRow): CourseSearchModule
     module_year: row.original_module_year ?? "",
     module_term: row.original_module_term,
     uses_computer: row.uses_computer,
+    module_type: row.module_type,
     module_teaching_contact_hours: row.module_teaching_contact_hours,
     module_tutorial_contact_hours: row.module_tutorial_contact_hours,
     adjusted_module_year: row.adjusted_module_year ?? "",
@@ -316,6 +322,7 @@ export async function saveCourseSearchModule(params: {
     programme_code: draft.programme_code,
     stream_code: streamCode,
     uses_computer: draft.uses_computer,
+    module_type: draft.module_type,
     module_teaching_contact_hours: draft.module_teaching_contact_hours,
     module_tutorial_contact_hours: draft.module_tutorial_contact_hours,
   };

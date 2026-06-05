@@ -7,7 +7,12 @@ import {
 import { supabase } from "../lib/supabase";
 import { normalizeStream } from "../lib/utils";
 import { getProgrammeTypeByCode } from "./studyPlanService";
-import type { ModuleRow, ModuleTerm, ModuleUsesComputerFlag } from "../types";
+import type {
+  ModuleRow,
+  ModuleTerm,
+  ModuleType,
+  ModuleUsesComputerFlag,
+} from "../types";
 
 export interface ModuleInput {
   id?: string;
@@ -18,6 +23,7 @@ export interface ModuleInput {
   programme_code: string;
   stream_code?: string | null;
   uses_computer?: ModuleUsesComputerFlag | null;
+  module_type?: ModuleType | null;
   module_teaching_contact_hours?: number | null;
   module_tutorial_contact_hours?: number | null;
 }
@@ -51,6 +57,23 @@ export async function resolveModuleTeachingTutorialHoursForUpsert(
     module_tutorial_contact_hours:
       tutorialExplicit ?? defaults.module_tutorial_contact_hours,
   };
+}
+
+export function normalizeModuleType(
+  value: string | null | undefined
+): ModuleType {
+  const text = String(value ?? "").trim().toLowerCase();
+
+  if (
+    text === "optional" ||
+    text === "opt" ||
+    text === "elective" ||
+    text === "選修"
+  ) {
+    return "optional";
+  }
+
+  return "core";
 }
 
 export function normalizeUsesComputerFlag(
@@ -134,6 +157,7 @@ export async function upsertModule(input: ModuleInput) {
     programme_code: input.programme_code.trim(),
     stream_code: normalizeStream(input.stream_code),
     uses_computer: normalizeUsesComputerFlag(input.uses_computer),
+    module_type: normalizeModuleType(input.module_type),
     module_teaching_contact_hours: contactHours.module_teaching_contact_hours,
     module_tutorial_contact_hours: contactHours.module_tutorial_contact_hours,
   };

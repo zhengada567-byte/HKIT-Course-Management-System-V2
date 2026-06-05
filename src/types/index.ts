@@ -2,6 +2,7 @@ export type { UserRole, AppUser, AuthSession } from "./auth";
 
 export type {
   ModuleTerm,
+  ModuleType,
   TeachingStatus,
   EmploymentType,
   CombineType,
