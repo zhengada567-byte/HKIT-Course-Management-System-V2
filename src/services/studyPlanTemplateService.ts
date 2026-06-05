@@ -95,7 +95,7 @@ export async function buildInitialStudyPlanTemplateCsv(params: {
         studentId: "S001",
         studentName: "Chan Tai Man",
         intakeTerm: "T2026C",
-        intakeLevel: "Year 3",
+        intakeLevel: "Y3",
       }),
       ...buildModulePairCells(exampleCodes, [
         "T2026C",
@@ -114,7 +114,7 @@ export async function buildInitialStudyPlanTemplateCsv(params: {
         studentId: "S002",
         studentName: "Lee Siu Ming",
         intakeTerm: "T2026C",
-        intakeLevel: "Year 3",
+        intakeLevel: "Y3",
       }),
       ...buildModulePairCells(exampleCodes, []),
     ];
@@ -136,7 +136,7 @@ export async function buildInitialStudyPlanTemplateCsv(params: {
       studentId: "S001",
       studentName: "Chan Tai Man",
       intakeTerm: "T2026A",
-      intakeLevel: "Year 1",
+      intakeLevel: "Y1",
       programmeStream: "nil",
     }),
     ...buildModulePairCells(

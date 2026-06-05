@@ -7,6 +7,7 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { useAcademicYear } from "../contexts/AcademicYearContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useLanguage } from "../contexts/LanguageContext";
+import { formatProgrammeYearDisplay } from "../lib/programmeYear";
 import {
   normalizeModuleContactHours,
   normalizeModuleTutorialContactHours,
@@ -40,7 +41,7 @@ function defaultNewModuleForm(
   return {
     module_code: "",
     module_name: "",
-    module_year: "Year 1",
+    module_year: "Y1",
     module_term: "Sep",
     programme_code: programmeCode,
     stream_code: streamCode || "nil",
@@ -523,7 +524,7 @@ export function CourseSearchPage() {
                 <input
                   className="form-input"
                   value={newModuleForm.module_year ?? ""}
-                  placeholder="Year 1"
+                  placeholder="Y1"
                   onChange={(event) =>
                     setNewModuleForm((prev) => ({
                       ...prev,
@@ -781,7 +782,7 @@ export function CourseSearchPage() {
                     <input
                       className="form-input min-w-24"
                       value={drafts[row.module_id]?.module_year ?? ""}
-                      placeholder="Year 1"
+                      placeholder="Y1"
                       onChange={(event) =>
                         updateDraft(row.module_id, {
                           module_year: event.target.value,
@@ -796,7 +797,7 @@ export function CourseSearchPage() {
                       )}
                   </div>
                 ) : (
-                  row.final_module_year ?? "-"
+                  formatProgrammeYearDisplay(row.final_module_year)
                 ),
             },
             {

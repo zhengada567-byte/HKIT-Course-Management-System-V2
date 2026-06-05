@@ -1,3 +1,4 @@
+import { normalizeProgrammeYear } from "../lib/programmeYear";
 import { supabase } from "../lib/supabase";
 import {
   deleteModule,
@@ -223,11 +224,15 @@ export async function searchCourses(params: {
       module_tutorial_contact_hours: Number(
         module.module_tutorial_contact_hours ?? 0
       ),
-      original_module_year: module.module_year,
+      original_module_year: normalizeProgrammeYear(module.module_year),
       original_module_term: module.module_term,
-      adjusted_module_year: adjustment?.adjusted_module_year ?? null,
+      adjusted_module_year: normalizeProgrammeYear(
+        adjustment?.adjusted_module_year
+      ),
       adjusted_module_term: adjustment?.adjusted_module_term ?? null,
-      final_module_year: adjustment?.adjusted_module_year ?? module.module_year,
+      final_module_year:
+        normalizeProgrammeYear(adjustment?.adjusted_module_year) ??
+        normalizeProgrammeYear(module.module_year),
       final_module_term: adjustment?.adjusted_module_term ?? module.module_term,
     };
   });
@@ -262,7 +267,8 @@ export async function saveModuleAdjustment(input: {
     {
       module_id: input.moduleId,
       academic_year: input.academicYear,
-      adjusted_module_year: input.adjustedModuleYear || null,
+      adjusted_module_year:
+        normalizeProgrammeYear(input.adjustedModuleYear) ?? null,
       adjusted_module_term: input.adjustedModuleTerm || null,
       updated_by: input.updatedBy,
     },

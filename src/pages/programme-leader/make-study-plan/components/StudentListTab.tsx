@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import { TableViewport } from "../../../../components/tables/TableViewport";
 import { getTermIndex } from "../helpers";
+import { formatProgrammeYearDisplay } from "../../../../lib/programmeYear";
 import type { StudyPlanStudent } from "../types";
 import { deleteStudyPlanStudent } from "../../../../services/studyPlanService";
 import {
@@ -566,7 +567,9 @@ export default function StudentListTab({
                     {normalizeStream(student.programmeStream)}
                   </td>
                   <td className="whitespace-nowrap p-2">{student.intakeYear || "-"}</td>
-                  <td className="whitespace-nowrap p-2">{student.intakeLevel || "-"}</td>
+                  <td className="whitespace-nowrap p-2">
+                    {formatProgrammeYearDisplay(student.intakeLevel)}
+                  </td>
                   <td className="whitespace-nowrap p-2">{student.studyMode}</td>
                   <td className="whitespace-nowrap p-2">{student.intakeTerm || "-"}</td>
                   <td className="whitespace-nowrap p-2">{student.graduateTerm || "-"}</td>

@@ -47,7 +47,7 @@ const MODULE_UPLOAD_HEADERS = [
 const MODULE_UPLOAD_EXAMPLE_ROW = [
   "HD401",
   "Introduction to IT",
-  "Year 1",
+  "Y1",
   "Sep",
   "HDC",
   "Cyber Security",

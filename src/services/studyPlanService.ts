@@ -2,6 +2,10 @@ import FileSaver from "file-saver";
 
 const saveAs = FileSaver.saveAs;
 
+import {
+  normalizeIntakeLevel,
+  normalizeProgrammeYear,
+} from "../lib/programmeYear";
 import { supabase } from "../lib/supabase";
 import {
   deleteByIdsInBatches,
@@ -654,7 +658,8 @@ function enrichStudyPlanModuleWithMetadata(
     programmeStream,
     sourceModuleId: metadata.id ?? module.sourceModuleId,
     moduleName: metadata.module_name ?? module.moduleName ?? module.moduleCode,
-    moduleYear: metadata.module_year ?? module.moduleYear,
+    moduleYear:
+      normalizeProgrammeYear(metadata.module_year) ?? module.moduleYear,
     moduleTerm,
     moduleTermPattern: moduleTerm,
     moduleSequence: module.moduleSequence,
@@ -829,7 +834,7 @@ function fromStudentRow(row: any): StudyPlanStudent {
     studentId: row.student_id,
     studentName: row.student_name,
     intakeYear: row.intake_year ?? undefined,
-    intakeLevel: row.intake_level ?? undefined,
+    intakeLevel: normalizeIntakeLevel(row.intake_level) ?? undefined,
     studyMode: row.study_mode,
     programmeCode: row.programme_code,
     programmeStream: row.programme_stream ?? "",
@@ -935,7 +940,7 @@ function toModuleRow(
 
     module_code: String(module.moduleCode ?? "").trim().toUpperCase(),
     module_name: module.moduleName,
-    module_year: module.moduleYear ?? null,
+    module_year: normalizeProgrammeYear(module.moduleYear) ?? null,
 
     /**
      * Store term explicitly.
@@ -946,7 +951,8 @@ function toModuleRow(
     module_term: moduleTerm,
     module_term_pattern: moduleTerm,
 
-    delivery_mode: module.deliveryMode ?? null,
+    enrolled_module_instance_code:
+      module.enrolledModuleInstanceCode ?? null,
 
     /**
      * This belongs to study_plan_modules only.
@@ -984,12 +990,15 @@ function fromModuleRow(row: any): StudyPlanModule {
 
     moduleCode: row.module_code,
     moduleName: row.module_name,
-    moduleYear: row.module_year ?? undefined,
+    moduleYear: normalizeProgrammeYear(row.module_year) ?? undefined,
 
     moduleTerm,
     moduleTermPattern: moduleTerm,
 
-    deliveryMode: row.delivery_mode ?? undefined,
+    enrolledModuleInstanceCode:
+      row.enrolled_module_instance_code ??
+      row.delivery_mode ??
+      undefined,
     moduleSequence: row.module_sequence ?? undefined,
 
     planStage: row.plan_stage,
@@ -1269,7 +1278,7 @@ export interface StudyPlanModuleMetadataLookup {
   programmeCode?: string;
   programmeStream?: string;
   sourceModuleId?: string;
-  deliveryMode?: string;
+  enrolledModuleInstanceCode?: string;
 }
 
 async function loadModuleCatalogRowsByCode(
@@ -1382,7 +1391,7 @@ export async function lookupStudyPlanModuleMetadataByCode(params: {
   return {
     moduleCode: String(matchedRow.module_code ?? catalogCode).trim(),
     moduleName: String(matchedRow.module_name ?? "").trim(),
-    moduleYear: matchedRow.module_year ?? undefined,
+    moduleYear: normalizeProgrammeYear(matchedRow.module_year) ?? undefined,
     moduleTerm,
     moduleTermPattern: moduleTerm,
     programmeCode: String(matchedRow.programme_code ?? "").trim() || undefined,
@@ -1411,7 +1420,6 @@ async function lookupHdModuleMetadataByCode(
     programmeCode: metadata.programmeCode ?? "",
     programmeStream: metadata.programmeStream,
     sourceModuleId: metadata.sourceModuleId,
-    deliveryMode: metadata.deliveryMode,
     planStage: "bridging",
     status: "planned",
     isExempted: false,
@@ -2657,7 +2665,8 @@ export async function buildStudyPlanModuleFieldsFromCode(params: {
     moduleTerm: metadata.moduleTerm,
     moduleTermPattern: metadata.moduleTermPattern ?? metadata.moduleTerm,
     sourceModuleId: metadata.sourceModuleId,
-    deliveryMode: metadata.deliveryMode ?? current?.deliveryMode,
+    enrolledModuleInstanceCode:
+      current?.enrolledModuleInstanceCode ?? undefined,
     programmeCode: metadata.programmeCode ?? current?.programmeCode,
     programmeStream: metadata.programmeStream ?? current?.programmeStream,
   };
@@ -2856,7 +2865,7 @@ export async function loadProgrammeModuleCatalogForTemplate(
       programmeStream: row.stream_code ?? "nil",
       moduleCode: row.module_code,
       moduleName: row.module_name ?? row.module_code,
-      moduleYear: row.module_year ?? undefined,
+      moduleYear: normalizeProgrammeYear(row.module_year) ?? undefined,
       moduleTerm,
       moduleTermPattern: moduleTerm,
       planStage: "programme",
@@ -2952,13 +2961,13 @@ export async function loadProgrammeModules(
 
       moduleCode: row.module_code,
       moduleName: row.module_name ?? row.module_code,
-      moduleYear: row.module_year ?? undefined,
+      moduleYear: normalizeProgrammeYear(row.module_year) ?? undefined,
 
       moduleTerm,
       moduleTermPattern: moduleTerm,
       moduleType: normalizeModuleType(row.module_type),
 
-      deliveryMode: undefined,
+      enrolledModuleInstanceCode: undefined,
 
       /**
        * modules table does not have module_sequence.
@@ -3372,7 +3381,7 @@ export async function getStudyPlanReports() {
         programmeCode: row.programme_code,
         programmeStream,
         intakeYear: row.intake_year ?? "",
-        intakeLevel: row.intake_level ?? "",
+        intakeLevel: normalizeIntakeLevel(row.intake_level) ?? "",
         studyMode: row.study_mode ?? "",
         studentStatus: row.student_status ?? "",
         intakeTerm: row.intake_term ?? "",
@@ -3859,12 +3868,12 @@ export async function loadBridgingModuleOptionsForDegree(params: {
 
       moduleCode: row.module_code,
       moduleName: row.module_name ?? row.module_code,
-      moduleYear: row.module_year ?? undefined,
+      moduleYear: normalizeProgrammeYear(row.module_year) ?? undefined,
 
       moduleTerm,
       moduleTermPattern: moduleTerm,
 
-      deliveryMode: undefined,
+      enrolledModuleInstanceCode: undefined,
       moduleSequence: undefined,
 
       planStage: "bridging",

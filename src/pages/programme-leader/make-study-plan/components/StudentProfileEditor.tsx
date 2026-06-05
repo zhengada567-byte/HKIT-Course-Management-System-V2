@@ -19,6 +19,11 @@ import {
 } from "../../../../services/studyPlanService";
 
 import { downloadStudyPlanCsv } from "../../../../services/studyPlanExportService";
+import {
+  loadEnrollmentInstanceCatalog,
+  type EnrollmentInstanceOption,
+} from "../../../../services/studyPlanEnrollmentService";
+import { studyTermToAcademicYear } from "../helpers";
 
 import {
   getDegreeStartTermAfterBridging,
@@ -27,6 +32,10 @@ import {
 
 import ModulePlanTable from "./ModulePlanTable";
 import StudyPlanSummaryPanel from "./StudyPlanSummaryPanel";
+import {
+  INTAKE_LEVEL_OPTIONS,
+  normalizeIntakeLevel,
+} from "../../../../lib/programmeYear";
 import { isDegreeProgramme, isHDProgramme } from "../helpers";
 
 interface Props {
@@ -85,6 +94,7 @@ function mergeLoadedProgrammeModule(
     isFailed: false,
     isLocked: existing.isLocked ?? false,
     remark: existing.remark,
+    enrolledModuleInstanceCode: existing.enrolledModuleInstanceCode,
   };
 }
 
@@ -113,10 +123,67 @@ export default function StudentProfileEditor({
   const [rowActionIndex, setRowActionIndex] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
   const [loadingModules, setLoadingModules] = useState(false);
+  const [enrollmentInstances, setEnrollmentInstances] = useState<
+    EnrollmentInstanceOption[]
+  >([]);
 
   const [programmeOptions, setProgrammeOptions] = useState<ProgrammeOption[]>(
     []
   );
+
+  const moduleStudyTermsKey = useMemo(
+    () =>
+      modules
+        .map((module) => String(module.studyTerm ?? "").trim())
+        .filter(Boolean)
+        .sort()
+        .join("|"),
+    [modules]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadEnrollmentOptions() {
+      const academicYears = Array.from(
+        new Set(
+          modules
+            .map((module) => studyTermToAcademicYear(String(module.studyTerm ?? "")))
+            .map((year) => String(year ?? "").trim())
+            .filter(Boolean)
+        )
+      );
+
+      if (academicYears.length === 0) {
+        if (!cancelled) {
+          setEnrollmentInstances([]);
+        }
+        return;
+      }
+
+      try {
+        const catalogs = await Promise.all(
+          academicYears.map((academicYear) =>
+            loadEnrollmentInstanceCatalog({ academicYear })
+          )
+        );
+
+        if (!cancelled) {
+          setEnrollmentInstances(catalogs.flat());
+        }
+      } catch {
+        if (!cancelled) {
+          setEnrollmentInstances([]);
+        }
+      }
+    }
+
+    void loadEnrollmentOptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [moduleStudyTermsKey, modules]);
   const [loadingProgrammes, setLoadingProgrammes] = useState(false);
 
   const [bridgingOptions, setBridgingOptions] = useState<StudyPlanModule[]>([]);
@@ -905,8 +972,8 @@ export default function StudentProfileEditor({
         prev.intakeLevel && prev.intakeLevel !== ""
           ? prev.intakeLevel
           : isDegreeProgramme(programmeCode, programmeType)
-            ? "Year 3"
-            : "Year 1",
+            ? "Y3"
+            : "Y1",
     }));
 
     setModules([]);
@@ -980,14 +1047,19 @@ export default function StudentProfileEditor({
             <span className="text-sm font-medium">Intake Level</span>
             <select
               className="w-full border rounded-md px-3 py-2"
-              value={student.intakeLevel ?? (isDegree ? "Year 3" : "Year 1")}
+              value={
+                normalizeIntakeLevel(student.intakeLevel) ??
+                (isDegree ? "Y3" : "Y1")
+              }
               onChange={(event) =>
                 updateStudent("intakeLevel", event.target.value)
               }
             >
-              <option value="Year 1">Year 1</option>
-              <option value="Year 2">Year 2</option>
-              <option value="Year 3">Year 3</option>
+              {INTAKE_LEVEL_OPTIONS.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
             </select>
           </label>
 
@@ -1325,6 +1397,7 @@ export default function StudentProfileEditor({
         onChange={setModules}
         programmeCode={student.programmeCode}
         programmeStream={student.programmeStream}
+        enrollmentInstances={enrollmentInstances}
         onUpdateRow={handleUpdateModuleRow}
         onDeleteRow={handleDeleteModuleRow}
         rowActionIndex={rowActionIndex}

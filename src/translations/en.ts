@@ -123,6 +123,16 @@ export const en = {
   weeklyTimetableAdminInstanceHint:
     "All module instances for this term. Save Timetable writes study-week sessions for any programme.",
   allProgrammes: "All programmes",
+  studyPlanEnrollmentTitle: "Student Class Enrollment",
+  studyPlanEnrollmentDescription:
+    "After the weekly/daily timetable is saved, batch-assign study plan students by academic year and term. Existing manual enrollments are kept by default.",
+  studyPlanEnrollmentOnlyEmpty:
+    "Only assign rows with empty Enrolled Class",
+  studyPlanEnrollmentHint:
+    "Select academic year and term (Feb / Jun / Sep), then run after that term's sessions and rooms are saved. Day capacity uses scheduled classroom room_size only.",
+  studyPlanEnrollmentRun: "Run batch enrollment",
+  processing: "Processing...",
+  enrolledClass: "Enrolled Class",
   buildDailyTimetable: "Generate daily timetable",
   exportWeeklyDailyTimetableExcel: "Export weekly & daily Excel",
   exportWeeklyDailyTimetableHint:

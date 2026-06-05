@@ -6,6 +6,8 @@ import type {
 } from "../pages/programme-leader/make-study-plan/types";
 
 
+import { normalizeIntakeLevel } from "../lib/programmeYear";
+
 import {
   inferPlanStageFromModuleCode,
   isDegreeStyleModuleCode,
@@ -520,7 +522,7 @@ export function parseStudyPlanWorkbookBuffer(
   return parseWorkbookRows(arrayBuffer);
 }
 
-const DEGREE_UPLOAD_INTAKE_LEVEL = "Year 3";
+const DEGREE_UPLOAD_INTAKE_LEVEL = "Y3";
 const DEGREE_UPLOAD_STUDY_MODE = "FT" as const;
 
 function normalizeStudyModeForUpload(
@@ -630,7 +632,8 @@ function buildStudentFromRow(
     studyMode: normalizeStudyModeForUpload(studyMode, { isDegreeUpload }),
     intakeLevel: isDegreeUpload
       ? DEGREE_UPLOAD_INTAKE_LEVEL
-      : optionalText(intakeLevel),
+      : normalizeIntakeLevel(optionalText(intakeLevel)) ??
+        optionalText(intakeLevel),
     intakeTerm: optionalText(intakeTerm),
     studentStatus: "potential",
     okToArticulate: parseArticulationFromUpload(articulation),
@@ -669,7 +672,7 @@ function createStudyPlanModule(params: {
 
     moduleYear: undefined,
     moduleTermPattern: undefined,
-    deliveryMode: undefined,
+    enrolledModuleInstanceCode: undefined,
     moduleSequence: undefined,
 
     planStage,

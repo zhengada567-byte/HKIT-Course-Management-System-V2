@@ -3,6 +3,7 @@ import type {
   StudyPlanModule,
 } from "./types";
 import type { ModuleTerm } from "../../../types/common";
+import { normalizeIntakeLevel } from "../../../lib/programmeYear";
 import { formatAcademicYear } from "../../../lib/utils";
 
 export function normalizeStream(stream?: string | null): string {
@@ -400,11 +401,13 @@ export function getDefaultIntakeLevel(
   intakeLevel?: string,
   programmeType?: string | null
 ): string {
-  if (intakeLevel) return intakeLevel;
+  const normalized = normalizeIntakeLevel(intakeLevel);
 
-  if (isDegreeProgramme(programmeCode, programmeType)) return "Year 3";
+  if (normalized) return normalized;
 
-  return "Year 1";
+  if (isDegreeProgramme(programmeCode, programmeType)) return "Y3";
+
+  return "Y1";
 }
 
 export function summarizeStudyPlan(modules: StudyPlanModule[]) {

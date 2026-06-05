@@ -112,7 +112,7 @@ export default function MakeStudyPlanPage() {
       studentName: "",
       intakeYear: "",
       intakeTerm: "",
-      intakeLevel: "Year 1",
+      intakeLevel: "Y1",
       studyMode: "FT",
       programmeCode: "",
       programmeStream: "",

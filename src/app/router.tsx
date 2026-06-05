@@ -23,6 +23,7 @@ import MakeStudyPlanPage from "../pages/programme-leader/make-study-plan/MakeStu
 import { ModuleTeacherAssignmentPage } from "../pages/programme-leader/ModuleTeacherAssignmentPage";
 import { AssignmentConfirmationMonitorPage } from "../pages/admin/AssignmentConfirmationMonitorPage";
 import { DailyTimetablePage } from "../pages/admin/DailyTimetablePage";
+import { StudyPlanEnrollmentPage } from "../pages/admin/StudyPlanEnrollmentPage";
 
 import { ApprovedLoadingPage } from "../pages/president/ApprovedLoadingPage";
 import { PresidentPasswordPage } from "../pages/president/PresidentPasswordPage";
@@ -125,6 +126,14 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute allowedRoles={["admin"]}>
             <DailyTimetablePage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "admin/study-plan-enrollment",
+        element: (
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <StudyPlanEnrollmentPage />
           </ProtectedRoute>
         ),
       },

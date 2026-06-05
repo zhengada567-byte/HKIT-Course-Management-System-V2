@@ -7,7 +7,10 @@ import {
 } from "react";
 
 import { getBaseModuleCode } from "../../../../lib/studyPlanModuleCode";
+import { useLanguage } from "../../../../contexts/LanguageContext";
+import { formatProgrammeYearDisplay } from "../../../../lib/programmeYear";
 import { lookupStudyPlanModuleMetadataByCode } from "../../../../services/studyPlanService";
+import type { EnrollmentInstanceOption } from "../../../../services/studyPlanEnrollmentService";
 import type { StudyPlanModule, StudyPlanModuleStatus } from "../types";
 
 interface Props {
@@ -15,6 +18,7 @@ interface Props {
   onChange: Dispatch<SetStateAction<StudyPlanModule[]>>;
   programmeCode: string;
   programmeStream?: string;
+  enrollmentInstances?: EnrollmentInstanceOption[];
   onUpdateRow?: (index: number) => Promise<void>;
   onDeleteRow?: (index: number) => Promise<void>;
   rowActionIndex?: number | null;
@@ -83,16 +87,45 @@ function getModuleRowClass(module: StudyPlanModule) {
   return "";
 }
 
+function buildEnrollmentOptionsForModule(
+  module: StudyPlanModule,
+  enrollmentInstances: EnrollmentInstanceOption[]
+) {
+  const moduleCode = String(module.moduleCode ?? "").trim().toUpperCase();
+
+  if (!moduleCode) {
+    return [];
+  }
+
+  const matches = enrollmentInstances.filter(
+    (row) => String(row.moduleCode ?? "").trim().toUpperCase() === moduleCode
+  );
+
+  if (matches.length === 0) {
+    return [moduleCode];
+  }
+
+  if (matches.length === 1 && matches[0]!.splitGroupSize <= 1) {
+    return [matches[0]!.moduleInstanceCode];
+  }
+
+  return Array.from(
+    new Set(matches.map((row) => row.moduleInstanceCode).filter(Boolean))
+  ).sort();
+}
+
 export default function ModulePlanTable({
   modules,
   onChange,
   programmeCode,
   programmeStream,
+  enrollmentInstances = [],
   onUpdateRow,
   onDeleteRow,
   rowActionIndex = null,
   saving = false,
 }: Props) {
+  const { t } = useLanguage();
   const [resolvingIndex, setResolvingIndex] = useState<number | null>(null);
   const resolveGenerationRef = useRef(0);
 
@@ -254,7 +287,6 @@ export default function ModulePlanTable({
         moduleTermPattern:
           metadata!.moduleTermPattern ?? metadata!.moduleTerm,
         sourceModuleId: metadata!.sourceModuleId,
-        deliveryMode: metadata!.deliveryMode ?? current.deliveryMode,
         programmeCode: metadata!.programmeCode ?? current.programmeCode,
         programmeStream: metadata!.programmeStream ?? current.programmeStream,
       }));
@@ -275,10 +307,10 @@ export default function ModulePlanTable({
             <th className="p-2 text-left">Module Name</th>
             <th className="p-2 text-left">Year</th>
             <th className="p-2 text-left">Offered Term</th>
-            <th className="p-2 text-left">Delivery</th>
             <th className="p-2 text-left">Status</th>
             <th className="p-2 text-left">Study Term</th>
             <th className="p-2 text-left">Locked</th>
+            <th className="p-2 text-left">{t.enrolledClass}</th>
             <th className="p-2 text-left">Remark</th>
             <th className="p-2 text-left">Actions</th>
           </tr>
@@ -341,15 +373,13 @@ export default function ModulePlanTable({
                   {hasCatalogMetadata ? module.moduleName : "-"}
                 </td>
                 <td className="p-2">
-                  {hasCatalogMetadata ? module.moduleYear || "-" : "-"}
+                  {hasCatalogMetadata
+                    ? formatProgrammeYearDisplay(module.moduleYear)
+                    : "-"}
                 </td>
                 <td className="p-2">
                   {hasCatalogMetadata ? offeredTerm || "-" : "-"}
                 </td>
-                <td className="p-2">
-                  {hasCatalogMetadata ? module.deliveryMode || "-" : "-"}
-                </td>
-
                 <td className="p-2">
                   <select
                     className="border rounded-md px-2 py-1"
@@ -392,6 +422,43 @@ export default function ModulePlanTable({
                       })
                     }
                   />
+                </td>
+
+                <td className="p-2">
+                  {module.status === "exempted" || module.status === "failed" ? (
+                    <span className="text-muted-foreground">-</span>
+                  ) : (
+                    <select
+                      className="border rounded-md px-2 py-1 min-w-36"
+                      value={module.enrolledModuleInstanceCode ?? ""}
+                      disabled={rowBusy}
+                      onChange={(event) =>
+                        updateModule(index, {
+                          enrolledModuleInstanceCode:
+                            event.target.value || undefined,
+                        })
+                      }
+                    >
+                      <option value="">-</option>
+                      {buildEnrollmentOptionsForModule(
+                        module,
+                        enrollmentInstances
+                      ).map((code) => (
+                        <option key={code} value={code}>
+                          {code}
+                        </option>
+                      ))}
+                      {module.enrolledModuleInstanceCode &&
+                      !buildEnrollmentOptionsForModule(
+                        module,
+                        enrollmentInstances
+                      ).includes(module.enrolledModuleInstanceCode) ? (
+                        <option value={module.enrolledModuleInstanceCode}>
+                          {module.enrolledModuleInstanceCode}
+                        </option>
+                      ) : null}
+                    </select>
+                  )}
                 </td>
 
                 <td className="p-2">

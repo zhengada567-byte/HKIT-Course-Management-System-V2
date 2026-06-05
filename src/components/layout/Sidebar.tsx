@@ -18,6 +18,7 @@ import {
   Upload,
   UserCog,
   UserPen,
+  UserPlus,
   Users,
 } from "lucide-react";
 
@@ -148,6 +149,12 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       to: "/admin/daily-timetable",
       label: t.weeklyDailyTimetable,
       icon: CalendarRange,
+      roles: ["admin"],
+    },
+    {
+      to: "/admin/study-plan-enrollment",
+      label: t.studyPlanEnrollmentTitle,
+      icon: UserPlus,
       roles: ["admin"],
     },
     {

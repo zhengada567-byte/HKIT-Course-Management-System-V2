@@ -117,6 +117,15 @@ export const zhHant = {
   weeklyTimetableAdminInstanceHint:
     "本學期所有模組實例；儲存後會寫入各課程的學習週課節。",
   allProgrammes: "全部課程",
+  studyPlanEnrollmentTitle: "學生分班",
+  studyPlanEnrollmentDescription:
+    "在每周每日時間表排課完成後，按學年及學期批量把學習計劃學生分配到 module instance。預設不覆蓋已有人手設定的入班。",
+  studyPlanEnrollmentOnlyEmpty: "只處理 Enrolled Class 為空的科目",
+  studyPlanEnrollmentHint:
+    "請選擇學年及學期（Feb / Jun / Sep），並在該學期時間表 session 及教室已儲存後執行。Day 班容量只與已排課教室 room_size 比較。",
+  studyPlanEnrollmentRun: "執行批量分班",
+  processing: "處理中...",
+  enrolledClass: "入讀班別",
   buildDailyTimetable: "產生每日時間表",
   exportWeeklyDailyTimetableExcel: "匯出每周及每日 Excel",
   exportWeeklyDailyTimetableHint:

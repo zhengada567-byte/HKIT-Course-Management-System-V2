@@ -20,6 +20,7 @@ import {
   upsertModule,
   type ModuleInput,
 } from "../../services/moduleService";
+import { formatProgrammeYearDisplay } from "../../lib/programmeYear";
 import type {
   ModuleRow,
   ModuleTerm,
@@ -247,7 +248,7 @@ export function ModuleManagementPage() {
                 <input
                   className="form-input"
                   value={form.module_year ?? ""}
-                  placeholder="Year 1"
+                  placeholder="Y1"
                   onChange={(event) =>
                     setForm((prev) => ({
                       ...prev,
@@ -484,7 +485,7 @@ export function ModuleManagementPage() {
               header: t.moduleYear,
               render: (row) => (
                 <span className="block w-[70px] whitespace-nowrap">
-                  {row.module_year ?? "-"}
+                  {formatProgrammeYearDisplay(row.module_year)}
                 </span>
               ),
             },

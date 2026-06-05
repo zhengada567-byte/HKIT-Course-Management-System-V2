@@ -88,7 +88,8 @@ export interface StudyPlanModule {
    */
   moduleTermPattern?: string;
 
-  deliveryMode?: string;
+  /** Assigned module instance code (batch admin or PL manual). */
+  enrolledModuleInstanceCode?: string;
   moduleSequence?: number;
 
   planStage: PlanStage;

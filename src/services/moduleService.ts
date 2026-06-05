@@ -4,6 +4,7 @@ import {
   resolveDefaultModuleTeachingTutorialHours,
   type ModuleTeachingTutorialHours,
 } from "../lib/moduleContactHours";
+import { normalizeProgrammeYear } from "../lib/programmeYear";
 import { supabase } from "../lib/supabase";
 import { normalizeStream } from "../lib/utils";
 import { getProgrammeTypeByCode } from "./studyPlanService";
@@ -152,7 +153,7 @@ export async function upsertModule(input: ModuleInput) {
   const payload = {
     module_code: input.module_code.trim(),
     module_name: input.module_name?.trim() || null,
-    module_year: input.module_year?.trim() || null,
+    module_year: normalizeProgrammeYear(input.module_year) ?? null,
     module_term: input.module_term,
     programme_code: input.programme_code.trim(),
     stream_code: normalizeStream(input.stream_code),
