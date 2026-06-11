@@ -10,7 +10,9 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import {
   buildAssignmentDraftFromTeacher,
+  buildLatestAssignmentByModuleId,
   confirmAssignments,
+  hasValidTeacherAssignment,
   listAssignments,
   saveAssignmentDraft,
 } from "../../services/assignmentService";
@@ -46,6 +48,7 @@ import { syncStudyPlanStudentNumbersToTimetable } from "../../services/timetable
 import {
   normalizeStream,
   offeredTermToStudyTerm,
+  isTBC,
   timetableProgrammeStreamFromSelection,
 } from "../../lib/utils";
 import { listTeachers } from "../../services/teacherService";
@@ -80,6 +83,7 @@ import { SplitAction } from "./make-timetable/components/SplitAction";
 import { StepTabs } from "./make-timetable/components/StepTabs";
 import { StudentNumberStep } from "./make-timetable/components/StudentNumberStep";
 import { ScheduleStep } from "./make-timetable/components/ScheduleStep";
+import { TeacherConfirmStep } from "./make-timetable/components/TeacherConfirmStep";
 import { resolveCombinedDefaultTeacherForGroupDetails } from "../../lib/combinedDefaultTeacher";
 import { dedupeJoinedModuleName } from "../../lib/moduleDisplay";
 import {
@@ -192,6 +196,7 @@ export function MakeTimetablePage() {
   const [assignments, setAssignments] = useState<TeachingAssignmentRow[]>([]);
 
   const [loading, setLoading] = useState(false);
+  const [confirmingTeachers, setConfirmingTeachers] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [offeringBusy, setOfferingBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -236,6 +241,19 @@ export function MakeTimetablePage() {
     sourceTimetableModules,
     moduleTerm,
   ]);
+
+  const teachersConfirmed = useMemo(() => {
+    if (sourceTimetableModules.length === 0) {
+      return false;
+    }
+
+    const latestByModule = buildLatestAssignmentByModuleId(assignments);
+
+    return sourceTimetableModules.every((module) => {
+      const assignment = latestByModule.get(module.id);
+      return Boolean(assignment?.confirmed) && hasValidTeacherAssignment(assignment);
+    });
+  }, [sourceTimetableModules, assignments]);
 
   useEffect(() => {
     if (prevAcademicYearRef.current !== academicYear) {
@@ -553,6 +571,14 @@ export function MakeTimetablePage() {
     if (!programmeCode && next !== "student_numbers") {
       setMessage(t.selectProgrammeRequired);
       setStep("student_numbers");
+      return;
+    }
+
+    if (next === "schedule" && !teachersConfirmed) {
+      setMessage(
+        "Please confirm all teachers in step 4 before opening scheduling."
+      );
+      setStep("teachers");
       return;
     }
 
@@ -1271,10 +1297,10 @@ export function MakeTimetablePage() {
       setMessage(
         `Split decisions confirmed for ${scopeLabel}. ` +
           `${pendingSingleModules.length} single module(s) and ${pendingCombinedGroups.length} combined group(s) were marked as No Split. ` +
-          `${allSourceModules.length} module instance row(s) are ready for scheduling.`
+          `${allSourceModules.length} module instance row(s) are ready for teacher confirmation.`
       );
 
-      setStep("schedule");
+      setStep("teachers");
     } catch (error) {
       console.error("[MakeTimetablePage] Confirm all split decisions failed:", error);
       setMessage(
@@ -1429,6 +1455,93 @@ export function MakeTimetablePage() {
     }
   }
 
+  async function handleConfirmAllTeachers(
+    rows: Array<{
+      instance: TimetableModuleInstanceRow;
+      teacherName: string;
+      mode: TeachingMode;
+      teachingStatus: TeachingStatus;
+    }>
+  ) {
+    if (!user) {
+      setMessage("Please login before confirming teachers.");
+      return;
+    }
+
+    const tbcRows = rows.filter((row) => isTBC(row.teacherName));
+    if (tbcRows.length > 0) {
+      setMessage(
+        `Please assign a teacher for all instances (${tbcRows.length} still TBC).`
+      );
+      return;
+    }
+
+    setConfirmingTeachers(true);
+    setMessage("Saving teachers and confirming assignments...");
+
+    try {
+      await upsertTimetableModuleInstances(
+        rows.map((row) => ({
+          id: row.instance.id,
+          instance_teacher_name: row.teacherName,
+          instance_mode: row.mode,
+        }))
+      );
+
+      for (const row of rows) {
+        const timetableModule = sourceTimetableModules.find(
+          (module) =>
+            module.module_instance_code === row.instance.module_instance_code
+        );
+
+        if (!timetableModule) {
+          continue;
+        }
+
+        const teacher = teachers.find(
+          (item) => item.teacher_name === row.teacherName
+        );
+
+        const draft = buildAssignmentDraftFromTeacher({
+          timetableModule,
+          teacher: teacher ?? null,
+          useTBC: false,
+          teachingStatus: row.teachingStatus,
+          mode: row.mode,
+          programmeType: null,
+        });
+
+        await saveAssignmentDraft({
+          timetableModule,
+          draft,
+          updatedBy: user.id,
+        });
+      }
+
+      const result = await confirmAssignments({
+        academicYear,
+        confirmedBy: user.id,
+        programmeCode: programmeCode || undefined,
+      });
+
+      await refreshTimetableAndAssignments({
+        programmeCode,
+      });
+
+      setStep("schedule");
+      setMessage(
+        `All teachers confirmed (version ${result.confirmedVersion}). Continue to scheduling.`
+      );
+    } catch (error) {
+      console.error("[MakeTimetablePage] Confirm all teachers failed:", error);
+      setMessage(
+        error instanceof Error ? error.message : "Confirm all teachers failed"
+      );
+    } finally {
+      setConfirmingTeachers(false);
+    }
+  }
+
   async function handleConfirmAssignments() {
     if (!user) {
       setMessage("Please login before confirming assignment.");
@@ -1520,7 +1633,7 @@ export function MakeTimetablePage() {
 
         if (currentRequest !== requestId) return;
 
-        if (step === "split" || step === "schedule") {
+        if (step === "split" || step === "teachers" || step === "schedule") {
           await refreshTimetableAndAssignments({
             programmeCode,
           });
@@ -1562,7 +1675,7 @@ export function MakeTimetablePage() {
       });
     }
 
-    if (step === "split" || step === "schedule") {
+    if (step === "split" || step === "teachers" || step === "schedule") {
       void refreshTimetableAndAssignments({
         programmeCode,
       });
@@ -1570,7 +1683,7 @@ export function MakeTimetablePage() {
   }, [step, user, programmeCode, moduleTerm, academicYear]);
 
   useEffect(() => {
-    if (!user || (step !== "split" && step !== "schedule")) return;
+    if (!user || (step !== "split" && step !== "teachers" && step !== "schedule")) return;
 
     void refreshSourceTimetableModules().catch((error) => {
       console.error("[MakeTimetablePage] Load source timetable modules failed:", error);
@@ -1640,7 +1753,7 @@ export function MakeTimetablePage() {
     <div className="page-container">
       <PageHeader
         title={t.makeTimetable}
-        description="Workflow: sync student numbers → auto/manual combine → split → schedule."
+        description="Workflow: sync student numbers → combine → split → confirm teachers → schedule."
       />
 
       {message && (
@@ -1702,7 +1815,7 @@ export function MakeTimetablePage() {
 
           <div className="flex items-end">
             <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              Steps 1–4 are scoped to the selected programme and module term.
+              Steps 1–5 are scoped to the selected programme and module term.
               Academic year is set by Admin.
             </div>
           </div>
@@ -1718,6 +1831,7 @@ export function MakeTimetablePage() {
       <StepTabs
         step={step}
         programmeSelected={Boolean(programmeCode)}
+        teachersConfirmed={teachersConfirmed}
         onStepChange={handleStepChange}
       />
 
@@ -1783,6 +1897,18 @@ export function MakeTimetablePage() {
                   programmeCode,
                 });
               }}
+            />
+          )}
+
+          {step === "teachers" && programmeCode && (
+            <TeacherConfirmStep
+              instances={scheduleInstances}
+              sourceTimetableModules={sourceTimetableModules}
+              assignments={assignments}
+              teachers={teachers}
+              programmeCode={programmeCode || undefined}
+              confirming={confirmingTeachers}
+              onConfirmAllTeachers={handleConfirmAllTeachers}
             />
           )}
 
