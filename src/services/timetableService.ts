@@ -12,6 +12,7 @@ import {
 import type { PlanningOfferingStatus } from "../types";
 import type {
   ModuleRow,
+  ModuleTerm,
   TimetableModuleRow,
   TimetablePlanningModuleRow,
 } from "../types";
@@ -22,6 +23,7 @@ export interface GeneratePlanningModulesParams {
   academicYear: string;
   programmeCode?: string;
   streamCode?: string;
+  moduleTerm?: ModuleTerm;
   createdBy: string;
 }
 
@@ -209,6 +211,10 @@ export async function ensureTimetablePlanningModules(
     moduleQuery = moduleQuery.eq("programme_code", params.programmeCode);
   }
 
+  if (params.moduleTerm) {
+    moduleQuery = moduleQuery.eq("module_term", params.moduleTerm);
+  }
+
   const [
     { data: modules, error: moduleError },
     { data: existingPlanningModules, error: existingError },
@@ -222,6 +228,10 @@ export async function ensureTimetablePlanningModules(
 
       if (params.programmeCode) {
         query = query.eq("programme_code", params.programmeCode);
+      }
+
+      if (params.moduleTerm) {
+        query = query.eq("module_term", params.moduleTerm);
       }
 
       return query;
@@ -314,6 +324,7 @@ export async function listPlanningModules(params: {
   academicYear: string;
   programmeCode?: string;
   streamCode?: string;
+  moduleTerm?: ModuleTerm;
   offeringStatus?: PlanningModulesOfferingFilter;
 }) {
   const yearVariants = getAcademicYearVariants(params.academicYear);
@@ -329,6 +340,10 @@ export async function listPlanningModules(params: {
 
   if (params.programmeCode) {
     query = query.eq("programme_code", params.programmeCode);
+  }
+
+  if (params.moduleTerm) {
+    query = query.eq("module_term", params.moduleTerm);
   }
 
   if (offeringStatus !== "all") {
@@ -499,6 +514,7 @@ export async function listPlanningModulesWithStudentNumbers(params: {
   academicYear: string;
   programmeCode?: string;
   streamCode?: string;
+  moduleTerm?: ModuleTerm;
   offeringStatus?: PlanningModulesOfferingFilter;
 }) {
   const planningModules = await listPlanningModules(params);
@@ -610,6 +626,7 @@ export async function listTimetableModules(params: {
   academicYear: string;
   programmeCode?: string;
   streamCode?: string;
+  moduleTerm?: ModuleTerm;
 }) {
   let query = supabase
     .from("timetable_modules")
@@ -622,6 +639,10 @@ export async function listTimetableModules(params: {
 
   if (params.programmeCode) {
     query = query.eq("programme_code", params.programmeCode);
+  }
+
+  if (params.moduleTerm) {
+    query = query.eq("module_term", params.moduleTerm);
   }
 
   const { data, error } = await query;

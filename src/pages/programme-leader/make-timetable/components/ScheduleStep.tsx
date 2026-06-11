@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   defaultClassroomsForHKIT,
   type TimetableClassroomRow,
+  type TimetableScheduleTerm,
 } from "../../../../services/timetableScheduleService";
 import type { TimetableModuleInstanceRow } from "../../../../services/timetableModuleInstanceService";
 import { dedupeJoinedModuleName } from "../../../../lib/moduleDisplay";
@@ -30,11 +31,12 @@ import {
   type AutoScheduleFailure,
 } from "../../../../services/timetableAutoScheduleService";
 import { listTimetableModulesByInstanceCodes } from "../../../../services/timetableService";
-import type { TimetableModuleRow } from "../../../../types";
+import type { ModuleTerm, TimetableModuleRow } from "../../../../types";
 import { WeeklyTimetableEditor } from "./WeeklyTimetableEditor";
 
 export function ScheduleStep(props: {
   academicYear: string;
+  moduleTerm: ModuleTerm;
   timetableInstances: TimetableModuleInstanceRow[];
   programmeCode?: string;
   /** Timetable modules on this page (split + no-split); used for empty-state hints */
@@ -42,6 +44,7 @@ export function ScheduleStep(props: {
 }) {
   const {
     academicYear,
+    moduleTerm,
     timetableInstances,
     programmeCode,
     sourceTimetableModuleCount = 0,
@@ -52,22 +55,7 @@ export function ScheduleStep(props: {
     []
   );
 
-  const [term, setTerm] = useState<"Sep" | "Feb">("Sep");
-
-  // Default semester is Sep; auto-switch when this page only has Feb (or vice versa).
-  useEffect(() => {
-    let sepCount = 0;
-    let febCount = 0;
-    for (const row of timetableInstances) {
-      if (row.module_term === "Sep") sepCount += 1;
-      if (row.module_term === "Feb") febCount += 1;
-    }
-    if (term === "Sep" && sepCount === 0 && febCount > 0) {
-      setTerm("Feb");
-    } else if (term === "Feb" && febCount === 0 && sepCount > 0) {
-      setTerm("Sep");
-    }
-  }, [timetableInstances, term]);
+  const scheduleTerm = moduleTerm as TimetableScheduleTerm;
 
   const [timetableModuleMeta, setTimetableModuleMeta] = useState<
     Record<string, TimetableModuleRow>
@@ -112,7 +100,7 @@ export function ScheduleStep(props: {
 
   const moduleOptions = useMemo(() => {
     return timetableInstances
-      .filter((row) => row.module_term === term)
+      .filter((row) => row.module_term === moduleTerm)
       .map((row) => {
         const meta = timetableModuleMeta[row.module_instance_code];
 
@@ -132,11 +120,11 @@ export function ScheduleStep(props: {
         };
       })
       .sort((a, b) => a.moduleInstanceCode.localeCompare(b.moduleInstanceCode));
-  }, [timetableInstances, term, timetableModuleMeta]);
+  }, [timetableInstances, moduleTerm, timetableModuleMeta]);
 
   const instancesForTermCount = useMemo(
-    () => timetableInstances.filter((row) => row.module_term === term).length,
-    [timetableInstances, term]
+    () => timetableInstances.filter((row) => row.module_term === moduleTerm).length,
+    [timetableInstances, moduleTerm]
   );
 
   const teachersOnPage = useMemo(() => {
@@ -423,9 +411,9 @@ export function ScheduleStep(props: {
 
   const instanceCodesForTerm = useMemo(() => {
     return timetableInstances
-      .filter((row) => row.module_term === term)
+      .filter((row) => row.module_term === moduleTerm)
       .map((row) => row.module_instance_code);
-  }, [timetableInstances, term]);
+  }, [timetableInstances, moduleTerm]);
 
   const [prefLoading, setPrefLoading] = useState(false);
   const [prefError, setPrefError] = useState<string | null>(null);
@@ -551,8 +539,8 @@ export function ScheduleStep(props: {
   const [weeklyRefreshToken, setWeeklyRefreshToken] = useState(0);
 
   const instancesForSelectedTerm = useMemo(
-    () => timetableInstances.filter((row) => row.module_term === term),
-    [timetableInstances, term]
+    () => timetableInstances.filter((row) => row.module_term === moduleTerm),
+    [timetableInstances, moduleTerm]
   );
 
   async function handleAutoSchedule() {
@@ -564,9 +552,9 @@ export function ScheduleStep(props: {
     try {
       const result = await autoScheduleInstances({
         academicYear,
-        term,
+        term: scheduleTerm,
         programmeCode: programmeCode || undefined,
-        instances: timetableInstances.filter((row) => row.module_term === term),
+        instances: timetableInstances.filter((row) => row.module_term === moduleTerm),
         classrooms,
         preferredStartByCode,
       });
@@ -610,7 +598,7 @@ export function ScheduleStep(props: {
         </div>
         <div className="mt-1 text-sm text-slate-600">
           共 {timetableInstances.length} 個 instance
-          {programmeCode ? `（${programmeCode}）` : ""}；{term} 學期：
+          {programmeCode ? `（${programmeCode}）` : ""}；{moduleTerm} 學期：
           {instancesForTermCount} 個
         </div>
         {sourceTimetableModuleCount > 0 && timetableInstances.length === 0 && (
@@ -623,8 +611,8 @@ export function ScheduleStep(props: {
         )}
         {timetableInstances.length > 0 && instancesForTermCount === 0 && (
           <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            本頁有 {timetableInstances.length} 個 instance，但當前選擇的 {term}{" "}
-            學期為 0 個。請切換 Semester（例如 Feb）。
+            本頁有 {timetableInstances.length} 個 instance，但當前選擇的 {moduleTerm}{" "}
+            學期為 0 個。請在頁面頂部切換 Module Term。
           </div>
         )}
       </div>
@@ -633,19 +621,6 @@ export function ScheduleStep(props: {
         <div className="text-sm font-medium text-slate-900">自動排課前設定</div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <div>
-            <label className="form-label">Semester</label>
-            <select
-              className="form-select"
-              value={term}
-              title="Semester"
-              onChange={(e) => setTerm(e.target.value as "Sep" | "Feb")}
-            >
-              <option value="Sep">Sep semester</option>
-              <option value="Feb">Feb semester</option>
-            </select>
-          </div>
-
           <div>
             <label className="form-label">Teacher</label>
             <select
@@ -990,7 +965,7 @@ export function ScheduleStep(props: {
 
           <WeeklyTimetableEditor
             academicYear={academicYear}
-            term={term}
+            term={scheduleTerm}
             programmeCode={programmeCode || undefined}
             timetableInstances={instancesForSelectedTerm}
             classrooms={classrooms}

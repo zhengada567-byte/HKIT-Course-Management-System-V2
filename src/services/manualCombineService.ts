@@ -1,6 +1,7 @@
 import { supabase } from "../lib/supabase";
 import type {
   CombineGroupRow,
+  ModuleTerm,
   TimetablePlanningModuleRow,
   TimetableStudentNumberRow,
 } from "../types";
@@ -655,6 +656,7 @@ export async function listManualCombineGroups(params: {
   academicYear: string;
   programmeCode?: string;
   streamCode?: string;
+  moduleTerm?: ModuleTerm;
 }) {
   const [
     { data: groupData, error: groupError },
@@ -714,6 +716,10 @@ export async function listManualCombineGroups(params: {
   const results: ManualCombineGroupWithDetails[] = [];
 
   for (const group of groups) {
+    if (params.moduleTerm && group.module_term !== params.moduleTerm) {
+      continue;
+    }
+
     const groupRelations = relations.filter(
       (relation) => relation.combine_group_id === group.id
     );

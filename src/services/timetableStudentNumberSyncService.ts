@@ -9,6 +9,7 @@ import {
   timetableProgrammeStreamFromSelection,
 } from "../lib/utils";
 import { recalculateActualStudentNumbers } from "./studyPlanService";
+import type { ModuleTerm } from "../types";
 import type { ModuleEnrollmentRow } from "./moduleEnrollmentService";
 import {
   ensureTimetablePlanningModules,
@@ -167,6 +168,7 @@ export async function syncStudyPlanStudentNumbersToTimetable(params: {
   academicYear: string;
   programmeCode?: string;
   streamCode?: string;
+  moduleTerm?: ModuleTerm;
   createdBy: string;
 }): Promise<SyncStudyPlanStudentNumbersResult> {
   const canonicalYear = normalizeAcademicYear(params.academicYear);
@@ -180,6 +182,7 @@ export async function syncStudyPlanStudentNumbersToTimetable(params: {
     academicYear: canonicalYear,
     programmeCode: params.programmeCode,
     streamCode: params.streamCode,
+    moduleTerm: params.moduleTerm,
     createdBy: params.createdBy,
   });
 
@@ -187,6 +190,7 @@ export async function syncStudyPlanStudentNumbersToTimetable(params: {
     academicYear: canonicalYear,
     programmeCode: params.programmeCode,
     streamCode: params.streamCode,
+    moduleTerm: params.moduleTerm,
   });
 
   if (planningModules.length === 0) {

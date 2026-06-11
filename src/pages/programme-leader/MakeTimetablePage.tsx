@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DataTable } from "../../components/tables/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -65,6 +65,7 @@ import {
 } from "../../services/timetableModuleInstanceService";
 import type {
   CombineGroupRow,
+  ModuleTerm,
   ProgrammeRow,
   TeacherRow,
   TeachingAssignmentRow,
@@ -91,6 +92,7 @@ import type { Step } from "./make-timetable/types";
 
 const modeOptions: TeachingMode[] = ["Day", "Night", "Saturday"];
 const teachingStatusOptions: TeachingStatus[] = ["FT", "PT"];
+const moduleTermOptions: ModuleTerm[] = ["Sep", "Feb", "Jun"];
 
 /** Prefer page-loaded defaults (already shown in Split UI) when splitting combined groups. */
 function mergeRelatedPlanningModulesForCombineGroup(params: {
@@ -144,12 +146,14 @@ function isSameStudentNumberRow(
 
 export function MakeTimetablePage() {
   const { user } = useAuth();
-  const { academicYear } = useAcademicYear();
+  const { academicYear, currentOfferedTerm } = useAcademicYear();
   const { t } = useLanguage();
 
   const [step, setStep] = useState<Step>("student_numbers");
   const [programmes, setProgrammes] = useState<ProgrammeRow[]>([]);
   const [programmeCode, setProgrammeCode] = useState("");
+  const [moduleTerm, setModuleTerm] = useState<ModuleTerm>(currentOfferedTerm);
+  const prevAcademicYearRef = useRef(academicYear);
 
   const [planningModules, setPlanningModules] = useState<
     PlanningModuleWithStudentNumber[]
@@ -204,6 +208,10 @@ export function MakeTimetablePage() {
     );
 
     return timetableInstances.filter((row) => {
+      if (row.module_term !== moduleTerm) {
+        return false;
+      }
+
       if (instanceCodesOnPage.has(row.module_instance_code)) {
         return true;
       }
@@ -221,7 +229,21 @@ export function MakeTimetablePage() {
       }
       return false;
     });
-  }, [timetableInstances, planningModules, manualGroups, sourceTimetableModules]);
+  }, [
+    timetableInstances,
+    planningModules,
+    manualGroups,
+    sourceTimetableModules,
+    moduleTerm,
+  ]);
+
+  useEffect(() => {
+    if (prevAcademicYearRef.current !== academicYear) {
+      prevAcademicYearRef.current = academicYear;
+      setModuleTerm(currentOfferedTerm);
+      setStep("student_numbers");
+    }
+  }, [academicYear, currentOfferedTerm]);
 
   async function init() {
     const data = await listProgrammes();
@@ -236,6 +258,7 @@ export function MakeTimetablePage() {
     const data = await listPlanningModulesWithStudentNumbers({
       academicYear,
       programmeCode: programmeCode || undefined,
+      moduleTerm,
       offeringStatus: "active",
     });
 
@@ -252,6 +275,7 @@ export function MakeTimetablePage() {
     const data = await listPlanningModulesWithStudentNumbers({
       academicYear,
       programmeCode,
+      moduleTerm,
       offeringStatus: "excluded",
     });
 
@@ -347,6 +371,7 @@ export function MakeTimetablePage() {
         await applyProgrammeIntraStreamAutoCombine({
           academicYear,
           programmeCode: selectedProgrammeCode,
+          moduleTerm,
           createdBy: user.id,
         });
       } catch (error) {
@@ -360,6 +385,7 @@ export function MakeTimetablePage() {
     const manual = await listManualCombineGroups({
       academicYear,
       programmeCode: selectedProgrammeCode || undefined,
+      moduleTerm,
     });
 
     setManualGroups(manual);
@@ -411,6 +437,7 @@ export function MakeTimetablePage() {
       listTimetableModules({
         academicYear,
         programmeCode: selectedProgrammeCode || undefined,
+        moduleTerm,
       }),
       listTeachers(academicYear),
       listAssignments(academicYear),
@@ -442,10 +469,12 @@ export function MakeTimetablePage() {
           listManualCombineGroups({
             academicYear,
             programmeCode: selectedProgrammeCode || undefined,
+            moduleTerm,
           }),
           listPlanningModulesWithStudentNumbers({
             academicYear,
             programmeCode: selectedProgrammeCode || undefined,
+            moduleTerm,
           }),
         ]);
 
@@ -494,13 +523,14 @@ export function MakeTimetablePage() {
       const result = await syncStudyPlanStudentNumbersToTimetable({
         academicYear,
         programmeCode: programmeCode || undefined,
+        moduleTerm,
         createdBy: user.id,
       });
 
       const { rows } = await loadStudentNumberRows();
 
       if (result.syncedCount === 0) {
-        const text = `No planning modules found for ${programmeCode} in ${academicYear}. Check modules catalog and academic year settings.`;
+        const text = `No planning modules found for ${programmeCode} (${moduleTerm}) in ${academicYear}. Check modules catalog and academic year settings.`;
         setMessage(text);
         alert(text);
         return;
@@ -820,6 +850,7 @@ export function MakeTimetablePage() {
       const latestPlanningModules = await listPlanningModulesWithStudentNumbers({
         academicYear,
         programmeCode: programmeCode || undefined,
+        moduleTerm,
       });
 
       const latestStudentRows = await getStudentNumberInputRows({
@@ -830,6 +861,7 @@ export function MakeTimetablePage() {
       const latestManualGroups = await listManualCombineGroups({
         academicYear,
         programmeCode: programmeCode || undefined,
+        moduleTerm,
       });
 
       setPlanningModules(latestPlanningModules);
@@ -1081,11 +1113,13 @@ export function MakeTimetablePage() {
       const latestPlanningModules = await listPlanningModulesWithStudentNumbers({
         academicYear,
         programmeCode: programmeCode || undefined,
+        moduleTerm,
       });
 
       const latestManualGroups = await listManualCombineGroups({
         academicYear,
         programmeCode: programmeCode || undefined,
+        moduleTerm,
       });
 
       const latestStudentRows = await getStudentNumberInputRows({
@@ -1453,6 +1487,7 @@ export function MakeTimetablePage() {
         await ensureTimetablePlanningModules({
           academicYear,
           programmeCode,
+          moduleTerm,
           createdBy: user.id,
         });
 
@@ -1461,6 +1496,7 @@ export function MakeTimetablePage() {
         const data = await listPlanningModulesWithStudentNumbers({
           academicYear,
           programmeCode,
+          moduleTerm,
         });
 
         if (currentRequest !== requestId) return;
@@ -1508,7 +1544,7 @@ export function MakeTimetablePage() {
     return () => {
       requestId += 1;
     };
-  }, [academicYear, programmeCode, user]);
+  }, [academicYear, programmeCode, moduleTerm, user]);
 
   useEffect(() => {
     if (!programmeCode && step !== "student_numbers") {
@@ -1531,7 +1567,7 @@ export function MakeTimetablePage() {
         programmeCode,
       });
     }
-  }, [step, user, programmeCode, academicYear]);
+  }, [step, user, programmeCode, moduleTerm, academicYear]);
 
   useEffect(() => {
     if (!user || (step !== "split" && step !== "schedule")) return;
@@ -1614,12 +1650,32 @@ export function MakeTimetablePage() {
       )}
 
       <div className="card mb-4">
-        <div className="card-body grid gap-3 md:grid-cols-3">
+        <div className="card-body grid gap-3 md:grid-cols-2 lg:grid-cols-4">
           <div>
             <label className="form-label">{t.academicYear}</label>
             <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
               {academicYear}
             </div>
+          </div>
+
+          <div>
+            <label className="form-label">{t.moduleTerm}</label>
+            <select
+              className="form-select"
+              value={moduleTerm}
+              title={t.moduleTerm}
+              onChange={(event) => {
+                setModuleTerm(event.target.value as ModuleTerm);
+                setStep("student_numbers");
+                setMessage("");
+              }}
+            >
+              {moduleTermOptions.map((term) => (
+                <option key={term} value={term}>
+                  {term}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -1646,8 +1702,8 @@ export function MakeTimetablePage() {
 
           <div className="flex items-end">
             <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              Step 1 requires a programme (all streams). Combine, split, and
-              schedule are locked until you select one.
+              Steps 1–4 are scoped to the selected programme and module term.
+              Academic year is set by Admin.
             </div>
           </div>
         </div>
@@ -1733,6 +1789,7 @@ export function MakeTimetablePage() {
           {step === "schedule" && programmeCode && (
             <ScheduleStep
               academicYear={academicYear}
+              moduleTerm={moduleTerm}
               timetableInstances={scheduleInstances}
               programmeCode={programmeCode || undefined}
               sourceTimetableModuleCount={sourceTimetableModules.length}

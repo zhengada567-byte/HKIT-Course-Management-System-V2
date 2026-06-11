@@ -1,6 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { filterActivePlanningModules } from "../lib/timetablePlanningOffering";
-import type { TimetablePlanningModuleRow } from "../types";
+import type { ModuleTerm, TimetablePlanningModuleRow } from "../types";
 import { createManualCombineGroup } from "./manualCombineService";
 
 function normalizeText(value: string | null | undefined) {
@@ -102,6 +102,7 @@ export interface ApplyProgrammeIntraStreamAutoCombineResult {
 export async function applyProgrammeIntraStreamAutoCombine(params: {
   academicYear: string;
   programmeCode: string;
+  moduleTerm?: ModuleTerm;
   createdBy: string;
 }): Promise<ApplyProgrammeIntraStreamAutoCombineResult> {
   const programmeCode = normalizeText(params.programmeCode);
@@ -110,11 +111,17 @@ export async function applyProgrammeIntraStreamAutoCombine(params: {
     return { appliedCount: 0 };
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("timetable_planning_modules")
     .select("*")
     .eq("academic_year", params.academicYear)
     .eq("programme_code", programmeCode);
+
+  if (params.moduleTerm) {
+    query = query.eq("module_term", params.moduleTerm);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw error;
 
