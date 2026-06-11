@@ -11,7 +11,6 @@ import {
 } from "../lib/utils";
 import type { PlanningOfferingStatus } from "../types";
 import type {
-  ModuleAdjustmentRow,
   ModuleRow,
   TimetableModuleRow,
   TimetablePlanningModuleRow,
@@ -132,25 +131,9 @@ export async function generateTimetablePlanningModules(
     moduleQuery = moduleQuery.eq("programme_code", params.programmeCode);
   }
 
-  const [
-    { data: modules, error: moduleError },
-    { data: adjustments, error: adjustmentError },
-  ] = await Promise.all([
-    moduleQuery,
-    supabase
-      .from("module_adjustments")
-      .select("*")
-      .eq("academic_year", params.academicYear),
-  ]);
+  const { data: modules, error: moduleError } = await moduleQuery;
 
   if (moduleError) throw moduleError;
-  if (adjustmentError) throw adjustmentError;
-
-  const adjustmentMap = new Map<string, ModuleAdjustmentRow>();
-
-  for (const adjustment of (adjustments ?? []) as ModuleAdjustmentRow[]) {
-    adjustmentMap.set(adjustment.module_id, adjustment);
-  }
 
   /*
     Generate / Load should not filter by selected stream.
@@ -174,26 +157,22 @@ export async function generateTimetablePlanningModules(
 
   if (deleteError) throw deleteError;
 
-  const planningPayload = moduleRows.map((module) => {
-    const adjustment = adjustmentMap.get(module.id);
-
-    return {
-      academic_year: params.academicYear,
-      module_id: module.id,
-      programme_code: module.programme_code,
-      stream_code: normalizeStoredStream(module.stream_code),
-      module_code: module.module_code,
-      module_name: module.module_name,
-      module_year: adjustment?.adjusted_module_year ?? module.module_year,
-      module_term: adjustment?.adjusted_module_term ?? module.module_term,
-      natural_combine_code: null,
-      manual_combine_group_id: null,
-      split_status: "not_started",
-      assignment_status: "not_started",
-      offering_status: "active" as PlanningOfferingStatus,
-      created_by: params.createdBy,
-    };
-  });
+  const planningPayload = moduleRows.map((module) => ({
+    academic_year: params.academicYear,
+    module_id: module.id,
+    programme_code: module.programme_code,
+    stream_code: normalizeStoredStream(module.stream_code),
+    module_code: module.module_code,
+    module_name: module.module_name,
+    module_year: module.module_year,
+    module_term: module.module_term,
+    natural_combine_code: null,
+    manual_combine_group_id: null,
+    split_status: "not_started",
+    assignment_status: "not_started",
+    offering_status: "active" as PlanningOfferingStatus,
+    created_by: params.createdBy,
+  }));
 
   if (planningPayload.length === 0) {
     return [];
@@ -232,14 +211,9 @@ export async function ensureTimetablePlanningModules(
 
   const [
     { data: modules, error: moduleError },
-    { data: adjustments, error: adjustmentError },
     { data: existingPlanningModules, error: existingError },
   ] = await Promise.all([
     moduleQuery,
-    supabase
-      .from("module_adjustments")
-      .select("*")
-      .eq("academic_year", params.academicYear),
     (() => {
       let query = supabase
         .from("timetable_planning_modules")
@@ -255,7 +229,6 @@ export async function ensureTimetablePlanningModules(
   ]);
 
   if (moduleError) throw moduleError;
-  if (adjustmentError) throw adjustmentError;
   if (existingError) throw existingError;
 
   const moduleRows = (modules ?? []) as ModuleRow[];
@@ -266,12 +239,6 @@ export async function ensureTimetablePlanningModules(
 
   const existingModuleIds = new Set(existingRows.map((row) => row.module_id));
 
-  const adjustmentMap = new Map<string, ModuleAdjustmentRow>();
-
-  for (const adjustment of (adjustments ?? []) as ModuleAdjustmentRow[]) {
-    adjustmentMap.set(adjustment.module_id, adjustment);
-  }
-
   const missingModules = moduleRows.filter(
     (module) => !existingModuleIds.has(module.id)
   );
@@ -280,26 +247,22 @@ export async function ensureTimetablePlanningModules(
     return existingRows;
   }
 
-  const insertPayload = missingModules.map((module) => {
-    const adjustment = adjustmentMap.get(module.id);
-
-    return {
-      academic_year: params.academicYear,
-      module_id: module.id,
-      programme_code: module.programme_code,
-      stream_code: normalizeStoredStream(module.stream_code),
-      module_code: module.module_code,
-      module_name: module.module_name,
-      module_year: adjustment?.adjusted_module_year ?? module.module_year,
-      module_term: adjustment?.adjusted_module_term ?? module.module_term,
-      natural_combine_code: null,
-      manual_combine_group_id: null,
-      split_status: "not_started",
-      assignment_status: "not_started",
-      offering_status: "active" as PlanningOfferingStatus,
-      created_by: params.createdBy,
-    };
-  });
+  const insertPayload = missingModules.map((module) => ({
+    academic_year: params.academicYear,
+    module_id: module.id,
+    programme_code: module.programme_code,
+    stream_code: normalizeStoredStream(module.stream_code),
+    module_code: module.module_code,
+    module_name: module.module_name,
+    module_year: module.module_year,
+    module_term: module.module_term,
+    natural_combine_code: null,
+    manual_combine_group_id: null,
+    split_status: "not_started",
+    assignment_status: "not_started",
+    offering_status: "active" as PlanningOfferingStatus,
+    created_by: params.createdBy,
+  }));
 
   const { data: insertedRows, error: insertError } = await supabase
     .from("timetable_planning_modules")

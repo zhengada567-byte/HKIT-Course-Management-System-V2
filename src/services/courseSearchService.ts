@@ -14,7 +14,6 @@ import {
   normalizeStream,
 } from "../lib/utils";
 import type {
-  ModuleAdjustmentRow,
   ModuleRow,
   ModuleTerm,
   ModuleType,
@@ -31,12 +30,8 @@ export interface CourseSearchRow {
   module_type: ModuleType;
   module_teaching_contact_hours: number;
   module_tutorial_contact_hours: number;
-  original_module_year: string | null;
-  original_module_term: ModuleTerm;
-  adjusted_module_year: string | null;
-  adjusted_module_term: ModuleTerm | null;
-  final_module_year: string | null;
-  final_module_term: ModuleTerm;
+  module_year: string | null;
+  module_term: ModuleTerm;
 }
 
 export type CourseSearchModuleDraft = {
@@ -51,8 +46,6 @@ export type CourseSearchModuleDraft = {
   module_type: ModuleType;
   module_teaching_contact_hours: number;
   module_tutorial_contact_hours: number;
-  adjusted_module_year: string;
-  adjusted_module_term: ModuleTerm;
 };
 
 function normalizeText(value: string | null | undefined) {
@@ -138,7 +131,7 @@ function isCommonStreamModule(streamCode: string | null | undefined) {
 }
 
 export async function searchCourses(params: {
-  academicYear: string;
+  academicYear?: string;
   programmeCode?: string;
   streamCode?: string;
 }) {
@@ -153,28 +146,9 @@ export async function searchCourses(params: {
     moduleQuery = moduleQuery.eq("programme_code", params.programmeCode);
   }
 
-  /**
-   * Business rule:
-   * Blank/null/"nil" module.stream_code means the module is offered to all
-   * streams under the same programme.
-   *
-   * Therefore, do not filter stream_code at database query level.
-   * We first load all modules under the selected programme, then filter below.
-   */
-
-  const [
-    { data: modules, error: moduleError },
-    { data: adjustments, error: adjError },
-  ] = await Promise.all([
-    moduleQuery,
-    supabase
-      .from("module_adjustments")
-      .select("*")
-      .eq("academic_year", params.academicYear),
-  ]);
+  const { data: modules, error: moduleError } = await moduleQuery;
 
   if (moduleError) throw moduleError;
-  if (adjError) throw adjError;
 
   const rawSelectedStream = normalizeText(params.streamCode);
 
@@ -183,16 +157,10 @@ export async function searchCourses(params: {
     : "";
 
   const filteredModules = ((modules ?? []) as ModuleRow[]).filter((module) => {
-    /**
-     * If no stream is selected, show all modules under the selected programme.
-     */
     if (!selectedStream) {
       return true;
     }
 
-    /**
-     * Blank/null/"nil" stream_code means this module is common to all streams.
-     */
     if (isCommonStreamModule(module.stream_code)) {
       return true;
     }
@@ -202,52 +170,32 @@ export async function searchCourses(params: {
     return moduleStream === selectedStream;
   });
 
-  const adjustmentMap = new Map<string, ModuleAdjustmentRow>();
-
-  for (const adjustment of (adjustments ?? []) as ModuleAdjustmentRow[]) {
-    adjustmentMap.set(adjustment.module_id, adjustment);
-  }
-
-  const rows = filteredModules.map<CourseSearchRow>((module) => {
-    const adjustment = adjustmentMap.get(module.id);
-
-    return {
-      module_id: module.id,
-      programme_code: module.programme_code,
-      stream_code: module.stream_code,
-      module_code: module.module_code,
-      module_name: module.module_name,
-      uses_computer: normalizeUsesComputerFlag(module.uses_computer),
-      module_type: normalizeModuleType(module.module_type),
-      module_teaching_contact_hours: Number(
-        module.module_teaching_contact_hours ?? 0
-      ),
-      module_tutorial_contact_hours: Number(
-        module.module_tutorial_contact_hours ?? 0
-      ),
-      original_module_year: normalizeProgrammeYear(module.module_year),
-      original_module_term: module.module_term,
-      adjusted_module_year: normalizeProgrammeYear(
-        adjustment?.adjusted_module_year
-      ),
-      adjusted_module_term: adjustment?.adjusted_module_term ?? null,
-      final_module_year:
-        normalizeProgrammeYear(adjustment?.adjusted_module_year) ??
-        normalizeProgrammeYear(module.module_year),
-      final_module_term: adjustment?.adjusted_module_term ?? module.module_term,
-    };
-  });
+  const rows = filteredModules.map<CourseSearchRow>((module) => ({
+    module_id: module.id,
+    programme_code: module.programme_code,
+    stream_code: module.stream_code,
+    module_code: module.module_code,
+    module_name: module.module_name,
+    uses_computer: normalizeUsesComputerFlag(module.uses_computer),
+    module_type: normalizeModuleType(module.module_type),
+    module_teaching_contact_hours: Number(
+      module.module_teaching_contact_hours ?? 0
+    ),
+    module_tutorial_contact_hours: Number(
+      module.module_tutorial_contact_hours ?? 0
+    ),
+    module_year: normalizeProgrammeYear(module.module_year),
+    module_term: module.module_term,
+  }));
 
   rows.sort((a, b) => {
     const yearDiff =
-      getModuleYearOrder(a.final_module_year) -
-      getModuleYearOrder(b.final_module_year);
+      getModuleYearOrder(a.module_year) - getModuleYearOrder(b.module_year);
 
     if (yearDiff !== 0) return yearDiff;
 
     const termDiff =
-      getModuleTermOrder(a.final_module_term) -
-      getModuleTermOrder(b.final_module_term);
+      getModuleTermOrder(a.module_term) - getModuleTermOrder(b.module_term);
 
     if (termDiff !== 0) return termDiff;
 
@@ -257,43 +205,6 @@ export async function searchCourses(params: {
   return rows;
 }
 
-export async function saveModuleAdjustment(input: {
-  moduleId: string;
-  academicYear: string;
-  adjustedModuleYear?: string | null;
-  adjustedModuleTerm?: ModuleTerm | null;
-  updatedBy: string;
-}) {
-  const { error } = await supabase.from("module_adjustments").upsert(
-    {
-      module_id: input.moduleId,
-      academic_year: input.academicYear,
-      adjusted_module_year:
-        normalizeProgrammeYear(input.adjustedModuleYear) ?? null,
-      adjusted_module_term: input.adjustedModuleTerm || null,
-      updated_by: input.updatedBy,
-    },
-    {
-      onConflict: "module_id,academic_year",
-    }
-  );
-
-  if (error) throw error;
-}
-
-export async function clearModuleAdjustment(params: {
-  moduleId: string;
-  academicYear: string;
-}) {
-  const { error } = await supabase
-    .from("module_adjustments")
-    .delete()
-    .eq("module_id", params.moduleId)
-    .eq("academic_year", params.academicYear);
-
-  if (error) throw error;
-}
-
 export function buildCourseSearchDraft(row: CourseSearchRow): CourseSearchModuleDraft {
   return {
     module_id: row.module_id,
@@ -301,25 +212,21 @@ export function buildCourseSearchDraft(row: CourseSearchRow): CourseSearchModule
     programme_code: row.programme_code,
     stream_code: row.stream_code,
     module_name: row.module_name ?? "",
-    module_year: row.original_module_year ?? "",
-    module_term: row.original_module_term,
+    module_year: row.module_year ?? "",
+    module_term: row.module_term,
     uses_computer: row.uses_computer,
     module_type: row.module_type,
     module_teaching_contact_hours: row.module_teaching_contact_hours,
     module_tutorial_contact_hours: row.module_tutorial_contact_hours,
-    adjusted_module_year: row.adjusted_module_year ?? "",
-    adjusted_module_term: row.adjusted_module_term ?? row.original_module_term,
   };
 }
 
 export async function saveCourseSearchModule(params: {
   draft: CourseSearchModuleDraft;
-  academicYear: string;
-  updatedBy: string;
 }) {
   await assertFeatureUpdatesAllowed("courseSearch");
 
-  const { draft, academicYear, updatedBy } = params;
+  const { draft } = params;
   const streamCode = normalizeStream(draft.stream_code);
 
   const moduleInput: ModuleInput = {
@@ -337,26 +244,6 @@ export async function saveCourseSearchModule(params: {
   };
 
   await upsertModule(moduleInput);
-
-  const adjustedYear = normalizeText(draft.adjusted_module_year);
-  const catalogYear = normalizeText(draft.module_year);
-  const hasYearOverride = Boolean(adjustedYear && adjustedYear !== catalogYear);
-  const hasTermOverride = draft.adjusted_module_term !== draft.module_term;
-
-  if (hasYearOverride || hasTermOverride) {
-    await saveModuleAdjustment({
-      moduleId: draft.module_id,
-      academicYear,
-      adjustedModuleYear: hasYearOverride ? adjustedYear : null,
-      adjustedModuleTerm: hasTermOverride ? draft.adjusted_module_term : null,
-      updatedBy,
-    });
-  } else {
-    await clearModuleAdjustment({
-      moduleId: draft.module_id,
-      academicYear,
-    });
-  }
 }
 
 async function deleteModuleRelatedEnrollmentRows(module: {
@@ -405,14 +292,14 @@ export async function deleteCourseSearchModule(row: CourseSearchRow) {
     module_code: row.module_code,
     programme_code: row.programme_code,
     stream_code: row.stream_code,
-    module_term: row.original_module_term,
+    module_term: row.module_term,
   });
 
   await deleteModuleRelatedDefaultAssignments({
     module_code: row.module_code,
     programme_code: row.programme_code,
     stream_code: row.stream_code,
-    module_term: row.original_module_term,
+    module_term: row.module_term,
   });
 
   await deleteModule(row.module_id);

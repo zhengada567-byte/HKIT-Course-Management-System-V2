@@ -184,8 +184,8 @@ export function CourseSearchPage() {
       const draft = drafts[row.module_id];
 
       return {
-        module_year: draft?.module_year ?? row.final_module_year,
-        module_term: draft?.module_term ?? row.final_module_term,
+        module_year: draft?.module_year ?? row.module_year,
+        module_term: draft?.module_term ?? row.module_term,
       };
     });
 
@@ -222,11 +222,7 @@ export function CourseSearchPage() {
     setMessage("");
 
     try {
-      await saveCourseSearchModule({
-        draft,
-        academicYear,
-        updatedBy: user.id,
-      });
+      await saveCourseSearchModule({ draft });
 
       await loadRows();
       setMessage(`Saved module ${row.module_code}.`);
@@ -253,11 +249,7 @@ export function CourseSearchPage() {
         if (!draft) continue;
 
         try {
-          await saveCourseSearchModule({
-            draft,
-            academicYear,
-            updatedBy: user.id,
-          });
+          await saveCourseSearchModule({ draft });
           savedCount += 1;
         } catch (error) {
           failures.push(
@@ -802,26 +794,18 @@ export function CourseSearchPage() {
               header: t.moduleYear,
               render: (row) =>
                 canManageModules ? (
-                  <div className="space-y-1">
-                    <input
-                      className="form-input min-w-24"
-                      value={drafts[row.module_id]?.module_year ?? ""}
-                      placeholder="Y1"
-                      onChange={(event) =>
-                        updateDraft(row.module_id, {
-                          module_year: event.target.value,
-                        })
-                      }
-                    />
-                    {row.adjusted_module_year &&
-                      row.adjusted_module_year !== row.original_module_year && (
-                        <div className="text-xs text-slate-500">
-                          Display {academicYear}: {row.final_module_year}
-                        </div>
-                      )}
-                  </div>
+                  <input
+                    className="form-input min-w-24"
+                    value={drafts[row.module_id]?.module_year ?? ""}
+                    placeholder="Y1"
+                    onChange={(event) =>
+                      updateDraft(row.module_id, {
+                        module_year: event.target.value,
+                      })
+                    }
+                  />
                 ) : (
-                  formatProgrammeYearDisplay(row.final_module_year)
+                  formatProgrammeYearDisplay(row.module_year)
                 ),
             },
             {
@@ -829,31 +813,23 @@ export function CourseSearchPage() {
               header: t.moduleTerm,
               render: (row) =>
                 canManageModules ? (
-                  <div className="space-y-1">
-                    <select
-                      className="form-select min-w-24"
-                      value={drafts[row.module_id]?.module_term ?? "Sep"}
-                      onChange={(event) =>
-                        updateDraft(row.module_id, {
-                          module_term: event.target.value as ModuleTerm,
-                        })
-                      }
-                    >
-                      {termOptions.map((term) => (
-                        <option key={term} value={term}>
-                          {term}
-                        </option>
-                      ))}
-                    </select>
-                    {row.adjusted_module_term &&
-                      row.adjusted_module_term !== row.original_module_term && (
-                        <div className="text-xs text-slate-500">
-                          Display {academicYear}: {row.final_module_term}
-                        </div>
-                      )}
-                  </div>
+                  <select
+                    className="form-select min-w-24"
+                    value={drafts[row.module_id]?.module_term ?? "Sep"}
+                    onChange={(event) =>
+                      updateDraft(row.module_id, {
+                        module_term: event.target.value as ModuleTerm,
+                      })
+                    }
+                  >
+                    {termOptions.map((term) => (
+                      <option key={term} value={term}>
+                        {term}
+                      </option>
+                    ))}
+                  </select>
                 ) : (
-                  row.final_module_term
+                  row.module_term
                 ),
             },
             {
