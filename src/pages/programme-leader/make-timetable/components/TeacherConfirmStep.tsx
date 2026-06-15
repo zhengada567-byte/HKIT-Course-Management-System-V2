@@ -9,12 +9,11 @@ import type { TimetableModuleInstanceRow } from "../../../../services/timetableM
 import type {
   TeacherRow,
   TeachingAssignmentRow,
-  TeachingMode,
   TeachingStatus,
   TimetableModuleRow,
 } from "../../../../types";
 import { dedupeJoinedModuleName } from "../../../../lib/moduleDisplay";
-import { modeOptions, teachingStatusOptions } from "../types";
+import { teachingStatusOptions } from "../types";
 import { InstanceTeacherSelect } from "./InstanceTeacherSelect";
 
 export function TeacherConfirmStep(props: {
@@ -28,7 +27,6 @@ export function TeacherConfirmStep(props: {
     rows: Array<{
       instance: TimetableModuleInstanceRow;
       teacherName: string;
-      mode: TeachingMode;
       teachingStatus: TeachingStatus;
     }>
   ) => Promise<void>;
@@ -68,7 +66,6 @@ export function TeacherConfirmStep(props: {
       string,
       {
         teacherName?: string;
-        mode?: TeachingMode;
         teachingStatus?: TeachingStatus;
       }
     >
@@ -91,10 +88,7 @@ export function TeacherConfirmStep(props: {
         "TBC";
 
       const mode =
-        edit?.mode ??
-        ((instance.instance_mode ||
-          timetableModule?.mode ||
-          "Night") as TeachingMode);
+        instance.instance_mode || timetableModule?.mode || "Night";
 
       const teachingStatus =
         edit?.teachingStatus ??
@@ -127,7 +121,6 @@ export function TeacherConfirmStep(props: {
       rows.map((row) => ({
         instance: row.instance,
         teacherName: row.teacherName,
-        mode: row.mode,
         teachingStatus: row.teachingStatus,
       }))
     );
@@ -147,6 +140,7 @@ export function TeacherConfirmStep(props: {
           <div className="text-sm text-blue-700">
             Review every module instance for {programmeCode || "this programme"}.
             Assign a real teacher (not TBC) for each instance before scheduling.
+            Mode is set in step 3 (分班).
           </div>
           <div className="mt-1 text-xs text-blue-600">
             {instances.length} instance(s) · {tbcCount} still TBC ·{" "}
@@ -210,28 +204,7 @@ export function TeacherConfirmStep(props: {
               {
                 key: "mode",
                 header: "Mode",
-                render: (row) => (
-                  <select
-                    className="form-select min-w-28"
-                    value={row.mode}
-                    title="Mode"
-                    onChange={(event) => {
-                      setEdits((prev) => ({
-                        ...prev,
-                        [row.instance.id]: {
-                          ...(prev[row.instance.id] ?? {}),
-                          mode: event.target.value as TeachingMode,
-                        },
-                      }));
-                    }}
-                  >
-                    {modeOptions.map((mode) => (
-                      <option key={mode} value={mode}>
-                        {mode}
-                      </option>
-                    ))}
-                  </select>
-                ),
+                render: (row) => row.mode,
               },
               {
                 key: "teacher",

@@ -77,7 +77,6 @@ import type {
   TimetablePlanningModuleRow,
 } from "../../types";
 
-import { InstanceTeacherSelect } from "./make-timetable/components/InstanceTeacherSelect";
 import { SplitAction } from "./make-timetable/components/SplitAction";
 import { StepTabs } from "./make-timetable/components/StepTabs";
 import { StudentNumberStep } from "./make-timetable/components/StudentNumberStep";
@@ -1458,7 +1457,6 @@ export function MakeTimetablePage() {
     rows: Array<{
       instance: TimetableModuleInstanceRow;
       teacherName: string;
-      mode: TeachingMode;
       teachingStatus: TeachingStatus;
     }>
   ) {
@@ -1483,7 +1481,6 @@ export function MakeTimetablePage() {
         rows.map((row) => ({
           id: row.instance.id,
           instance_teacher_name: row.teacherName,
-          instance_mode: row.mode,
         }))
       );
 
@@ -1501,12 +1498,16 @@ export function MakeTimetablePage() {
           (item) => item.teacher_name === row.teacherName
         );
 
+        const mode = (row.instance.instance_mode ||
+          timetableModule.mode ||
+          "Night") as TeachingMode;
+
         const draft = buildAssignmentDraftFromTeacher({
           timetableModule,
           teacher: teacher ?? null,
           useTBC: false,
           teachingStatus: row.teachingStatus,
-          mode: row.mode,
+          mode,
           programmeType: null,
         });
 
@@ -1884,7 +1885,6 @@ export function MakeTimetablePage() {
               sourceTimetableModules={sourceTimetableModules}
               timetableInstances={timetableInstances}
               assignments={assignments}
-              teachers={teachers}
               programmeCode={programmeCode}
               onNoSplitSingle={handleNoSplitSingle}
               onSplitSingle={handleSplitSingle}
@@ -2415,7 +2415,6 @@ function SplitStep({
   sourceTimetableModules,
   timetableInstances,
   assignments,
-  teachers,
   programmeCode,
   selectedStreamCode,
   onNoSplitSingle,
@@ -2433,7 +2432,6 @@ function SplitStep({
   sourceTimetableModules: TimetableModuleRow[];
   timetableInstances: TimetableModuleInstanceRow[];
   assignments: TeachingAssignmentRow[];
-  teachers: TeacherRow[];
   programmeCode?: string;
   selectedStreamCode?: string;
   onNoSplitSingle: (module: TimetablePlanningModuleRow) => void;
@@ -2451,7 +2449,6 @@ function SplitStep({
         Pick<
           TimetableModuleInstanceRow,
           | "instance_expected_size"
-          | "instance_teacher_name"
           | "instance_actual_size"
           | "instance_mode"
         >
@@ -2596,7 +2593,6 @@ function SplitStep({
       {
         instance_expected_size?: number;
         instance_actual_size?: number | null;
-        instance_teacher_name?: string | null;
         instance_mode?: string | null;
       }
     >
@@ -2611,8 +2607,6 @@ function SplitStep({
           edit?.instance_expected_size ?? row.instance_expected_size ?? 0,
         instance_actual_size:
           edit?.instance_actual_size ?? row.instance_actual_size ?? null,
-        instance_teacher_name:
-          edit?.instance_teacher_name ?? row.instance_teacher_name ?? null,
         instance_mode: edit?.instance_mode ?? (row as any).instance_mode ?? null,
       };
     });
@@ -2727,25 +2721,6 @@ function SplitStep({
                         </option>
                       ))}
                     </select>
-                  ),
-                },
-                {
-                  key: "teacher",
-                  header: "Teacher (editable)",
-                  render: (row) => (
-                    <InstanceTeacherSelect
-                      value={row.instance_teacher_name}
-                      teachers={teachers}
-                      onChange={(teacherName) => {
-                        setInstanceEdits((prev) => ({
-                          ...prev,
-                          [row.id]: {
-                            ...(prev[row.id] ?? {}),
-                            instance_teacher_name: teacherName,
-                          },
-                        }));
-                      }}
-                    />
                   ),
                 },
                 {
