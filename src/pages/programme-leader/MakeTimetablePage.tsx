@@ -410,7 +410,7 @@ export function MakeTimetablePage() {
   async function refreshSourceTimetableModules(
     groups: ManualCombineGroupWithDetails[] = manualGroups,
     planning: PlanningModuleWithStudentNumber[] = planningModules
-  ) {
+  ): Promise<TimetableModuleRow[]> {
     const manuallyCombinedPlanningModuleIds = new Set(
       groups.flatMap((group) =>
         group.details.map((detail) => detail.planning_module_id)
@@ -429,7 +429,7 @@ export function MakeTimetablePage() {
 
     if (pagePlanningIds.length === 0 && pageCombineGroupIds.length === 0) {
       setSourceTimetableModules([]);
-      return;
+      return [];
     }
 
     const modules = await listTimetableModulesBySourceIds({
@@ -439,6 +439,7 @@ export function MakeTimetablePage() {
     });
 
     setSourceTimetableModules(modules);
+    return modules;
   }
 
   async function refreshTimetableAndAssignments(filters?: {
@@ -448,6 +449,37 @@ export function MakeTimetablePage() {
       filters?.programmeCode !== undefined
         ? filters.programmeCode
         : programmeCode;
+
+    let sourceModules: TimetableModuleRow[] = [];
+
+    if (step === "split" || step === "teachers" || step === "schedule") {
+      try {
+        const [latestManual, latestPlanning] = await Promise.all([
+          listManualCombineGroups({
+            academicYear,
+            programmeCode: selectedProgrammeCode || undefined,
+            moduleTerm,
+          }),
+          listPlanningModulesWithStudentNumbers({
+            academicYear,
+            programmeCode: selectedProgrammeCode || undefined,
+            moduleTerm,
+          }),
+        ]);
+
+        sourceModules = await refreshSourceTimetableModules(
+          latestManual,
+          latestPlanning
+        );
+      } catch (error) {
+        console.error(
+          "[MakeTimetablePage] Refresh source timetable modules failed:",
+          error
+        );
+        setSourceTimetableModules([]);
+        sourceModules = [];
+      }
+    }
 
     const [modules, teacherRows, assignmentRows] = await Promise.all([
       listTimetableModules({
@@ -460,6 +492,10 @@ export function MakeTimetablePage() {
     ]);
 
     const moduleIds = new Set(modules.map((module) => module.id));
+
+    for (const module of sourceModules) {
+      moduleIds.add(module.id);
+    }
 
     const filteredAssignments = assignmentRows.filter((assignment) =>
       moduleIds.has(assignment.timetable_module_id)
@@ -477,31 +513,6 @@ export function MakeTimetablePage() {
     } catch {
       // Instance table may not exist yet in local DB.
       setTimetableInstances([]);
-    }
-
-    if (step === "split" || step === "schedule") {
-      try {
-        const [latestManual, latestPlanning] = await Promise.all([
-          listManualCombineGroups({
-            academicYear,
-            programmeCode: selectedProgrammeCode || undefined,
-            moduleTerm,
-          }),
-          listPlanningModulesWithStudentNumbers({
-            academicYear,
-            programmeCode: selectedProgrammeCode || undefined,
-            moduleTerm,
-          }),
-        ]);
-
-        await refreshSourceTimetableModules(latestManual, latestPlanning);
-      } catch (error) {
-        console.error(
-          "[MakeTimetablePage] Refresh source timetable modules failed:",
-          error
-        );
-        setSourceTimetableModules([]);
-      }
     }
   }
 
