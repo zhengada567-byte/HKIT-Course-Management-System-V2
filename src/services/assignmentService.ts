@@ -183,6 +183,7 @@ async function listSplitConfirmedTimetableModulesForAssignment(params: {
   academicYear: string;
   programmeCode?: string;
   streamCode?: string;
+  timetableModuleIds?: string[];
 }) {
   let query = supabase
     .from("timetable_modules")
@@ -194,7 +195,9 @@ async function listSplitConfirmedTimetableModulesForAssignment(params: {
     .order("module_term")
     .order("module_instance_code");
 
-  if (params.programmeCode) {
+  if (params.timetableModuleIds?.length) {
+    query = query.in("id", params.timetableModuleIds);
+  } else if (params.programmeCode) {
     query = query.eq("programme_code", params.programmeCode);
   }
 
@@ -225,12 +228,14 @@ export async function ensureAssignmentsForAllTimetableModules(params: {
   updatedBy: string;
   programmeCode?: string;
   streamCode?: string;
+  timetableModuleIds?: string[];
 }) {
   const timetableModules = await listSplitConfirmedTimetableModulesForAssignment(
     {
       academicYear: params.academicYear,
       programmeCode: params.programmeCode,
       streamCode: params.streamCode,
+      timetableModuleIds: params.timetableModuleIds,
     }
   );
 
@@ -490,19 +495,27 @@ export async function confirmAssignments(params: {
   confirmedBy: string;
   programmeCode?: string;
   streamCode?: string;
+  /** When set, confirms exactly these modules (e.g. current Make Timetable page scope, including MIXED). */
+  timetableModuleIds?: string[];
 }) {
   await ensureAssignmentsForAllTimetableModules({
     academicYear: params.academicYear,
     updatedBy: params.confirmedBy,
-    programmeCode: params.programmeCode,
+    programmeCode: params.timetableModuleIds?.length
+      ? undefined
+      : params.programmeCode,
     streamCode: params.streamCode,
+    timetableModuleIds: params.timetableModuleIds,
   });
 
   const timetableModules = await listSplitConfirmedTimetableModulesForAssignment(
     {
       academicYear: params.academicYear,
-      programmeCode: params.programmeCode,
+      programmeCode: params.timetableModuleIds?.length
+        ? undefined
+        : params.programmeCode,
       streamCode: params.streamCode,
+      timetableModuleIds: params.timetableModuleIds,
     }
   );
 

@@ -29,7 +29,6 @@ import {
   createNoSplitSingleModule,
   createSplitSingleModule,
   getPlanningModulesForCombineGroup,
-  splitStudentNumberConservingTotal,
   syncAssignmentTeachersForTimetableModules,
   undoTimetableDecisionsForSources,
   undoTimetableModuleDecision,
@@ -1518,10 +1517,12 @@ export function MakeTimetablePage() {
         });
       }
 
+      const pageTimetableModuleIds = sourceTimetableModules.map((module) => module.id);
+
       const result = await confirmAssignments({
         academicYear,
         confirmedBy: user.id,
-        programmeCode: programmeCode || undefined,
+        timetableModuleIds: pageTimetableModuleIds,
       });
 
       await refreshTimetableAndAssignments({
@@ -2617,72 +2618,6 @@ function SplitStep({
     });
   }, [visibleInstances, instanceEdits]);
 
-  const conservationIssues = useMemo(() => {
-    const issues: Array<{
-      key: string;
-      label: string;
-      expectedTotal: number;
-      sumOfInstances: number;
-    }> = [];
-
-    const combineById = new Map(manualGroups.map((g) => [g.id, g]));
-    const planningById = new Map(planningModules.map((m) => [m.id, m]));
-
-    const groupSums = new Map<string, number>();
-    for (const row of instanceRowsForValidation) {
-      const groupKey = row.source_type === "combine_group"
-        ? `combine_group:${row.source_combine_group_id ?? ""}`
-        : `planning_module:${row.source_planning_module_id ?? ""}`;
-      groupSums.set(groupKey, (groupSums.get(groupKey) ?? 0) + (row.instance_expected_size ?? 0));
-    }
-
-    for (const [groupKey, sum] of groupSums) {
-      const [type, id] = groupKey.split(":");
-      if (!id) continue;
-
-      if (type === "combine_group") {
-        if (!decidedCombineGroupIds.has(id)) continue;
-        const group = combineById.get(id);
-        if (!group) continue;
-        const expected = group.total_expected_student_number ?? 0;
-        if (sum !== expected) {
-          issues.push({
-            key: groupKey,
-            label: `${group.combined_code} (combined group)`,
-            expectedTotal: expected,
-            sumOfInstances: sum,
-          });
-        }
-      } else if (type === "planning_module") {
-        if (!decidedPlanningModuleIds.has(id)) continue;
-        const pm = planningById.get(id);
-        if (!pm) continue;
-        const student = studentRows.find((s) =>
-          isSameStudentNumberRow(s, pm, selectedStreamCode)
-        );
-        const expected = student?.expected_student_number ?? 0;
-        if (sum !== expected) {
-          issues.push({
-            key: groupKey,
-            label: `${pm.module_code} (single module)`,
-            expectedTotal: expected,
-            sumOfInstances: sum,
-          });
-        }
-      }
-    }
-
-    return issues;
-  }, [
-    instanceRowsForValidation,
-    manualGroups,
-    planningModules,
-    studentRows,
-    selectedStreamCode,
-    decidedPlanningModuleIds,
-    decidedCombineGroupIds,
-  ]);
-
   const hasUnsavedInstanceEdits = useMemo(
     () => Object.keys(instanceEdits).length > 0,
     [instanceEdits]
@@ -2736,93 +2671,13 @@ function SplitStep({
               await onSaveInstanceEdits(rows);
               setInstanceEdits({});
             }}
-            disabled={
-              !hasUnsavedInstanceEdits || conservationIssues.length > 0
-            }
-            title={
-              conservationIssues.length > 0
-                ? "Size conservation failed. Fix totals before saving."
-                : undefined
-            }
+            disabled={!hasUnsavedInstanceEdits}
           >
             Save instance edits
           </button>
         </div>
 
         <div className="card-body space-y-3">
-          {conservationIssues.length > 0 && (
-            <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="font-medium">Size conservation failed</div>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setInstanceEdits((prev) => {
-                      const next = { ...prev };
-
-                      for (const issue of conservationIssues) {
-                        const [type, id] = issue.key.split(":");
-                        if (!id) continue;
-
-                        const groupRows = instanceRowsForValidation
-                          .filter((row) => {
-                            if (type === "combine_group") {
-                              return (
-                                row.source_type === "combine_group" &&
-                                row.source_combine_group_id === id
-                              );
-                            }
-                            return (
-                              row.source_type === "planning_module" &&
-                              row.source_planning_module_id === id
-                            );
-                          })
-                          .slice()
-                          .sort((a, b) =>
-                            String(a.module_instance_code).localeCompare(
-                              String(b.module_instance_code)
-                            )
-                          );
-
-                        if (groupRows.length === 0) continue;
-
-                        const sizes =
-                          splitStudentNumberConservingTotal(
-                            issue.expectedTotal,
-                            groupRows.length
-                          ) ?? [];
-
-                        groupRows.forEach((row, index) => {
-                          const size = sizes[index];
-                          if (size === undefined) return;
-                          next[row.id] = {
-                            ...(next[row.id] ?? {}),
-                            instance_expected_size: size,
-                          };
-                        });
-                      }
-
-                      return next;
-                    });
-                  }}
-                >
-                  Auto-balance
-                </button>
-              </div>
-
-              <div className="mt-1 space-y-1 text-xs">
-                {conservationIssues.slice(0, 20).map((issue) => (
-                  <div key={issue.key}>
-                    {issue.label}: instances sum {issue.sumOfInstances} ≠ expected{" "}
-                    {issue.expectedTotal}
-                  </div>
-                ))}
-                {conservationIssues.length > 20 ? "…" : null}
-              </div>
-            </div>
-          )}
-
           {visibleInstances.length === 0 ? (
             <EmptyState message="No instances yet. If you already clicked Split/No Split, please make sure migration 014_timetable_module_instances.sql has been applied, then refresh the page (or run Confirm All Split Decisions once)." />
           ) : (
