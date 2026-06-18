@@ -1,7 +1,7 @@
 // src/services/assignmentService.ts
 
 import { supabase } from "../lib/supabase";
-import { buildTeacherName, isTBC, normalizeStream } from "../lib/utils";
+import { buildTeacherName, isTBC, normalizeStream, teacherDisplayNameFromRow } from "../lib/utils";
 import type {
   EmploymentType,
   TeachingAssignmentRow,
@@ -587,12 +587,14 @@ export function buildAssignmentDraftFromTeacher(params: {
 }): AssignmentDraft {
   const teacherName = params.useTBC
     ? "TBC"
-    : params.teacher?.teacher_name ||
-      buildTeacherName(
-        params.teacher?.title,
-        params.teacher?.family_name,
-        params.teacher?.other_name
-      );
+    : params.teacher
+      ? teacherDisplayNameFromRow({
+          teacher_name: params.teacher.teacher_name ?? "",
+          title: params.teacher.title,
+          family_name: params.teacher.family_name,
+          other_name: params.teacher.other_name,
+        })
+      : "";
 
   if (!teacherName) {
     throw new Error("Teacher is required.");

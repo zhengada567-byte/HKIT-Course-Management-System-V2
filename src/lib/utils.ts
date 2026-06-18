@@ -156,6 +156,22 @@ export function buildTeacherName(
     .join(" ");
 }
 
+/** Canonical display name from structured teacher fields (preferred over stored teacher_name). */
+export function teacherDisplayNameFromRow(teacher: {
+  teacher_name: string;
+  title?: string | null;
+  family_name?: string | null;
+  other_name?: string | null;
+}) {
+  return (
+    buildTeacherName(
+      teacher.title,
+      teacher.family_name,
+      teacher.other_name
+    ) || String(teacher.teacher_name ?? "").trim()
+  );
+}
+
 export function stripTeacherTitle(value: string) {
   return value
     .trim()
@@ -197,7 +213,12 @@ export function teacherDisplayNamesMatch(left: string, right: string) {
 /** Map a stored/uploaded teacher string to the canonical teachers-catalog name. */
 export function resolveTeacherNameToCatalog(
   rawName: string | null | undefined,
-  teachers: Array<{ teacher_name: string }>
+  teachers: Array<{
+    teacher_name: string;
+    title?: string | null;
+    family_name?: string | null;
+    other_name?: string | null;
+  }>
 ) {
   const raw = String(rawName ?? "").trim();
 
@@ -205,16 +226,24 @@ export function resolveTeacherNameToCatalog(
     return null;
   }
 
-  const exact = teachers.find((teacher) => teacher.teacher_name === raw);
+  const exact = teachers.find((teacher) => {
+    const displayName = teacherDisplayNameFromRow(teacher);
+    return displayName === raw || teacher.teacher_name === raw;
+  });
+
   if (exact) {
-    return exact.teacher_name;
+    return teacherDisplayNameFromRow(exact);
   }
 
-  const fuzzy = teachers.find((teacher) =>
-    teacherDisplayNamesMatch(teacher.teacher_name, raw)
-  );
+  const fuzzy = teachers.find((teacher) => {
+    const displayName = teacherDisplayNameFromRow(teacher);
+    return (
+      teacherDisplayNamesMatch(displayName, raw) ||
+      teacherDisplayNamesMatch(teacher.teacher_name, raw)
+    );
+  });
 
-  return fuzzy?.teacher_name ?? null;
+  return fuzzy ? teacherDisplayNameFromRow(fuzzy) : null;
 }
 
 export function normalizeStream(value?: string | null) {

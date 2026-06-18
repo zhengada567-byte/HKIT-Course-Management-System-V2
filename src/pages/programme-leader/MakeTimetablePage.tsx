@@ -48,6 +48,7 @@ import {
   normalizeStream,
   offeredTermToStudyTerm,
   isTBC,
+  teacherDisplayNameFromRow,
   timetableProgrammeStreamFromSelection,
 } from "../../lib/utils";
 import { listTeachers } from "../../services/teacherService";
@@ -1506,7 +1507,9 @@ export function MakeTimetablePage() {
         }
 
         const teacher = teachers.find(
-          (item) => item.teacher_name === row.teacherName
+          (item) =>
+            teacherDisplayNameFromRow(item) === row.teacherName ||
+            item.teacher_name === row.teacherName
         );
 
         const mode = (row.instance.instance_mode ||

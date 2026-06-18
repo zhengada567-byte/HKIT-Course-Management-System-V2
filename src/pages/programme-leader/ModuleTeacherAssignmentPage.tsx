@@ -7,7 +7,7 @@ import { PageHeader } from "../../components/ui/PageHeader";
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useFeatureUpdateLocks } from "../../contexts/FeatureUpdateLockContext";
 import { useLanguage } from "../../contexts/LanguageContext";
-import { normalizeStream } from "../../lib/utils";
+import { normalizeStream, teacherDisplayNameFromRow } from "../../lib/utils";
 import {
   buildModuleDefaultAssignmentInput,
   listProgrammeModuleTeacherRows,
@@ -171,7 +171,9 @@ export function ModuleTeacherAssignmentPage() {
 
   function handleTeacherChange(key: string, teacherName: string) {
     const catalogTeacher = teachers.find(
-      (teacher) => teacher.teacher_name === teacherName
+      (teacher) =>
+        teacherDisplayNameFromRow(teacher) === teacherName ||
+        teacher.teacher_name === teacherName
     );
     const employment = normalizeTeachingStatus(
       catalogTeacher?.employment_type ?? undefined

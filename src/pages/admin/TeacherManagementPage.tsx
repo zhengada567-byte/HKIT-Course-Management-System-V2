@@ -6,6 +6,7 @@ import { LoadingState } from "../../components/ui/LoadingState";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useLanguage } from "../../contexts/LanguageContext";
+import { teacherDisplayNameFromRow } from "../../lib/utils";
 import {
   deleteTeacher,
   listTeachers,
@@ -284,7 +285,7 @@ export function TeacherManagementPage() {
             {
               key: "name",
               header: t.teacherName,
-              render: (row) => row.teacher_name,
+              render: (row) => teacherDisplayNameFromRow(row),
             },
             {
               key: "title",

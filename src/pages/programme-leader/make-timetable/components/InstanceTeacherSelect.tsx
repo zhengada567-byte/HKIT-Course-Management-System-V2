@@ -1,6 +1,7 @@
 import {
   isTBC,
   resolveTeacherNameToCatalog,
+  teacherDisplayNameFromRow,
 } from "../../../../lib/utils";
 import type { TeacherRow } from "../../../../types";
 
@@ -48,11 +49,15 @@ export function InstanceTeacherSelect({
     >
       <option value="TBC">TBC</option>
 
-      {teachers.map((teacher) => (
-        <option key={teacher.id} value={teacher.teacher_name}>
-          {teacher.teacher_name}
-        </option>
-      ))}
+      {teachers.map((teacher) => {
+        const displayName = teacherDisplayNameFromRow(teacher);
+
+        return (
+          <option key={teacher.id} value={displayName}>
+            {displayName}
+          </option>
+        );
+      })}
     </select>
   );
 }

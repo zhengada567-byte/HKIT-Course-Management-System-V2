@@ -1,4 +1,4 @@
-import { buildTeacherName } from "../lib/utils";
+import { buildTeacherName, teacherDisplayNameFromRow } from "../lib/utils";
 import { supabase } from "../lib/supabase";
 import { assertFeatureUpdatesAllowed } from "./featureLockService";
 import { listModules } from "./moduleService";
@@ -144,7 +144,9 @@ export function buildModuleDefaultAssignmentInput(params: {
 }): ModuleDefaultAssignmentInput {
   const trimmedName = String(params.teacherName ?? "").trim() || "TBC";
   const catalogTeacher = params.teachers.find(
-    (teacher) => teacher.teacher_name === trimmedName
+    (teacher) =>
+      teacherDisplayNameFromRow(teacher) === trimmedName ||
+      teacher.teacher_name === trimmedName
   );
 
   if (catalogTeacher) {
@@ -158,7 +160,7 @@ export function buildModuleDefaultAssignmentInput(params: {
       module_term: params.module.module_term,
       programme_code: params.module.programme_code,
       stream_code: params.module.stream_code,
-      teacher_name: catalogTeacher.teacher_name,
+      teacher_name: teacherDisplayNameFromRow(catalogTeacher),
       teacher_title: catalogTeacher.title,
       teacher_family_name: catalogTeacher.family_name,
       teacher_other_name: catalogTeacher.other_name,
