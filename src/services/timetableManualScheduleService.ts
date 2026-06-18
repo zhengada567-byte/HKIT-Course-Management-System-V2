@@ -2,6 +2,10 @@ import {
   normalizeProgrammeKey,
   normalizeSchedulingStream,
   normalizeTeacherNameKey,
+  resolveSchedulingIdentities,
+  schedulingIdentitiesShareStreamYearGroup,
+  type SchedulingCombineMember,
+  type StreamYearSchedulingIdentity,
 } from "../lib/timetableSchedulingRules";
 import type { TimetableModuleRow } from "../types";
 import type { TimetableModuleInstanceRow } from "./timetableModuleInstanceService";
@@ -26,6 +30,7 @@ export type WeeklyPlacementOccupant = {
   programmeCode: string;
   streamCode: string;
   moduleYear: string;
+  schedulingIdentities: StreamYearSchedulingIdentity[];
 };
 
 export type WeeklyGridItem = WeeklyPlacementOccupant;
@@ -35,11 +40,6 @@ export function wouldWeeklyPlacementConflict(
   candidate: WeeklyPlacementOccupant
 ): string | null {
   const candidateTeacher = normalizeTeacherNameKey(candidate.teacherName);
-  const candidateProgramme = normalizeProgrammeKey(candidate.programmeCode);
-  const candidateStream = normalizeSchedulingStream(candidate.streamCode);
-  const candidateYear = String(candidate.moduleYear ?? "")
-    .trim()
-    .toUpperCase();
 
   for (const item of existing) {
     if (
@@ -49,17 +49,34 @@ export function wouldWeeklyPlacementConflict(
       return `Module instance ${item.moduleInstanceCode} is already in this timeslot.`;
     }
 
+    if (
+      schedulingIdentitiesShareStreamYearGroup(
+        candidate.schedulingIdentities,
+        item.schedulingIdentities
+      )
+    ) {
+      return (
+        `Conflict with ${item.moduleInstanceCode}: same programme, stream group and year ` +
+        `cannot share this weekly timeslot.`
+      );
+    }
+
     const sameTeacher =
       Boolean(candidateTeacher) &&
       normalizeTeacherNameKey(item.teacherName) === candidateTeacher;
     const sameProgramme =
-      normalizeProgrammeKey(item.programmeCode) === candidateProgramme;
+      normalizeProgrammeKey(item.programmeCode) ===
+      normalizeProgrammeKey(candidate.programmeCode);
     const sameStream =
-      normalizeSchedulingStream(item.streamCode) === candidateStream;
+      normalizeSchedulingStream(item.streamCode) ===
+      normalizeSchedulingStream(candidate.streamCode);
     const sameYear =
       String(item.moduleYear ?? "")
         .trim()
-        .toUpperCase() === candidateYear;
+        .toUpperCase() ===
+      String(candidate.moduleYear ?? "")
+        .trim()
+        .toUpperCase();
 
     if (sameTeacher && sameProgramme && sameStream && sameYear) {
       return (
@@ -78,7 +95,12 @@ export function buildWeeklyPlacementOccupant(params: {
   roomCode: string;
   moduleCode?: string;
   moduleName?: string | null;
+  combineMembers?: SchedulingCombineMember[];
 }): WeeklyPlacementOccupant {
+  const programmeCode = String(params.timetableModule.programme_code ?? "").trim();
+  const streamCode = String(params.timetableModule.stream_code ?? "").trim();
+  const moduleYear = String(params.timetableModule.module_year ?? "").trim();
+
   return {
     moduleInstanceCode: params.instance.module_instance_code,
     moduleCode:
@@ -92,9 +114,15 @@ export function buildWeeklyPlacementOccupant(params: {
       "",
     teacherName: String(params.instance.instance_teacher_name ?? "").trim(),
     roomCode: params.roomCode,
-    programmeCode: String(params.timetableModule.programme_code ?? "").trim(),
-    streamCode: String(params.timetableModule.stream_code ?? "").trim(),
-    moduleYear: String(params.timetableModule.module_year ?? "").trim(),
+    programmeCode,
+    streamCode,
+    moduleYear,
+    schedulingIdentities: resolveSchedulingIdentities({
+      programmeCode,
+      streamCode,
+      moduleYear,
+      combineMembers: params.combineMembers,
+    }),
   };
 }
 
@@ -111,6 +139,7 @@ export async function addModuleToWeeklySlot(params: {
   createdBy?: string | null;
   moduleCode?: string;
   moduleName?: string | null;
+  combineMembers?: SchedulingCombineMember[];
 }) {
   const instanceCode = String(params.moduleInstanceCode ?? "").trim();
   const roomCode = String(params.roomCode ?? "").trim();
@@ -143,6 +172,7 @@ export async function addModuleToWeeklySlot(params: {
     roomCode,
     moduleCode: params.moduleCode,
     moduleName: params.moduleName,
+    combineMembers: params.combineMembers,
   });
 
   const conflict = wouldWeeklyPlacementConflict(
@@ -255,6 +285,7 @@ export function buildWeeklyTimetableGridFromSessions(params: {
   timetableInstances: TimetableModuleInstanceRow[];
   preferredStartByCode?: Record<string, string>;
   startTimeOptions: string[];
+  combineMembersByGroupId?: Map<string, SchedulingCombineMember[]>;
 }): WeeklyGridState {
   const collapsed = new Map<
     string,
@@ -294,14 +325,21 @@ export function buildWeeklyTimetableGridFromSessions(params: {
       weekday,
       start,
       end,
-      moduleInstanceCode: instanceCode,
-      moduleCode: String(session.module_code ?? "").trim(),
-      moduleName: String(session.module_name ?? "").trim(),
-      teacherName: String(session.teacher_name ?? "").trim(),
-      roomCode,
-      programmeCode: String(timetableModule.programme_code ?? "").trim(),
-      streamCode: String(timetableModule.stream_code ?? "").trim(),
-      moduleYear: String(timetableModule.module_year ?? "").trim(),
+      ...buildWeeklyPlacementOccupant({
+        instance: {
+          module_instance_code: instanceCode,
+          module_code: String(session.module_code ?? "").trim(),
+          module_name: String(session.module_name ?? "").trim(),
+          instance_teacher_name: String(session.teacher_name ?? "").trim(),
+        } as TimetableModuleInstanceRow,
+        timetableModule,
+        roomCode,
+        moduleCode: String(session.module_code ?? "").trim(),
+        moduleName: String(session.module_name ?? "").trim(),
+        combineMembers: params.combineMembersByGroupId?.get(
+          String(timetableModule.combine_group_id ?? "").trim()
+        ),
+      }),
     });
   }
 
@@ -321,6 +359,7 @@ export function buildWeeklyTimetableGridFromSessions(params: {
       programmeCode: item.programmeCode,
       streamCode: item.streamCode,
       moduleYear: item.moduleYear,
+      schedulingIdentities: item.schedulingIdentities,
     });
   }
 
@@ -407,11 +446,13 @@ export function buildDraftWeeklyPlacement(params: {
   roomCode: string;
   instance: TimetableModuleInstanceRow;
   timetableModule: TimetableModuleRow;
+  combineMembers?: SchedulingCombineMember[];
 }): WeeklyPlacementRecord {
   const occupant = buildWeeklyPlacementOccupant({
     instance: params.instance,
     timetableModule: params.timetableModule,
     roomCode: params.roomCode,
+    combineMembers: params.combineMembers,
   });
 
   return {
@@ -429,6 +470,7 @@ export async function persistWeeklyTimetableDraft(params: {
   draftGrid: WeeklyGridState;
   editableInstanceCodes: string[];
   instanceByCode: Map<string, TimetableModuleInstanceRow>;
+  combineMembersByGroupId?: Map<string, SchedulingCombineMember[]>;
   createdBy?: string | null;
 }) {
   const editable = new Set(
@@ -490,6 +532,18 @@ export async function persistWeeklyTimetableDraft(params: {
     const cellOccupants =
       params.draftGrid.itemsBySlotAndWeekday[slotKey]?.[placement.weekday] ?? [];
 
+    let combineMembers: SchedulingCombineMember[] | undefined;
+    if (params.combineMembersByGroupId) {
+      const [timetableModule] = await listTimetableModulesByInstanceCodes({
+        academicYear: params.academicYear,
+        moduleInstanceCodes: [placement.moduleInstanceCode],
+      });
+      const groupId = String(timetableModule?.combine_group_id ?? "").trim();
+      combineMembers = groupId
+        ? params.combineMembersByGroupId.get(groupId)
+        : undefined;
+    }
+
     await addModuleToWeeklySlot({
       academicYear: params.academicYear,
       term: params.term,
@@ -505,6 +559,7 @@ export async function persistWeeklyTimetableDraft(params: {
           placement.moduleInstanceCode.toUpperCase()
       ),
       createdBy: params.createdBy ?? null,
+      combineMembers,
     });
     savedCount += 1;
   }

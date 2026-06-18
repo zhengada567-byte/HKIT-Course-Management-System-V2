@@ -358,6 +358,132 @@ export function normalizeProgrammeKey(programmeCode: string) {
     .toUpperCase();
 }
 
+export type StreamYearSchedulingIdentity = {
+  programmeCode: string;
+  streamKey: string;
+  moduleYear: string;
+};
+
+export type SchedulingCombineMember = {
+  programme_code: string;
+  stream_code?: string | null;
+  module_year?: string | null;
+};
+
+/** Expand MIXED timetable rows into real programme + stream identities for conflict rules. */
+export function resolveSchedulingIdentities(params: {
+  programmeCode: string;
+  streamCode?: string | null;
+  moduleYear?: string | null;
+  combineMembers?: SchedulingCombineMember[];
+}): StreamYearSchedulingIdentity[] {
+  const moduleYear = normalizeModuleYearKey(params.moduleYear);
+
+  if (!moduleYear) {
+    return [];
+  }
+
+  const programmeKey = normalizeProgrammeKey(params.programmeCode);
+  const streamKey = normalizeSchedulingStream(params.streamCode);
+  const needsExpansion =
+    programmeKey === "MIXED" || streamKey === "mixed";
+
+  if (needsExpansion && params.combineMembers?.length) {
+    const seen = new Set<string>();
+    const identities: StreamYearSchedulingIdentity[] = [];
+
+    for (const member of params.combineMembers) {
+      const memberProgramme = normalizeProgrammeKey(member.programme_code);
+      const memberStream = normalizeSchedulingStream(member.stream_code);
+      const memberYear = normalizeModuleYearKey(
+        member.module_year ?? params.moduleYear
+      );
+
+      if (!memberProgramme || !memberYear) {
+        continue;
+      }
+
+      const dedupeKey = `${memberProgramme}|${memberStream}|${memberYear}`;
+      if (seen.has(dedupeKey)) {
+        continue;
+      }
+
+      seen.add(dedupeKey);
+      identities.push({
+        programmeCode: memberProgramme,
+        streamKey: memberStream,
+        moduleYear: memberYear,
+      });
+    }
+
+    if (identities.length > 0) {
+      return identities;
+    }
+  }
+
+  return [
+    {
+      programmeCode: programmeKey,
+      streamKey,
+      moduleYear,
+    },
+  ];
+}
+
+export function isAnyStreamYearTimeslotBlocked(
+  state: StreamYearTimeslotState,
+  identities: StreamYearSchedulingIdentity[],
+  slotKey: string
+) {
+  return identities.some((identity) =>
+    isStreamYearTimeslotBlocked(state, {
+      programmeCode: identity.programmeCode,
+      streamKey: identity.streamKey,
+      moduleYear: identity.moduleYear,
+      slotKey,
+    })
+  );
+}
+
+export function registerAllStreamYearTimeslots(
+  state: StreamYearTimeslotState,
+  identities: StreamYearSchedulingIdentity[],
+  slotKey: string
+) {
+  for (const identity of identities) {
+    registerStreamYearTimeslot(state, {
+      programmeCode: identity.programmeCode,
+      streamKey: identity.streamKey,
+      moduleYear: identity.moduleYear,
+      slotKey,
+    });
+  }
+}
+
+/** True when two modules share programme + stream group + year (weekly slot conflict). */
+export function schedulingIdentitiesShareStreamYearGroup(
+  left: StreamYearSchedulingIdentity[],
+  right: StreamYearSchedulingIdentity[]
+) {
+  for (const a of left) {
+    for (const b of right) {
+      if (normalizeProgrammeKey(a.programmeCode) !== normalizeProgrammeKey(b.programmeCode)) {
+        continue;
+      }
+
+      if (a.moduleYear !== b.moduleYear) {
+        continue;
+      }
+
+      if (isSameStreamSchedulingGroup(a.streamKey, b.streamKey)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 function normalizeModuleYearKey(year: string | null | undefined) {
   return String(year ?? "")
     .trim()
@@ -387,19 +513,27 @@ export function scoreAutoScheduleSlot(params: {
   moduleYear: string;
   alignKey: string;
   programmeCode: string;
+  schedulingIdentities?: StreamYearSchedulingIdentity[];
   streamYearTimeslotState: StreamYearTimeslotState;
   streamSlotByModule: Map<string, Map<string, string>>;
   streamYearOccupiedSlots: Map<string, Set<string>>;
   streamAllOccupiedSlots: Map<string, Set<string>>;
   programmeSlotStreams: Map<string, Map<string, Set<string>>>;
 }): number | null {
-  if (
-    isStreamYearTimeslotBlocked(params.streamYearTimeslotState, {
+  const identities =
+    params.schedulingIdentities ??
+    resolveSchedulingIdentities({
       programmeCode: params.programmeCode,
-      streamKey: params.streamKey,
+      streamCode: params.streamKey,
       moduleYear: params.moduleYear,
-      slotKey: params.slotKey,
-    })
+    });
+
+  if (
+    isAnyStreamYearTimeslotBlocked(
+      params.streamYearTimeslotState,
+      identities,
+      params.slotKey
+    )
   ) {
     return null;
   }
@@ -432,44 +566,48 @@ export function scoreAutoScheduleSlot(params: {
     }
   }
 
-  const streamYearKey = buildStreamYearSlotKey(
-    params.programmeCode,
-    params.streamKey,
-    params.moduleYear
-  );
+  for (const identity of identities) {
+    const streamYearKey = buildStreamYearSlotKey(
+      identity.programmeCode,
+      identity.streamKey,
+      identity.moduleYear
+    );
+    const targetProgramme = normalizeProgrammeKey(identity.programmeCode);
+    const targetYear = normalizeModuleYearKey(identity.moduleYear);
 
-  const targetProgramme = normalizeProgrammeKey(params.programmeCode);
-  const targetYear = normalizeModuleYearKey(params.moduleYear);
-
-  if (params.streamYearOccupiedSlots.get(streamYearKey)?.has(params.slotKey)) {
-    score -= 80;
-  }
-
-  for (const [otherStreamYearKey, slots] of params.streamYearOccupiedSlots) {
-    if (!slots.has(params.slotKey)) continue;
-
-    const { programme: otherProgramme, stream: otherStream, year: otherYear } =
-      parseStreamYearSlotKey(otherStreamYearKey);
-
-    if (normalizeProgrammeKey(otherProgramme) !== targetProgramme) {
-      continue;
+    if (params.streamYearOccupiedSlots.get(streamYearKey)?.has(params.slotKey)) {
+      score -= 80;
     }
 
-    if (!isSameStreamSchedulingGroup(params.streamKey, otherStream)) {
-      continue;
+    for (const [otherStreamYearKey, slots] of params.streamYearOccupiedSlots) {
+      if (!slots.has(params.slotKey)) continue;
+
+      const { programme: otherProgramme, stream: otherStream, year: otherYear } =
+        parseStreamYearSlotKey(otherStreamYearKey);
+
+      if (normalizeProgrammeKey(otherProgramme) !== targetProgramme) {
+        continue;
+      }
+
+      if (!isSameStreamSchedulingGroup(identity.streamKey, otherStream)) {
+        continue;
+      }
+
+      if (otherYear === targetYear) {
+        return null;
+      }
+
+      score -= 40;
     }
 
-    if (otherYear === targetYear) {
-      return null;
+    const streamAllKey = buildStreamSlotKey(
+      identity.programmeCode,
+      identity.streamKey
+    );
+
+    if (params.streamAllOccupiedSlots.get(streamAllKey)?.has(params.slotKey)) {
+      score -= 80;
     }
-
-    score -= 40;
-  }
-
-  const streamAllKey = buildStreamSlotKey(params.programmeCode, params.streamKey);
-
-  if (params.streamAllOccupiedSlots.get(streamAllKey)?.has(params.slotKey)) {
-    score -= 80;
   }
 
   return score;
@@ -481,52 +619,65 @@ export function recordAutoSchedulePlacement(params: {
   moduleYear: string;
   alignKey: string;
   slotKey: string;
+  schedulingIdentities?: StreamYearSchedulingIdentity[];
   streamYearTimeslotState: StreamYearTimeslotState;
   streamSlotByModule: Map<string, Map<string, string>>;
   streamYearOccupiedSlots: Map<string, Set<string>>;
   streamAllOccupiedSlots: Map<string, Set<string>>;
   programmeSlotStreams: Map<string, Map<string, Set<string>>>;
 }) {
+  const identities =
+    params.schedulingIdentities ??
+    resolveSchedulingIdentities({
+      programmeCode: params.programmeCode,
+      streamCode: params.streamKey,
+      moduleYear: params.moduleYear,
+    });
+
   if (!params.streamSlotByModule.has(params.alignKey)) {
     params.streamSlotByModule.set(params.alignKey, new Map());
   }
   params.streamSlotByModule.get(params.alignKey)!.set(params.streamKey, params.slotKey);
 
-  const streamYearKey = buildStreamYearSlotKey(
-    params.programmeCode,
-    params.streamKey,
-    params.moduleYear
+  registerAllStreamYearTimeslots(
+    params.streamYearTimeslotState,
+    identities,
+    params.slotKey
   );
 
-  if (!params.streamYearOccupiedSlots.has(streamYearKey)) {
-    params.streamYearOccupiedSlots.set(streamYearKey, new Set());
+  for (const identity of identities) {
+    const streamYearKey = buildStreamYearSlotKey(
+      identity.programmeCode,
+      identity.streamKey,
+      identity.moduleYear
+    );
+
+    if (!params.streamYearOccupiedSlots.has(streamYearKey)) {
+      params.streamYearOccupiedSlots.set(streamYearKey, new Set());
+    }
+    params.streamYearOccupiedSlots.get(streamYearKey)!.add(params.slotKey);
+
+    const streamAllKey = buildStreamSlotKey(
+      identity.programmeCode,
+      identity.streamKey
+    );
+
+    if (!params.streamAllOccupiedSlots.has(streamAllKey)) {
+      params.streamAllOccupiedSlots.set(streamAllKey, new Set());
+    }
+    params.streamAllOccupiedSlots.get(streamAllKey)!.add(params.slotKey);
+
+    const programmeKey = normalizeProgrammeKey(identity.programmeCode);
+
+    if (!params.programmeSlotStreams.has(programmeKey)) {
+      params.programmeSlotStreams.set(programmeKey, new Map());
+    }
+
+    const slotMap = params.programmeSlotStreams.get(programmeKey)!;
+
+    if (!slotMap.has(params.slotKey)) {
+      slotMap.set(params.slotKey, new Set());
+    }
+    slotMap.get(params.slotKey)!.add(identity.streamKey);
   }
-  params.streamYearOccupiedSlots.get(streamYearKey)!.add(params.slotKey);
-
-  registerStreamYearTimeslot(params.streamYearTimeslotState, {
-    programmeCode: params.programmeCode,
-    streamKey: params.streamKey,
-    moduleYear: params.moduleYear,
-    slotKey: params.slotKey,
-  });
-
-  const streamAllKey = buildStreamSlotKey(params.programmeCode, params.streamKey);
-
-  if (!params.streamAllOccupiedSlots.has(streamAllKey)) {
-    params.streamAllOccupiedSlots.set(streamAllKey, new Set());
-  }
-  params.streamAllOccupiedSlots.get(streamAllKey)!.add(params.slotKey);
-
-  const programmeKey = normalizeProgrammeKey(params.programmeCode);
-
-  if (!params.programmeSlotStreams.has(programmeKey)) {
-    params.programmeSlotStreams.set(programmeKey, new Map());
-  }
-
-  const slotMap = params.programmeSlotStreams.get(programmeKey)!;
-
-  if (!slotMap.has(params.slotKey)) {
-    slotMap.set(params.slotKey, new Set());
-  }
-  slotMap.get(params.slotKey)!.add(params.streamKey);
 }

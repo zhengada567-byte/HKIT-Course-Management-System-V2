@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 
 import { dedupeJoinedModuleName } from "../../../../lib/moduleDisplay";
+import type { SchedulingCombineMember } from "../../../../lib/timetableSchedulingRules";
 import { useAuth } from "../../../../contexts/AuthContext";
 import type { TimetableModuleInstanceRow } from "../../../../services/timetableModuleInstanceService";
+import { loadPlanningModulesByCombineGroupIds } from "../../../../services/splitClassService";
 import {
   buildDraftWeeklyPlacement,
   buildWeeklyTimetableGridFromSessions,
@@ -97,6 +99,9 @@ export function WeeklyTimetableEditor(props: {
   const [moduleMetaByCode, setModuleMetaByCode] = useState<
     Record<string, TimetableModuleRow>
   >({});
+  const [combineMembersByGroupId, setCombineMembersByGroupId] = useState<
+    Map<string, SchedulingCombineMember[]>
+  >(new Map());
 
   const editableInstanceCodes = useMemo(
     () =>
@@ -168,6 +173,19 @@ export function WeeklyTimetableEditor(props: {
       }
       setModuleMetaByCode(metaRecord);
 
+      const combineGroupIds = Array.from(
+        new Set(
+          timetableModules
+            .map((row) => String(row.combine_group_id ?? "").trim())
+            .filter(Boolean)
+        )
+      );
+      const membersByGroupId = await loadPlanningModulesByCombineGroupIds({
+        academicYear,
+        combineGroupIds,
+      });
+      setCombineMembersByGroupId(membersByGroupId);
+
       const filteredSessions = sessions.filter((session) => {
         if (session.status === "cancel") return false;
 
@@ -198,6 +216,7 @@ export function WeeklyTimetableEditor(props: {
         timetableInstances,
         preferredStartByCode,
         startTimeOptions,
+        combineMembersByGroupId: membersByGroupId,
       });
       setWeeklyGrid(nextGrid);
       setSavedGrid(cloneWeeklyGridState(nextGrid));
@@ -332,6 +351,11 @@ export function WeeklyTimetableEditor(props: {
       const existing =
         weeklyGrid.itemsBySlotAndWeekday[sk]?.[addDialog.weekday] ?? [];
 
+      const groupId = String(timetableModule.combine_group_id ?? "").trim();
+      const combineMembers = groupId
+        ? combineMembersByGroupId.get(groupId)
+        : undefined;
+
       const placement = buildDraftWeeklyPlacement({
         weekday: addDialog.weekday,
         start: addDialog.start,
@@ -339,6 +363,7 @@ export function WeeklyTimetableEditor(props: {
         roomCode: addDialog.roomCode,
         instance,
         timetableModule,
+        combineMembers,
       });
 
       const conflict = wouldWeeklyPlacementConflict(existing, placement);
@@ -397,6 +422,7 @@ export function WeeklyTimetableEditor(props: {
         draftGrid: weeklyGrid,
         editableInstanceCodes: codesToPersist,
         instanceByCode,
+        combineMembersByGroupId,
         createdBy: user?.id ?? null,
       });
 

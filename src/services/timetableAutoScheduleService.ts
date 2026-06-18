@@ -22,12 +22,14 @@ import {
   buildFtTeacherNameSet,
   buildWeeklyTimeslotKey,
   createStreamYearTimeslotState,
-  isStreamYearTimeslotBlocked,
+  isAnyStreamYearTimeslotBlocked,
   normalizeSchedulingStream,
   recordAutoSchedulePlacement,
+  resolveSchedulingIdentities,
   SCHEDULING_WEEKDAY_LABEL,
   SCHEDULING_WEEKDAYS,
   scoreAutoScheduleSlot,
+  type StreamYearSchedulingIdentity,
   type StreamYearTimeslotState,
 } from "../lib/timetableSchedulingRules";
 import { addDays, toIsoDateString } from "../lib/academicCalendar";
@@ -36,6 +38,7 @@ import { buildModuleCatalogKey, loadModuleUsesComputerMap } from "./moduleServic
 import { listTeachers } from "./teacherService";
 import { listTimetableModulesByInstanceCodes } from "./timetableService";
 import { listTeacherNotAvailableForTeachers } from "./timetableTeacherAvailabilityService";
+import type { TimetableModuleRow, TimetablePlanningModuleRow } from "../types";
 
 type Weekday = 1 | 2 | 3 | 4 | 5 | 6; // Mon..Sat
 
@@ -43,6 +46,21 @@ type Period = "AM" | "PM" | "EVENING";
 
 const NIGHT_START = "18:30";
 const NIGHT_END = "22:30";
+
+function schedulingIdentitiesForModule(
+  timetableModule: TimetableModuleRow,
+  membersByCombineGroupId: Map<string, TimetablePlanningModuleRow[]>
+): StreamYearSchedulingIdentity[] {
+  const groupId = String(timetableModule.combine_group_id ?? "").trim();
+  const members = groupId ? membersByCombineGroupId.get(groupId) : undefined;
+
+  return resolveSchedulingIdentities({
+    programmeCode: String(timetableModule.programme_code ?? ""),
+    streamCode: timetableModule.stream_code,
+    moduleYear: timetableModule.module_year,
+    combineMembers: members,
+  });
+}
 
 export type AutoScheduleFailure = {
   code: string;
@@ -102,6 +120,7 @@ function diagnoseWeekdayPlacementFailures(params: {
   programmeCode: string;
   streamKey: string;
   moduleYear: string;
+  schedulingIdentities: StreamYearSchedulingIdentity[];
   alignKey: string;
   rooms: TimetableClassroomRow[];
   naSet: Set<string>;
@@ -135,12 +154,11 @@ function diagnoseWeekdayPlacementFailures(params: {
   }
 
   if (
-    isStreamYearTimeslotBlocked(params.streamYearTimeslotState, {
-      programmeCode: params.programmeCode,
-      streamKey: params.streamKey,
-      moduleYear: params.moduleYear,
-      slotKey,
-    })
+    isAnyStreamYearTimeslotBlocked(
+      params.streamYearTimeslotState,
+      params.schedulingIdentities,
+      slotKey
+    )
   ) {
     return `${label}: same programme+stream+year already uses ${params.start}–${params.end} (another module — not a free-room issue)`;
   }
@@ -187,6 +205,7 @@ function diagnoseWeekdayPlacementFailures(params: {
       moduleYear: params.moduleYear,
       alignKey: params.alignKey,
       programmeCode: params.programmeCode,
+      schedulingIdentities: params.schedulingIdentities,
       streamYearTimeslotState: params.streamYearTimeslotState,
       streamSlotByModule: params.streamSlotByModule,
       streamYearOccupiedSlots: params.streamYearOccupiedSlots,
@@ -229,6 +248,7 @@ function buildWeekdayFailureDetail(params: {
   programmeCode: string;
   streamKey: string;
   moduleYear: string;
+  schedulingIdentities: StreamYearSchedulingIdentity[];
   alignKey: string;
   rooms: TimetableClassroomRow[];
   naSet: Set<string>;
@@ -254,6 +274,7 @@ function buildWeekdayFailureDetail(params: {
       programmeCode: params.programmeCode,
       streamKey: params.streamKey,
       moduleYear: params.moduleYear,
+      schedulingIdentities: params.schedulingIdentities,
       alignKey: params.alignKey,
       rooms: params.rooms,
       naSet: params.naSet,
@@ -375,6 +396,18 @@ async function seedAutoScheduleFromExistingSessions(params: {
     ])
   );
 
+  const combineGroupIds = Array.from(
+    new Set(
+      modules
+        .map((module) => String(module.combine_group_id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+  const membersByCombineGroupId = await loadPlanningModulesByCombineGroupIds({
+    academicYear: params.academicYear,
+    combineGroupIds,
+  });
+
   const seenWeekly = new Set<string>();
 
   for (const session of params.existingSessions) {
@@ -434,10 +467,18 @@ async function seedAutoScheduleFromExistingSessions(params: {
 
     if (!programmeCode || !moduleYear) continue;
 
+    const schedulingIdentities = schedulingIdentitiesForModule(
+      timetableModule,
+      membersByCombineGroupId
+    );
+
+    if (schedulingIdentities.length === 0) continue;
+
     recordAutoSchedulePlacement({
       programmeCode,
       streamKey: normalizeSchedulingStream(timetableModule.stream_code),
       moduleYear,
+      schedulingIdentities,
       alignKey: buildModuleStreamAlignKey(
         programmeCode,
         String(session.module_code ?? timetableModule.base_module_code ?? "").trim()
@@ -812,6 +853,10 @@ export async function autoScheduleInstances(params: {
       programmeCode,
       effectiveModuleCode
     );
+    const schedulingIdentities = schedulingIdentitiesForModule(
+      timetableModule,
+      membersByCombineGroupId
+    );
 
     type PlacementCandidate = {
       weekday: Weekday;
@@ -871,6 +916,7 @@ export async function autoScheduleInstances(params: {
           moduleYear,
           alignKey,
           programmeCode,
+          schedulingIdentities,
           streamYearTimeslotState,
           streamSlotByModule,
           streamYearOccupiedSlots,
@@ -903,6 +949,7 @@ export async function autoScheduleInstances(params: {
         streamKey,
         moduleYear,
         alignKey,
+        schedulingIdentities,
         slotKey: best.slotKey,
         streamYearTimeslotState,
         streamSlotByModule,
@@ -947,6 +994,7 @@ export async function autoScheduleInstances(params: {
         programmeCode,
         streamKey,
         moduleYear,
+        schedulingIdentities,
         alignKey,
         rooms,
         naSet,
