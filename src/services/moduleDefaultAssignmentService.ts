@@ -66,9 +66,11 @@ export function parseTeacherName(rawName: string | null | undefined) {
   const title = parts[0].replace(/\./g, "");
   const familyName = parts[parts.length - 1];
   const otherName = parts.slice(1, -1).join(" ") || null;
+  const canonicalName =
+    buildTeacherName(title, familyName, otherName) || teacherName;
 
   return {
-    teacher_name: teacherName,
+    teacher_name: canonicalName,
     teacher_title: title,
     teacher_family_name: familyName,
     teacher_other_name: otherName,
@@ -234,11 +236,21 @@ export function teacherNameFromAssignment(
 ) {
   if (!assignment) return "TBC";
 
+  const hasParts = Boolean(
+    assignment.teacher_title?.trim() ||
+      assignment.teacher_family_name?.trim() ||
+      assignment.teacher_other_name?.trim()
+  );
+
   const built = buildTeacherName(
     assignment.teacher_title,
     assignment.teacher_family_name,
     assignment.teacher_other_name
   );
 
-  return String(assignment.teacher_name ?? built ?? "").trim() || "TBC";
+  if (hasParts && built) {
+    return built;
+  }
+
+  return String(assignment.teacher_name ?? "").trim() || "TBC";
 }

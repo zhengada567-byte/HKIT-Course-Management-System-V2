@@ -149,10 +149,72 @@ export function buildTeacherName(
   familyName?: string | null,
   otherName?: string | null
 ) {
-  return [title, familyName, otherName]
+  // Display order: Title + Given (other) + Family — e.g. Dr Ada Zheng
+  return [title, otherName, familyName]
     .map((value) => String(value ?? "").trim())
     .filter(Boolean)
     .join(" ");
+}
+
+export function stripTeacherTitle(value: string) {
+  return value
+    .trim()
+    .replace(/^(mr|mrs|ms|dr|prof)\.?\s+/i, "")
+    .trim();
+}
+
+function sortedNameTokens(value: string) {
+  return stripTeacherTitle(value)
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort();
+}
+
+/** True when two display names refer to the same person (ignores title and word order). */
+export function teacherDisplayNamesMatch(left: string, right: string) {
+  const a = left.trim().toLowerCase();
+  const b = right.trim().toLowerCase();
+
+  if (!a || !b) return false;
+  if (a === b) return true;
+
+  const strippedLeft = stripTeacherTitle(a);
+  const strippedRight = stripTeacherTitle(b);
+
+  if (strippedLeft && strippedLeft === strippedRight) return true;
+
+  const leftTokens = sortedNameTokens(a);
+  const rightTokens = sortedNameTokens(b);
+
+  return (
+    leftTokens.length > 0 &&
+    leftTokens.length === rightTokens.length &&
+    leftTokens.every((token, index) => token === rightTokens[index])
+  );
+}
+
+/** Map a stored/uploaded teacher string to the canonical teachers-catalog name. */
+export function resolveTeacherNameToCatalog(
+  rawName: string | null | undefined,
+  teachers: Array<{ teacher_name: string }>
+) {
+  const raw = String(rawName ?? "").trim();
+
+  if (!raw || isTBC(raw)) {
+    return null;
+  }
+
+  const exact = teachers.find((teacher) => teacher.teacher_name === raw);
+  if (exact) {
+    return exact.teacher_name;
+  }
+
+  const fuzzy = teachers.find((teacher) =>
+    teacherDisplayNamesMatch(teacher.teacher_name, raw)
+  );
+
+  return fuzzy?.teacher_name ?? null;
 }
 
 export function normalizeStream(value?: string | null) {
