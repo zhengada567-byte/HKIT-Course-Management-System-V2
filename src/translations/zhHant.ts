@@ -20,7 +20,7 @@ export const zhHant = {
     "為所屬課程各科設定建議教師，可從名冊選擇或新增教師後儲存。",
   guidePlAcademicCalendar: "檢視本學年學習週、假期及重要日期。",
   guidePlTeacherLoading: "查閱教師在本學年的實際教學量（按科目與學期匯總）。",
-  guidePlUploadExcel: "上載科目 Excel，更新科目目錄、學生人數及建議教師等資料。",
+  guidePlUploadExcel: "上載科目 Excel，更新科目目錄及選填的學生人數欄位。",
   guidePlStudyPlan:
     "管理學生學習計劃、修讀科目與學期，並匯出計劃或檢視 Quota 報表。",
   guidePlMakeTimetable:

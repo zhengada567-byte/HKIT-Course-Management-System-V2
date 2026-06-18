@@ -24,7 +24,7 @@ export const en = {
   guidePlTeacherLoading:
     "View teachers' actual teaching load for the current academic year.",
   guidePlUploadExcel:
-    "Upload module Excel to update catalogue, enrolments, and proposed teachers.",
+    "Upload module Excel to update the module catalogue and optional enrolment columns.",
   guidePlStudyPlan:
     "Manage student study plans, modules, and terms; export plans or quota reports.",
   guidePlMakeTimetable:

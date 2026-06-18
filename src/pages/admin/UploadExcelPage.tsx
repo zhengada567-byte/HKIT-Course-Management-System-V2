@@ -14,12 +14,6 @@ import {
 } from "../../lib/moduleContactHours";
 import { parseNumberOrNull } from "../../lib/utils";
 import { upsertApprovedLoading } from "../../services/approvedLoadingService";
-import {
-  normalizeTeachingStatus,
-  parseTeacherName,
-  upsertModuleDefaultAssignments,
-  type ModuleDefaultAssignmentInput,
-} from "../../services/moduleDefaultAssignmentService";
 import { upsertModuleEnrollments } from "../../services/moduleEnrollmentService";
 import {
   normalizeModuleType,
@@ -40,8 +34,6 @@ const MODULE_UPLOAD_HEADERS = [
   "Module Term",
   "Programme Code",
   "Stream Code",
-  "Proposed Teacher",
-  "Teaching Status",
   "Uses Computer",
   "Module Teaching Contact Hours",
   "Module Tutorial Contact Hours",
@@ -54,8 +46,6 @@ const MODULE_UPLOAD_EXAMPLE_ROW = [
   "Sep",
   "HDC",
   "Cyber Security",
-  "",
-  "",
   "N",
   "",
   "",
@@ -193,17 +183,6 @@ async function uploadModuleRows(params: {
   academicYear: string;
 }) {
   const enrollmentPayload = [];
-  const defaultAssignmentPayload: ModuleDefaultAssignmentInput[] = [];
-  const teacherMap = new Map<
-    string,
-    {
-      title: string;
-      family_name: string;
-      other_name: string;
-      employment_type: EmploymentType;
-      academic_year: string;
-    }
-  >();
 
   let moduleCount = 0;
 
@@ -266,24 +245,8 @@ async function uploadModuleRows(params: {
       "actual_student_number",
     ]);
 
-    const proposedTeacher = getText(row, "Proposed Teacher", [
-      "proposed teacher",
-      "proposed_teacher",
-      "teacher",
-    ]);
-
-    const teachingStatus = normalizeTeachingStatus(
-      getText(row, "Teaching Status", [
-        "teaching status",
-        "teaching_status",
-        "ft/pt",
-      ])
-    );
-
     const hasEnrollmentColumns =
       expectedStudentNumber !== null || actualStudentNumber !== null;
-
-    const hasProposedTeacher = Boolean(proposedTeacher);
 
     const usesComputer = normalizeUsesComputerFlag(
       getText(row, "Uses Computer", [
@@ -348,48 +311,13 @@ async function uploadModuleRows(params: {
         actual_student_number: actualStudentNumber,
       });
     }
-
-    if (hasProposedTeacher) {
-      const parsedTeacher = parseTeacherName(proposedTeacher);
-
-      defaultAssignmentPayload.push({
-        academic_year: params.academicYear,
-        module_code: moduleCode,
-        module_term: moduleTerm,
-        programme_code: programmeCode,
-        stream_code: streamCode,
-        teacher_name: parsedTeacher.teacher_name,
-        teacher_title: parsedTeacher.teacher_title,
-        teacher_family_name: parsedTeacher.teacher_family_name,
-        teacher_other_name: parsedTeacher.teacher_other_name,
-        teaching_status: teachingStatus,
-        mode: "Night",
-      });
-
-      if (parsedTeacher.teacher_name.toLowerCase() !== "tbc") {
-        teacherMap.set(parsedTeacher.teacher_name, {
-          title: parsedTeacher.teacher_title ?? "",
-          family_name: parsedTeacher.teacher_family_name ?? "",
-          other_name: parsedTeacher.teacher_other_name ?? "",
-          employment_type: (teachingStatus ?? "") as EmploymentType,
-          academic_year: params.academicYear,
-        });
-      }
-    }
-  }
-
-  for (const teacher of teacherMap.values()) {
-    await upsertTeacher(teacher);
   }
 
   await upsertModuleEnrollments(enrollmentPayload);
-  await upsertModuleDefaultAssignments(defaultAssignmentPayload);
 
   return {
     modules: moduleCount,
     enrollments: enrollmentPayload.length,
-    defaultAssignments: defaultAssignmentPayload.length,
-    teachers: teacherMap.size,
   };
 }
 
@@ -589,7 +517,7 @@ export function UploadExcelPage() {
         });
 
         setMessage(
-          `Upload completed. Modules: ${result.modules}, enrollments: ${result.enrollments}, default assignments: ${result.defaultAssignments}, teachers: ${result.teachers}.`
+          `Upload completed. Modules: ${result.modules}, enrollments: ${result.enrollments}.`
         );
       }
 
@@ -794,10 +722,9 @@ export function UploadExcelPage() {
                 <code>Jun</code>. Stream Code empty is stored as <code>nil</code>.
                 Uses Computer: <code>Y</code> or <code>N</code>. Teaching /
                 Tutorial contact hours are optional (HD 36/21; UWLBS/UWLCS/WUBM
-                48/0 or 24/0; UWLC/UWLCFI 48/27; WUCS/WUAFM 24/51). Proposed Teacher
-                and Teaching Status may be left empty (filled later in timetable /
-                assignment). Student numbers are derived from study plans, not this
-                template.
+                48/0 or 24/0; UWLC/UWLCFI 48/27; WUCS/WUAFM 24/51). Set proposed
+                teachers on the Module Teacher Assignment page. Student numbers are
+                derived from study plans, not this template.
               </div>
               <div className="mt-1">
                 Admin legacy files may still include Enrollment / Actual Student
@@ -819,9 +746,7 @@ export function UploadExcelPage() {
                   <code>programme_code</code>, <code>programme_stream</code>,{" "}
                   <code>stream_abbr</code>, <code>articulation</code>,{" "}
                   <code>module code</code>, <code>module term</code>,{" "}
-                  <code>stream</code>, <code>proposed teacher</code>,{" "}
-                  <code>teaching status</code>,{" "}
-                  <code>enrollment student number</code>,{" "}
+                  <code>stream</code>, <code>enrollment student number</code>,{" "}
                   <code>actual_student_number</code>, <code>uses_computer</code>,{" "}
                   <code>module_type</code> (core/optional),{" "}
                   <code>module_teaching_contact_hours</code>,{" "}
