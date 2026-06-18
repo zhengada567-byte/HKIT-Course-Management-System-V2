@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import type { UserRole } from "../types";
 
 export const FEATURE_LOCK_SETTING_KEYS = {
   courseSearch: "lock_course_search_updates",
@@ -81,9 +82,27 @@ export function isFeatureLocked(
   return locks[LOCK_FIELD_BY_FEATURE[feature]];
 }
 
-export async function assertFeatureUpdatesAllowed(
-  feature: FeatureUpdateLockFeature
+/** Feature locks apply to programme leaders only; admin always has full control. */
+export function isFeatureUpdateBlockedForRole(
+  locks: FeatureUpdateLocks,
+  feature: FeatureUpdateLockFeature,
+  role: UserRole | null | undefined
 ) {
+  if (role === "admin") {
+    return false;
+  }
+
+  return isFeatureLocked(locks, feature);
+}
+
+export async function assertFeatureUpdatesAllowed(
+  feature: FeatureUpdateLockFeature,
+  options?: { role?: UserRole | null }
+) {
+  if (options?.role === "admin") {
+    return;
+  }
+
   const locks = await getFeatureUpdateLocks();
 
   if (isFeatureLocked(locks, feature)) {

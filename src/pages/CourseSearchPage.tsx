@@ -9,7 +9,7 @@ import { useAcademicYear } from "../contexts/AcademicYearContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useFeatureUpdateLocks } from "../contexts/FeatureUpdateLockContext";
 import { useLanguage } from "../contexts/LanguageContext";
-import { assertFeatureUpdatesAllowed } from "../services/featureLockService";
+import { assertFeatureUpdatesAllowed, isFeatureUpdateBlockedForRole } from "../services/featureLockService";
 import { formatProgrammeYearDisplay } from "../lib/programmeYear";
 import {
   normalizeModuleContactHours,
@@ -105,7 +105,11 @@ export function CourseSearchPage() {
     savingAll || Boolean(savingId) || Boolean(deletingId) || creatingModule;
 
   const canEdit = role === "programme_leader" || role === "admin";
-  const updatesLocked = locks.courseSearchLocked;
+  const updatesLocked = isFeatureUpdateBlockedForRole(
+    locks,
+    "courseSearch",
+    role
+  );
   const canManageModules =
     canEdit &&
     !updatesLocked &&
@@ -222,7 +226,7 @@ export function CourseSearchPage() {
     setMessage("");
 
     try {
-      await saveCourseSearchModule({ draft });
+      await saveCourseSearchModule({ draft, role });
 
       await loadRows();
       setMessage(`Saved module ${row.module_code}.`);
@@ -249,7 +253,7 @@ export function CourseSearchPage() {
         if (!draft) continue;
 
         try {
-          await saveCourseSearchModule({ draft });
+          await saveCourseSearchModule({ draft, role });
           savedCount += 1;
         } catch (error) {
           failures.push(
@@ -315,7 +319,7 @@ export function CourseSearchPage() {
     setMessage("");
 
     try {
-      await assertFeatureUpdatesAllowed("courseSearch");
+      await assertFeatureUpdatesAllowed("courseSearch", { role });
 
       await upsertModule({
         module_code: newModuleForm.module_code.trim(),
@@ -362,7 +366,7 @@ export function CourseSearchPage() {
     setMessage("");
 
     try {
-      await deleteCourseSearchModule(row);
+      await deleteCourseSearchModule(row, { role });
       await loadRows();
       setMessage(`Deleted module ${row.module_code}.`);
     } catch (error) {

@@ -1,4 +1,9 @@
-import { buildTeacherName, teacherDisplayNameFromRow } from "../lib/utils";
+import {
+  buildTeacherName,
+  isTBC,
+  resolveTeacherNameToCatalog,
+  teacherDisplayNameFromRow,
+} from "../lib/utils";
 import { supabase } from "../lib/supabase";
 import { assertFeatureUpdatesAllowed } from "./featureLockService";
 import { listModules } from "./moduleService";
@@ -131,6 +136,23 @@ export function moduleDefaultAssignmentKey(
   return `${moduleCode}|${normalizeDefaultAssignmentStream(streamCode)}`;
 }
 
+export function findTeacherInCatalog(
+  teachers: TeacherRow[],
+  selectedName: string
+): TeacherRow | undefined {
+  const trimmedName = String(selectedName ?? "").trim();
+
+  if (!trimmedName || isTBC(trimmedName)) {
+    return undefined;
+  }
+
+  return teachers.find(
+    (teacher) =>
+      teacherDisplayNameFromRow(teacher) === trimmedName ||
+      teacher.teacher_name === trimmedName
+  );
+}
+
 export function buildModuleDefaultAssignmentInput(params: {
   academicYear: string;
   module: Pick<
@@ -143,33 +165,34 @@ export function buildModuleDefaultAssignmentInput(params: {
   mode?: TeachingMode;
 }): ModuleDefaultAssignmentInput {
   const trimmedName = String(params.teacherName ?? "").trim() || "TBC";
-  const catalogTeacher = params.teachers.find(
-    (teacher) =>
-      teacherDisplayNameFromRow(teacher) === trimmedName ||
-      teacher.teacher_name === trimmedName
-  );
 
-  if (catalogTeacher) {
-    const employment = normalizeTeachingStatus(
-      catalogTeacher.employment_type ?? undefined
-    );
-
+  if (isTBC(trimmedName)) {
     return {
       academic_year: params.academicYear,
       module_code: params.module.module_code,
       module_term: params.module.module_term,
       programme_code: params.module.programme_code,
       stream_code: params.module.stream_code,
-      teacher_name: teacherDisplayNameFromRow(catalogTeacher),
-      teacher_title: catalogTeacher.title,
-      teacher_family_name: catalogTeacher.family_name,
-      teacher_other_name: catalogTeacher.other_name,
-      teaching_status: params.teachingStatus ?? employment ?? "PT",
+      teacher_name: "TBC",
+      teacher_title: null,
+      teacher_family_name: null,
+      teacher_other_name: null,
+      teaching_status: params.teachingStatus ?? "PT",
       mode: params.mode ?? "Night",
     };
   }
 
-  const parsed = parseTeacherName(trimmedName);
+  const catalogTeacher = findTeacherInCatalog(params.teachers, trimmedName);
+
+  if (!catalogTeacher) {
+    throw new Error(
+      `Teacher "${trimmedName}" is not in the teachers catalog. Add the teacher first, then select from the dropdown.`
+    );
+  }
+
+  const employment = normalizeTeachingStatus(
+    catalogTeacher.employment_type ?? undefined
+  );
 
   return {
     academic_year: params.academicYear,
@@ -177,11 +200,11 @@ export function buildModuleDefaultAssignmentInput(params: {
     module_term: params.module.module_term,
     programme_code: params.module.programme_code,
     stream_code: params.module.stream_code,
-    teacher_name: parsed.teacher_name,
-    teacher_title: parsed.teacher_title,
-    teacher_family_name: parsed.teacher_family_name,
-    teacher_other_name: parsed.teacher_other_name,
-    teaching_status: params.teachingStatus ?? "PT",
+    teacher_name: teacherDisplayNameFromRow(catalogTeacher),
+    teacher_title: catalogTeacher.title,
+    teacher_family_name: catalogTeacher.family_name,
+    teacher_other_name: catalogTeacher.other_name,
+    teaching_status: params.teachingStatus ?? employment ?? "PT",
     mode: params.mode ?? "Night",
   };
 }
@@ -234,7 +257,8 @@ export async function listProgrammeModuleTeacherRows(params: {
 }
 
 export function teacherNameFromAssignment(
-  assignment: ModuleDefaultAssignmentRow | null
+  assignment: ModuleDefaultAssignmentRow | null,
+  teachers: TeacherRow[] = []
 ) {
   if (!assignment) return "TBC";
 
@@ -250,9 +274,17 @@ export function teacherNameFromAssignment(
     assignment.teacher_other_name
   );
 
-  if (hasParts && built) {
-    return built;
+  const raw = hasParts && built
+    ? built
+    : String(assignment.teacher_name ?? "").trim() || "TBC";
+
+  if (isTBC(raw)) {
+    return "TBC";
   }
 
-  return String(assignment.teacher_name ?? "").trim() || "TBC";
+  if (teachers.length > 0) {
+    return resolveTeacherNameToCatalog(raw, teachers) ?? "TBC";
+  }
+
+  return raw;
 }

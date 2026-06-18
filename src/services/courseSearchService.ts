@@ -1,6 +1,7 @@
 import { normalizeProgrammeYear } from "../lib/programmeYear";
 import { supabase } from "../lib/supabase";
 import { assertFeatureUpdatesAllowed } from "./featureLockService";
+import type { UserRole } from "../types";
 import {
   deleteModule,
   normalizeModuleType,
@@ -223,8 +224,9 @@ export function buildCourseSearchDraft(row: CourseSearchRow): CourseSearchModule
 
 export async function saveCourseSearchModule(params: {
   draft: CourseSearchModuleDraft;
+  role?: UserRole | null;
 }) {
-  await assertFeatureUpdatesAllowed("courseSearch");
+  await assertFeatureUpdatesAllowed("courseSearch", { role: params.role });
 
   const { draft } = params;
   const streamCode = normalizeStream(draft.stream_code);
@@ -285,8 +287,11 @@ async function deleteModuleRelatedDefaultAssignments(module: {
 }
 
 /** Removes module master row and related enrollment / default-assignment rows. */
-export async function deleteCourseSearchModule(row: CourseSearchRow) {
-  await assertFeatureUpdatesAllowed("courseSearch");
+export async function deleteCourseSearchModule(
+  row: CourseSearchRow,
+  options?: { role?: UserRole | null }
+) {
+  await assertFeatureUpdatesAllowed("courseSearch", { role: options?.role });
 
   await deleteModuleRelatedEnrollmentRows({
     module_code: row.module_code,

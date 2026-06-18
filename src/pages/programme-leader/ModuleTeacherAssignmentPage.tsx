@@ -29,9 +29,12 @@ type ModuleTeacherDraft = {
   teachingStatus: TeachingStatus;
 };
 
-function buildDraftFromRow(row: ProgrammeModuleTeacherRow): ModuleTeacherDraft {
+function buildDraftFromRow(
+  row: ProgrammeModuleTeacherRow,
+  teachers: TeacherRow[]
+): ModuleTeacherDraft {
   return {
-    teacherName: teacherNameFromAssignment(row.assignment),
+    teacherName: teacherNameFromAssignment(row.assignment, teachers),
     teachingStatus: row.assignment?.teaching_status ?? "PT",
   };
 }
@@ -119,6 +122,8 @@ export function ModuleTeacherAssignmentPage() {
     setMessage("");
 
     try {
+      const teacherRows = await listTeachers(academicYear);
+
       const data = await listProgrammeModuleTeacherRows({
         academicYear,
         programmeCode,
@@ -126,12 +131,13 @@ export function ModuleTeacherAssignmentPage() {
         moduleTerm,
       });
 
+      setTeachers(teacherRows);
       setRows(data);
       setDrafts(
         Object.fromEntries(
           data.map((row) => [
             moduleDefaultAssignmentKey(row.module.module_code, row.module.stream_code),
-            buildDraftFromRow(row),
+            buildDraftFromRow(row, teacherRows),
           ])
         )
       );
@@ -252,7 +258,7 @@ export function ModuleTeacherAssignmentPage() {
           row.module.module_code,
           row.module.stream_code
         );
-        const draft = drafts[key] ?? buildDraftFromRow(row);
+        const draft = drafts[key] ?? buildDraftFromRow(row, teachers);
 
         return buildModuleDefaultAssignmentInput({
           academicYear,
@@ -503,7 +509,7 @@ export function ModuleTeacherAssignmentPage() {
                   row.module.module_code,
                   row.module.stream_code
                 );
-                const draft = drafts[key] ?? buildDraftFromRow(row);
+                const draft = drafts[key] ?? buildDraftFromRow(row, teachers);
 
                 return (
                   <tr key={key}>

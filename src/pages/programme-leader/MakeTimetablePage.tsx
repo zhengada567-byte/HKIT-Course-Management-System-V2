@@ -1512,13 +1512,19 @@ export function MakeTimetablePage() {
             item.teacher_name === row.teacherName
         );
 
+        if (!teacher) {
+          throw new Error(
+            `Teacher "${row.teacherName}" is not in the teachers catalog. Add the teacher first, then select from the dropdown.`
+          );
+        }
+
         const mode = (row.instance.instance_mode ||
           timetableModule.mode ||
           "Night") as TeachingMode;
 
         const draft = buildAssignmentDraftFromTeacher({
           timetableModule,
-          teacher: teacher ?? null,
+          teacher,
           useTBC: false,
           teachingStatus: row.teachingStatus,
           mode,

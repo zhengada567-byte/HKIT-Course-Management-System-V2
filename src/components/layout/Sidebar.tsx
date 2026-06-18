@@ -136,7 +136,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       label: t.uploadExcel,
       icon: Upload,
       roles: ["admin", "programme_leader"],
-      disabled: locks.uploadExcelLocked,
+      disabled: role !== "admin" && locks.uploadExcelLocked,
       disabledReason: t.featureUpdateLocksUploadExcelSidebarHint,
     },
     {
@@ -206,7 +206,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       roles: ["president"],
     },
   ],
-    [locks.uploadExcelLocked, t, teacherLoadingDisabled]
+    [locks.uploadExcelLocked, role, t, teacherLoadingDisabled]
   );
 
   const visibleItems = items.filter((item) => {

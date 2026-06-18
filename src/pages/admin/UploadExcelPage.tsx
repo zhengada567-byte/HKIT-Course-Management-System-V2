@@ -7,7 +7,7 @@ import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useFeatureUpdateLocks } from "../../contexts/FeatureUpdateLockContext";
 import { useLanguage } from "../../contexts/LanguageContext";
-import { assertFeatureUpdatesAllowed } from "../../services/featureLockService";
+import { assertFeatureUpdatesAllowed, isFeatureUpdateBlockedForRole } from "../../services/featureLockService";
 import {
   normalizeModuleContactHours,
   normalizeModuleTutorialContactHours,
@@ -398,7 +398,11 @@ export function UploadExcelPage() {
   const { academicYear } = useAcademicYear();
   const { t } = useLanguage();
   const { locks } = useFeatureUpdateLocks();
-  const uploadLocked = locks.uploadExcelLocked;
+  const uploadLocked = isFeatureUpdateBlockedForRole(
+    locks,
+    "uploadExcel",
+    role
+  );
   const canUpload = !uploadLocked;
 
   const isProgrammeLeaderOnly = role === "programme_leader";
@@ -430,7 +434,7 @@ export function UploadExcelPage() {
     }
 
     try {
-      await assertFeatureUpdatesAllowed("uploadExcel");
+      await assertFeatureUpdatesAllowed("uploadExcel", { role });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Upload is locked.");
       return;
