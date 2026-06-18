@@ -191,11 +191,13 @@ export async function listProgrammeModuleTeacherRows(params: {
   academicYear: string;
   programmeCode: string;
   streamCode?: string;
+  moduleTerm?: string;
 }): Promise<ProgrammeModuleTeacherRow[]> {
   const [modules, assignments] = await Promise.all([
     listModules({
       programme_code: params.programmeCode,
       stream_code: params.streamCode || undefined,
+      module_term: params.moduleTerm || undefined,
     }),
     listModuleDefaultAssignments({
       academicYear: params.academicYear,

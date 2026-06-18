@@ -106,6 +106,7 @@ export function buildModuleCatalogKey(
 export async function listModules(filters?: {
   programme_code?: string;
   stream_code?: string;
+  module_term?: string;
 }) {
   let query = supabase
     .from("modules")
@@ -121,6 +122,10 @@ export async function listModules(filters?: {
 
   if (filters?.stream_code) {
     query = query.eq("stream_code", normalizeStream(filters.stream_code));
+  }
+
+  if (filters?.module_term) {
+    query = query.eq("module_term", filters.module_term);
   }
 
   const { data, error } = await query;

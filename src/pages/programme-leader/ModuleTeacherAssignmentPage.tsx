@@ -20,7 +20,9 @@ import {
 import { listProgrammes } from "../../services/programmeService";
 import { listTeachers, upsertTeacher } from "../../services/teacherService";
 import { InstanceTeacherSelect } from "./make-timetable/components/InstanceTeacherSelect";
-import type { EmploymentType, ProgrammeRow, TeacherRow, TeachingStatus } from "../../types";
+import type { EmploymentType, ModuleTerm, ProgrammeRow, TeacherRow, TeachingStatus } from "../../types";
+
+const moduleTermOptions: ModuleTerm[] = ["Sep", "Feb", "Jun"];
 
 type ModuleTeacherDraft = {
   teacherName: string;
@@ -45,7 +47,7 @@ function buildEmptyTeacherForm(academicYear: string) {
 }
 
 export function ModuleTeacherAssignmentPage() {
-  const { academicYear } = useAcademicYear();
+  const { academicYear, currentOfferedTerm } = useAcademicYear();
   const { t } = useLanguage();
   const { locks } = useFeatureUpdateLocks();
   const updatesLocked = locks.moduleTeacherLocked;
@@ -54,6 +56,7 @@ export function ModuleTeacherAssignmentPage() {
   const [programmes, setProgrammes] = useState<ProgrammeRow[]>([]);
   const [programmeCode, setProgrammeCode] = useState("");
   const [streamCode, setStreamCode] = useState("");
+  const [moduleTerm, setModuleTerm] = useState<ModuleTerm>(currentOfferedTerm);
   const [rows, setRows] = useState<ProgrammeModuleTeacherRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, ModuleTeacherDraft>>({});
   const [teachers, setTeachers] = useState<TeacherRow[]>([]);
@@ -120,6 +123,7 @@ export function ModuleTeacherAssignmentPage() {
         academicYear,
         programmeCode,
         streamCode: streamCode || undefined,
+        moduleTerm,
       });
 
       setRows(data);
@@ -147,8 +151,9 @@ export function ModuleTeacherAssignmentPage() {
 
   useEffect(() => {
     setNewTeacherForm(buildEmptyTeacherForm(academicYear));
+    setModuleTerm(currentOfferedTerm);
     void loadTeachers();
-  }, [academicYear]);
+  }, [academicYear, currentOfferedTerm]);
 
   function updateDraft(
     key: string,
@@ -304,6 +309,26 @@ export function ModuleTeacherAssignmentPage() {
               {programmeCodes.map((code) => (
                 <option key={code} value={code}>
                   {code}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="w-full min-w-[9rem] flex-1 sm:max-w-[14rem]">
+            <label className="form-label">{t.moduleTerm}</label>
+            <select
+              className="form-select"
+              value={moduleTerm}
+              onChange={(event) => {
+                setModuleTerm(event.target.value as ModuleTerm);
+                setRows([]);
+                setDrafts({});
+              }}
+              disabled={isBusy}
+            >
+              {moduleTermOptions.map((term) => (
+                <option key={term} value={term}>
+                  {term}
                 </option>
               ))}
             </select>
