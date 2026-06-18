@@ -3008,7 +3008,7 @@ function AssignmentStep({
                   <option value="TBC">TBC</option>
                   {teachers.map((teacher) => (
                     <option key={teacher.id} value={teacher.id}>
-                      {teacher.teacher_name} - {teacher.employment_type ?? "-"}
+                      {teacher.teacher_name}
                     </option>
                   ))}
                 </select>

@@ -81,7 +81,7 @@ export function InstanceTeacherSelect({
 
       {teachers.map((teacher) => (
         <option key={teacher.id} value={teacher.teacher_name}>
-          {teacher.teacher_name} - {teacher.employment_type ?? "-"}
+          {teacher.teacher_name}
         </option>
       ))}
     </select>
