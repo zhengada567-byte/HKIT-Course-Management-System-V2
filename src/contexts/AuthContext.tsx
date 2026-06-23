@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { loginWithPassword } from "../lib/auth";
+import { loginStaffUser, loginWithPassword } from "../lib/auth";
 import type { AppUser, AuthSession, UserRole } from "../types";
 
 const STORAGE_KEY = "hkit_auth_session";
@@ -18,6 +18,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   role: UserRole | null;
   login: (username: string, password: string) => Promise<boolean>;
+  loginStaff: () => Promise<boolean>;
   logout: () => void;
   hasRole: (roles?: UserRole[]) => boolean;
 }
@@ -65,6 +66,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return true;
   }, []);
 
+  const loginStaff = useCallback(async () => {
+    const loggedInUser = await loginStaffUser();
+
+    if (!loggedInUser) {
+      return false;
+    }
+
+    const session: AuthSession = {
+      user: loggedInUser,
+      loginAt: new Date().toISOString(),
+    };
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    setUser(loggedInUser);
+
+    return true;
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     setUser(null);
@@ -85,10 +104,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: Boolean(user),
       role: user?.role ?? null,
       login,
+      loginStaff,
       logout,
       hasRole,
     }),
-    [user, login, logout, hasRole]
+    [user, login, loginStaff, logout, hasRole]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

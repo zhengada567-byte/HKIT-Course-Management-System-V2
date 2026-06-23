@@ -4,7 +4,7 @@ insert into public.app_users (username, role, password_hash)
 values
   ('pl', 'programme_leader', extensions.crypt('pl', extensions.gen_salt('bf'))),
   ('admin', 'admin', extensions.crypt('admin', extensions.gen_salt('bf'))),
-  ('president', 'president', extensions.crypt('president', extensions.gen_salt('bf')))
+  ('staff', 'staff', null)
 on conflict (username) do update
 set
   role = excluded.role,

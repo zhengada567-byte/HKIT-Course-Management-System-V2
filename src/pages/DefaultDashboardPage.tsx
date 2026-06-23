@@ -3,7 +3,6 @@ import {
   FileSpreadsheet,
   Gauge,
   Search,
-  ShieldCheck,
   Users,
 } from "lucide-react";
 
@@ -12,7 +11,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useAcademicYear } from "../contexts/AcademicYearContext";
 import { useLanguage } from "../contexts/LanguageContext";
 
-/** Admin and president home dashboard (unchanged). */
+/** Admin home dashboard. */
 export function DefaultDashboardPage() {
   const { user } = useAuth();
   const { academicYear, previousAcademicYear } = useAcademicYear();
@@ -46,11 +45,6 @@ export function DefaultDashboardPage() {
           ? "Available"
           : "Restricted",
       icon: FileSpreadsheet,
-    },
-    {
-      label: t.approvedLoading,
-      value: user?.role === "president" ? "Available" : "Restricted",
-      icon: ShieldCheck,
     },
   ];
 

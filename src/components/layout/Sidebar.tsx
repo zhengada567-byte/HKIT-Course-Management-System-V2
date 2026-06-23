@@ -17,7 +17,6 @@ import {
   Search,
   TableProperties,
   Upload,
-  UserCog,
   UserPen,
   UserPlus,
   Users,
@@ -77,20 +76,23 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       to: "/dashboard",
       label: t.dashboard,
       icon: LayoutDashboard,
+      roles: ["admin", "programme_leader", "staff"],
     },
     {
       to: "/admin/programmes",
       label: t.programmeManagement,
       labelByRole: {
         programme_leader: t.programmeOverview,
+        staff: t.programmeOverview,
       },
       icon: GraduationCap,
-      roles: ["admin", "programme_leader"],
+      roles: ["admin", "programme_leader", "staff"],
     },
     {
       to: "/course-search",
       label: t.courseSearch,
       icon: Search,
+      roles: ["admin", "programme_leader", "staff"],
     },
     {
       to: "/programme-leader/module-teachers",
@@ -100,14 +102,15 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
     },
     {
       to: "/academic-calendar",
-      label: "Academic Calendar",
+      label: t.academicCalendar,
       icon: CalendarDays,
-      roles: ["programme_leader", "admin"],
+      roles: ["programme_leader", "admin", "staff"],
     },
     {
       to: "/teacher-loading",
       label: t.teacherLoading,
       icon: Gauge,
+      roles: ["programme_leader", "admin"],
       disabled: teacherLoadingDisabled,
       disabledReason: checkingTeacherLoading
         ? "正在檢查教師工作量狀態..."
@@ -182,12 +185,6 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       roles: ["programme_leader", "admin"],
     },
     {
-      to: "/president/approved-loading",
-      label: t.approvedLoading,
-      icon: UserCog,
-      roles: ["president"],
-    },
-    {
       to: "/admin/feature-update-locks",
       label: t.featureUpdateLocksTitle,
       icon: Lock,
@@ -198,12 +195,6 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       label: t.passwordManagement,
       icon: KeyRound,
       roles: ["admin"],
-    },
-    {
-      to: "/president/password",
-      label: t.passwordManagement,
-      icon: KeyRound,
-      roles: ["president"],
     },
   ],
     [locks.uploadExcelLocked, role, t, teacherLoadingDisabled]

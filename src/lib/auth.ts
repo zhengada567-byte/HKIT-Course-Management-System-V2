@@ -25,3 +25,20 @@ export async function loginWithPassword(
     updated_at: data[0].updated_at,
   } as AppUser;
 }
+
+export async function loginStaffUser(): Promise<AppUser | null> {
+  const { data, error } = await supabase.rpc("login_staff_user");
+
+  if (error || !data || data.length === 0) {
+    return null;
+  }
+
+  return {
+    id: data[0].id,
+    username: data[0].username,
+    role: data[0].role,
+    password_hash: null,
+    created_at: data[0].created_at,
+    updated_at: data[0].updated_at,
+  } as AppUser;
+}

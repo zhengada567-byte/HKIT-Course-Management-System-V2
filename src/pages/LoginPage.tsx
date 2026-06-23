@@ -8,15 +8,16 @@ import type { UserRole } from "../types";
 const ROLE_OPTIONS: {
   role: UserRole;
   username: string;
-  labelKey: "programmeLeader" | "admin" | "president";
+  labelKey: "programmeLeader" | "admin" | "staff";
+  passwordless?: boolean;
 }[] = [
   { role: "programme_leader", username: "pl", labelKey: "programmeLeader" },
   { role: "admin", username: "admin", labelKey: "admin" },
-  { role: "president", username: "president", labelKey: "president" },
+  { role: "staff", username: "staff", labelKey: "staff", passwordless: true },
 ];
 
 export function LoginPage() {
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, login, loginStaff } = useAuth();
   const { language, setLanguage, t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
@@ -34,27 +35,29 @@ export function LoginPage() {
     return <Navigate to="/dashboard" replace />;
   }
 
-  const selectedUsername =
-    ROLE_OPTIONS.find((option) => option.role === selectedRole)?.username ??
-    "pl";
+  const selectedOption =
+    ROLE_OPTIONS.find((option) => option.role === selectedRole) ??
+    ROLE_OPTIONS[0];
+  const isPasswordless = Boolean(selectedOption.passwordless);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
 
     setError("");
-
-    if (!password.trim()) {
-      setError(t.passwordRequired);
-      return;
-    }
-
     setSubmitting(true);
 
     try {
-      const ok = await login(selectedUsername, password);
+    if (!isPasswordless && !password.trim()) {
+        setError(t.passwordRequired);
+        return;
+      }
+
+      const ok = isPasswordless
+        ? await loginStaff()
+        : await login(selectedOption.username, password);
 
       if (!ok) {
-        setError(t.invalidLogin);
+        setError(isPasswordless ? t.staffLoginFailed : t.invalidLogin);
         return;
       }
 
@@ -110,16 +113,22 @@ export function LoginPage() {
             </div>
           </div>
 
-          <div>
-            <label className="form-label">{t.password}</label>
-            <input
-              className="form-input"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-            />
-          </div>
+          {isPasswordless ? (
+            <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              {t.staffLoginHint}
+            </div>
+          ) : (
+            <div>
+              <label className="form-label">{t.password}</label>
+              <input
+                className="form-input"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+              />
+            </div>
+          )}
 
           {error && (
             <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">

@@ -26,9 +26,6 @@ import { DailyTimetablePage } from "../pages/admin/DailyTimetablePage";
 import { StudyPlanEnrollmentPage } from "../pages/admin/StudyPlanEnrollmentPage";
 import { FeatureUpdateLocksPage } from "../pages/admin/FeatureUpdateLocksPage";
 
-import { ApprovedLoadingPage } from "../pages/president/ApprovedLoadingPage";
-import { PresidentPasswordPage } from "../pages/president/PresidentPasswordPage";
-
 export const routes: RouteObject[] = [
   {
     path: "/login",
@@ -52,19 +49,27 @@ export const routes: RouteObject[] = [
       },
       {
         path: "course-search",
-        element: <CourseSearchPage />,
+        element: (
+          <ProtectedRoute allowedRoles={["programme_leader", "admin", "staff"]}>
+            <CourseSearchPage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: "academic-calendar",
         element: (
-          <ProtectedRoute allowedRoles={["programme_leader", "admin"]}>
+          <ProtectedRoute allowedRoles={["programme_leader", "admin", "staff"]}>
             <AcademicCalendarPage />
           </ProtectedRoute>
         ),
       },
       {
         path: "teacher-loading",
-        element: <TeacherLoadingPage />,
+        element: (
+          <ProtectedRoute allowedRoles={["programme_leader", "admin"]}>
+            <TeacherLoadingPage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: "admin/assignment-confirmation-monitor",
@@ -101,7 +106,7 @@ export const routes: RouteObject[] = [
       {
         path: "admin/programmes",
         element: (
-          <ProtectedRoute allowedRoles={["admin", "programme_leader"]}>
+          <ProtectedRoute allowedRoles={["admin", "programme_leader", "staff"]}>
             <ProgrammeManagementPage />
           </ProtectedRoute>
         ),
@@ -183,22 +188,6 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute allowedRoles={["programme_leader", "admin"]}>
             <ProgrammeLeaderDailyTimetablePage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: "president/approved-loading",
-        element: (
-          <ProtectedRoute allowedRoles={["president"]}>
-            <ApprovedLoadingPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: "president/password",
-        element: (
-          <ProtectedRoute allowedRoles={["president"]}>
-            <PresidentPasswordPage />
           </ProtectedRoute>
         ),
       },

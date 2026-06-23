@@ -27,7 +27,9 @@ export function ProgrammeManagementPage() {
   const { user, role } = useAuth();
   const { t } = useLanguage();
   const pageTitle =
-    role === "programme_leader" ? t.programmeOverview : t.programmeManagement;
+    role === "programme_leader" || role === "staff"
+      ? t.programmeOverview
+      : t.programmeManagement;
   const formRef = useRef<HTMLFormElement | null>(null);
 
   const [rows, setRows] = useState<ProgrammeRow[]>([]);
