@@ -3,10 +3,7 @@
 alter table public.app_users
   drop constraint if exists app_users_role_check;
 
-alter table public.app_users
-  add constraint app_users_role_check
-  check (role in ('programme_leader', 'admin', 'staff'));
-
+-- Migrate existing rows before adding the new role check.
 update public.app_users
 set
   username = 'staff',
@@ -21,6 +18,10 @@ on conflict (username) do update
 set
   role = 'staff',
   password_hash = null;
+
+alter table public.app_users
+  add constraint app_users_role_check
+  check (role in ('programme_leader', 'admin', 'staff'));
 
 create or replace function public.login_staff_user()
 returns table (
