@@ -43,6 +43,8 @@ export interface StudentNumberInputRow {
   academic_year: string;
   module_code: string;
   module_name: string | null;
+  /** Catalog programme year (Y1, Y2, …) — mainly for HD modules. */
+  module_year: string | null;
   /** Catalog offered term from modules / planning (Sep, Feb, Jun). */
   module_term: string | null;
   programme_code: string;
@@ -218,6 +220,7 @@ export function buildStudentNumberInputRows(
         academic_year: module.academic_year,
         module_code: module.module_code,
         module_name: module.module_name ?? null,
+        module_year: module.module_year ?? null,
         module_term: module.module_term ?? null,
         programme_code: module.programme_code,
         programme_stream: timetableStream,

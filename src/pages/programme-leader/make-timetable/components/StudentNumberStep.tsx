@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 import { DataTable } from "../../../../components/tables/DataTable";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { useLanguage } from "../../../../contexts/LanguageContext";
+import { formatProgrammeYearDisplay } from "../../../../lib/programmeYear";
 import type { PlanningModuleWithStudentNumber } from "../../../../services/timetableService";
 import type { StudentNumberInputRow } from "../../../../services/studentNumberService";
 import { renderModuleCodeAndName } from "../helpers";
@@ -19,6 +20,7 @@ export function StudentNumberStep({
   syncing = false,
   offeringBusy = false,
   programmeSelected = true,
+  showModuleYear = false,
 }: {
   rows: StudentNumberInputRow[];
   excludedModules: PlanningModuleWithStudentNumber[];
@@ -35,9 +37,143 @@ export function StudentNumberStep({
   syncing?: boolean;
   offeringBusy?: boolean;
   programmeSelected?: boolean;
+  showModuleYear?: boolean;
 }) {
   const { t } = useLanguage();
   const isBusy = syncing || offeringBusy;
+
+  const mainColumns = [
+    {
+      key: "module",
+      header: "Module",
+      render: (row: StudentNumberInputRow) => renderModuleCodeAndName(row),
+    },
+    ...(showModuleYear
+      ? [
+          {
+            key: "moduleYear",
+            header: t.moduleYear,
+            render: (row: StudentNumberInputRow) =>
+              formatProgrammeYearDisplay(row.module_year),
+          },
+        ]
+      : []),
+    {
+      key: "programme",
+      header: "Programme Code",
+      render: (row: StudentNumberInputRow) => row.programme_code,
+    },
+    {
+      key: "term",
+      header: "Term",
+      render: (row: StudentNumberInputRow) => row.module_term ?? "-",
+    },
+    {
+      key: "streams",
+      header: "Streams Included",
+      render: (row: StudentNumberInputRow) => row.streams_included.join(", "),
+    },
+    {
+      key: "expected",
+      header: "Expected Student Number",
+      render: (row: StudentNumberInputRow) => {
+        const index = rows.indexOf(row);
+
+        return (
+          <input
+            className="form-input w-28"
+            type="number"
+            min={0}
+            value={row.expected_student_number ?? ""}
+            onChange={(event) =>
+              updateRow(index, "expected_student_number", event.target.value)
+            }
+          />
+        );
+      },
+    },
+    {
+      key: "actual",
+      header: "Actual Student Number",
+      render: (row: StudentNumberInputRow) => {
+        const index = rows.indexOf(row);
+
+        return (
+          <input
+            className="form-input w-28"
+            type="number"
+            min={0}
+            value={row.actual_student_number ?? 0}
+            onChange={(event) =>
+              updateRow(index, "actual_student_number", event.target.value)
+            }
+          />
+        );
+      },
+    },
+    {
+      key: "offering",
+      header: t.action,
+      render: (row: StudentNumberInputRow) => (
+        <button
+          type="button"
+          className="btn btn-secondary py-1 text-xs"
+          disabled={isBusy || row.planning_module_ids.length === 0}
+          onClick={() => onExclude(row)}
+        >
+          {offeringBusy ? t.loading : t.excludeFromOffering}
+        </button>
+      ),
+    },
+  ];
+
+  const excludedColumns = [
+    {
+      key: "module",
+      header: "Module",
+      render: (row: PlanningModuleWithStudentNumber) =>
+        renderModuleCodeAndName(row),
+    },
+    ...(showModuleYear
+      ? [
+          {
+            key: "moduleYear",
+            header: t.moduleYear,
+            render: (row: PlanningModuleWithStudentNumber) =>
+              formatProgrammeYearDisplay(row.module_year),
+          },
+        ]
+      : []),
+    {
+      key: "programme",
+      header: "Programme Code",
+      render: (row: PlanningModuleWithStudentNumber) => row.programme_code,
+    },
+    {
+      key: "term",
+      header: "Term",
+      render: (row: PlanningModuleWithStudentNumber) => row.module_term,
+    },
+    {
+      key: "stream",
+      header: "Stream",
+      render: (row: PlanningModuleWithStudentNumber) => row.stream_code,
+    },
+    {
+      key: "action",
+      header: t.action,
+      render: (row: PlanningModuleWithStudentNumber) => (
+        <button
+          type="button"
+          className="btn btn-secondary py-1 text-xs"
+          disabled={isBusy}
+          onClick={() => onRestoreExcluded(row)}
+        >
+          {offeringBusy ? t.loading : t.restoreToOffering}
+        </button>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -62,88 +198,7 @@ export function StudentNumberStep({
           rowKey={(row) =>
             `${row.academic_year}-${row.programme_code}-${row.module_code}-${row.programme_stream}-${row.study_term}`
           }
-          columns={[
-            {
-              key: "module",
-              header: "Module",
-              render: (row) => renderModuleCodeAndName(row),
-            },
-            {
-              key: "programme",
-              header: "Programme Code",
-              render: (row) => row.programme_code,
-            },
-            {
-              key: "term",
-              header: "Term",
-              render: (row) => row.module_term ?? "-",
-            },
-            {
-              key: "streams",
-              header: "Streams Included",
-              render: (row) => row.streams_included.join(", "),
-            },
-            {
-              key: "expected",
-              header: "Expected Student Number",
-              render: (row) => {
-                const index = rows.indexOf(row);
-
-                return (
-                  <input
-                    className="form-input w-28"
-                    type="number"
-                    min={0}
-                    value={row.expected_student_number ?? ""}
-                    onChange={(event) =>
-                      updateRow(
-                        index,
-                        "expected_student_number",
-                        event.target.value
-                      )
-                    }
-                  />
-                );
-              },
-            },
-            {
-              key: "actual",
-              header: "Actual Student Number",
-              render: (row) => {
-                const index = rows.indexOf(row);
-
-                return (
-                  <input
-                    className="form-input w-28"
-                    type="number"
-                    min={0}
-                    value={row.actual_student_number ?? 0}
-                    onChange={(event) =>
-                      updateRow(
-                        index,
-                        "actual_student_number",
-                        event.target.value
-                      )
-                    }
-                  />
-                );
-              },
-            },
-            {
-              key: "offering",
-              header: t.action,
-              render: (row) => (
-                <button
-                  type="button"
-                  className="btn btn-secondary py-1 text-xs"
-                  disabled={isBusy || row.planning_module_ids.length === 0}
-                  onClick={() => onExclude(row)}
-                >
-                  {offeringBusy ? t.loading : t.excludeFromOffering}
-                </button>
-              ),
-            },
-          ]}
+          columns={mainColumns}
         />
       )}
 
@@ -156,42 +211,7 @@ export function StudentNumberStep({
             <DataTable
               rows={excludedModules}
               rowKey={(row) => row.id}
-              columns={[
-                {
-                  key: "module",
-                  header: "Module",
-                  render: (row) => renderModuleCodeAndName(row),
-                },
-                {
-                  key: "programme",
-                  header: "Programme Code",
-                  render: (row) => row.programme_code,
-                },
-                {
-                  key: "term",
-                  header: "Term",
-                  render: (row) => row.module_term,
-                },
-                {
-                  key: "stream",
-                  header: "Stream",
-                  render: (row) => row.stream_code,
-                },
-                {
-                  key: "action",
-                  header: t.action,
-                  render: (row) => (
-                    <button
-                      type="button"
-                      className="btn btn-secondary py-1 text-xs"
-                      disabled={isBusy}
-                      onClick={() => onRestoreExcluded(row)}
-                    >
-                      {offeringBusy ? t.loading : t.restoreToOffering}
-                    </button>
-                  ),
-                },
-              ]}
+              columns={excludedColumns}
             />
           </div>
         </details>

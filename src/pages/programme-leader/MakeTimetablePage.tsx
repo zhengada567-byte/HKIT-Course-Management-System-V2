@@ -83,6 +83,7 @@ import { StepTabs } from "./make-timetable/components/StepTabs";
 import { StudentNumberStep } from "./make-timetable/components/StudentNumberStep";
 import { ScheduleStep } from "./make-timetable/components/ScheduleStep";
 import { TeacherConfirmStep } from "./make-timetable/components/TeacherConfirmStep";
+import { isHDProgramme } from "./make-study-plan/helpers";
 import { resolveCombinedDefaultTeacherForGroupDetails } from "../../lib/combinedDefaultTeacher";
 import { dedupeJoinedModuleName } from "../../lib/moduleDisplay";
 import {
@@ -202,6 +203,22 @@ export function MakeTimetablePage() {
   const programmeCodes = useMemo(
     () => [...new Set(programmes.map((p) => p.programme_code))],
     [programmes]
+  );
+
+  const selectedProgrammeType = useMemo(() => {
+    if (!programmeCode) {
+      return null;
+    }
+
+    return (
+      programmes.find((programme) => programme.programme_code === programmeCode)
+        ?.programme_type ?? null
+    );
+  }, [programmes, programmeCode]);
+
+  const showModuleYear = useMemo(
+    () => isHDProgramme(programmeCode, selectedProgrammeType),
+    [programmeCode, selectedProgrammeType]
   );
 
   const scheduleInstances = useMemo(() => {
@@ -1880,6 +1897,7 @@ export function MakeTimetablePage() {
                 syncing={syncing}
                 offeringBusy={offeringBusy}
                 programmeSelected={Boolean(programmeCode)}
+                showModuleYear={showModuleYear}
               />
             </>
           )}
