@@ -179,6 +179,17 @@ export const zhHant = {
   excludedModules: "已從本年度開課清單排除",
   excludeFromOfferingConfirm:
     "從本年度開課清單移除此科？科目主檔不會刪除。",
+  moduleOfferingThisYear: "本年開課",
+  moduleOfferingYes: "開課",
+  moduleOfferingNo: "不開課",
+  teacherAvailability: "老師 Availability",
+  teacherAvailabilityNoTeachers: "載入清單內沒有老師。請選擇課程與學期後載入科目。",
+  teacherAvailabilitySelectFilters:
+    "請先選擇課程與學期並載入科目，才可編輯 Availability。",
+  teacherAvailabilitySaved: "已設定",
+  teacherAvailabilityMissing: "未設定",
+  moduleTeacherReadOnlyYear:
+    "正在檢視上一學年。擬定教師、開課與 Availability 均為唯讀。",
   selectProgrammePlaceholder: "— 請選擇課程 —",
   selectProgrammeRequired:
     "請先在第一步選擇課程，才能進入合班、分班或排課。",

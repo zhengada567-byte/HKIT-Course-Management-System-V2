@@ -200,7 +200,7 @@ export async function ensureTimetablePlanningModules(
     academicYear: normalizeAcademicYear(params.academicYear),
   };
 
-  let moduleQuery = supabase
+  let catalogQuery = supabase
     .from("modules")
     .select("*")
     .order("programme_code")
@@ -208,53 +208,47 @@ export async function ensureTimetablePlanningModules(
     .order("module_code");
 
   if (params.programmeCode) {
-    moduleQuery = moduleQuery.eq("programme_code", params.programmeCode);
+    catalogQuery = catalogQuery.eq("programme_code", params.programmeCode);
   }
 
-  if (params.moduleTerm) {
-    moduleQuery = moduleQuery.eq("module_term", params.moduleTerm);
+  let existingQuery = supabase
+    .from("timetable_planning_modules")
+    .select("*")
+    .in("academic_year", getAcademicYearVariants(params.academicYear));
+
+  if (params.programmeCode) {
+    existingQuery = existingQuery.eq("programme_code", params.programmeCode);
   }
 
-  const [
-    { data: modules, error: moduleError },
-    { data: existingPlanningModules, error: existingError },
-  ] = await Promise.all([
-    moduleQuery,
-    (() => {
-      let query = supabase
-        .from("timetable_planning_modules")
-        .select("*")
-        .in("academic_year", getAcademicYearVariants(params.academicYear));
+  const [{ data: catalogModules, error: catalogError }, { data: existingPlanningModules, error: existingError }] =
+    await Promise.all([catalogQuery, existingQuery]);
 
-      if (params.programmeCode) {
-        query = query.eq("programme_code", params.programmeCode);
-      }
-
-      if (params.moduleTerm) {
-        query = query.eq("module_term", params.moduleTerm);
-      }
-
-      return query;
-    })(),
-  ]);
-
-  if (moduleError) throw moduleError;
+  if (catalogError) throw catalogError;
   if (existingError) throw existingError;
 
-  const moduleRows = (modules ?? []) as ModuleRow[];
-  const existingRows = normalizePlanningRowsToYear(
+  const allCatalogModules = (catalogModules ?? []) as ModuleRow[];
+  const allExistingRows = normalizePlanningRowsToYear(
     (existingPlanningModules ?? []) as TimetablePlanningModuleRow[],
     params.academicYear
   );
 
-  const existingModuleIds = new Set(existingRows.map((row) => row.module_id));
+  const syncedRows = await syncPlanningModulesFromCatalog({
+    catalogModules: allCatalogModules,
+    existingRows: allExistingRows,
+  });
 
-  const missingModules = moduleRows.filter(
+  const existingModuleIds = new Set(syncedRows.map((row) => row.module_id));
+
+  const catalogModulesForTerm = params.moduleTerm
+    ? allCatalogModules.filter((module) => module.module_term === params.moduleTerm)
+    : allCatalogModules;
+
+  const missingModules = catalogModulesForTerm.filter(
     (module) => !existingModuleIds.has(module.id)
   );
 
   if (missingModules.length === 0) {
-    return existingRows;
+    return filterPlanningRowsByModuleTerm(syncedRows, params.moduleTerm);
   }
 
   const insertPayload = missingModules.map((module) => ({
@@ -281,13 +275,16 @@ export async function ensureTimetablePlanningModules(
 
   if (insertError) throw insertError;
 
-  return [
-    ...existingRows,
-    ...normalizePlanningRowsToYear(
-      (insertedRows ?? []) as TimetablePlanningModuleRow[],
-      params.academicYear
-    ),
-  ];
+  return filterPlanningRowsByModuleTerm(
+    [
+      ...syncedRows,
+      ...normalizePlanningRowsToYear(
+        (insertedRows ?? []) as TimetablePlanningModuleRow[],
+        params.academicYear
+      ),
+    ],
+    params.moduleTerm
+  );
 }
 
 
@@ -299,6 +296,86 @@ function normalizePlanningRowsToYear(
     ...row,
     academic_year: academicYear,
   }));
+}
+
+function planningRowDiffersFromCatalog(
+  row: TimetablePlanningModuleRow,
+  catalog: ModuleRow
+) {
+  return (
+    row.module_code !== catalog.module_code ||
+    row.module_name !== catalog.module_name ||
+    row.module_year !== catalog.module_year ||
+    row.module_term !== catalog.module_term ||
+    row.stream_code !== normalizeStoredStream(catalog.stream_code) ||
+    row.programme_code !== catalog.programme_code
+  );
+}
+
+function applyCatalogToPlanningRow(
+  row: TimetablePlanningModuleRow,
+  catalog: ModuleRow
+): TimetablePlanningModuleRow {
+  return {
+    ...row,
+    programme_code: catalog.programme_code,
+    stream_code: normalizeStoredStream(catalog.stream_code),
+    module_code: catalog.module_code,
+    module_name: catalog.module_name,
+    module_year: catalog.module_year,
+    module_term: catalog.module_term,
+  };
+}
+
+async function syncPlanningModulesFromCatalog(params: {
+  catalogModules: ModuleRow[];
+  existingRows: TimetablePlanningModuleRow[];
+}) {
+  const catalogById = new Map(
+    params.catalogModules.map((module) => [module.id, module])
+  );
+
+  const updates = params.existingRows
+    .map((row) => {
+      const catalog = catalogById.get(row.module_id);
+
+      if (!catalog || !planningRowDiffersFromCatalog(row, catalog)) {
+        return null;
+      }
+
+      return applyCatalogToPlanningRow(row, catalog);
+    })
+    .filter((row): row is TimetablePlanningModuleRow => row !== null);
+
+  if (updates.length === 0) {
+    return params.existingRows;
+  }
+
+  const { data, error } = await supabase
+    .from("timetable_planning_modules")
+    .upsert(updates, { onConflict: "id" })
+    .select("*");
+
+  if (error) throw error;
+
+  const updatedById = new Map(
+    ((data ?? []) as TimetablePlanningModuleRow[]).map((row) => [row.id, row])
+  );
+
+  return params.existingRows.map(
+    (row) => updatedById.get(row.id) ?? row
+  );
+}
+
+function filterPlanningRowsByModuleTerm(
+  rows: TimetablePlanningModuleRow[],
+  moduleTerm?: ModuleTerm
+) {
+  if (!moduleTerm) {
+    return rows;
+  }
+
+  return rows.filter((row) => row.module_term === moduleTerm);
 }
 
 export type PlanningModulesOfferingFilter = "active" | "excluded" | "all";

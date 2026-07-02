@@ -187,6 +187,18 @@ export const en = {
   excludedModules: "Excluded from offering list",
   excludeFromOfferingConfirm:
     "Remove this module from this year's offering list? The module catalogue row is kept.",
+  moduleOfferingThisYear: "Offer this year",
+  moduleOfferingYes: "Offered",
+  moduleOfferingNo: "Not offered",
+  teacherAvailability: "Teacher Availability",
+  teacherAvailabilityNoTeachers:
+    "No teachers on the loaded list. Select programme and term, then load modules.",
+  teacherAvailabilitySelectFilters:
+    "Select programme and term, then load modules before editing availability.",
+  teacherAvailabilitySaved: "Saved",
+  teacherAvailabilityMissing: "Not set",
+  moduleTeacherReadOnlyYear:
+    "Viewing a previous academic year. Proposed teachers, offering, and availability are read-only.",
   selectProgrammePlaceholder: "— Select programme —",
   selectProgrammeRequired:
     "Please select a programme in step 1 before continuing to combine, split, or schedule.",

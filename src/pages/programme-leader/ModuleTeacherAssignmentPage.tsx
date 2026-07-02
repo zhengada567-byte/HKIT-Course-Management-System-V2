@@ -5,9 +5,11 @@ import { FeatureUpdateLockBanner } from "../../components/admin/FeatureUpdateLoc
 import { LoadingState } from "../../components/ui/LoadingState";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
+import { useAuth } from "../../contexts/AuthContext";
 import { useFeatureUpdateLocks } from "../../contexts/FeatureUpdateLockContext";
 import { useLanguage } from "../../contexts/LanguageContext";
-import { normalizeStream, teacherDisplayNameFromRow } from "../../lib/utils";
+import { isTeacherExcludedFromScheduleDropdown } from "../../lib/timetableSchedulingRules";
+import { cn, isTBC, formatAcademicYearShort, normalizeAcademicYear, normalizeStream, teacherDisplayNameFromRow } from "../../lib/utils";
 import {
   buildModuleDefaultAssignmentInput,
   listProgrammeModuleTeacherRows,
@@ -17,9 +19,16 @@ import {
   upsertModuleDefaultAssignments,
   type ProgrammeModuleTeacherRow,
 } from "../../services/moduleDefaultAssignmentService";
+import {
+  isModuleOfferingActive,
+  loadPlanningOfferingByModuleId,
+  syncModuleOfferingsFromTeacherAssignment,
+} from "../../services/moduleTeacherOfferingService";
 import { listProgrammes } from "../../services/programmeService";
 import { listTeachers, upsertTeacher } from "../../services/teacherService";
+import { listTeacherAvailabilitySaved } from "../../services/timetableTeacherAvailabilityService";
 import { InstanceTeacherSelect } from "./make-timetable/components/InstanceTeacherSelect";
+import { TeacherAvailabilityModal } from "./make-timetable/components/TeacherAvailabilityModal";
 import type { EmploymentType, ModuleTerm, ProgrammeRow, TeacherRow, TeachingStatus } from "../../types";
 
 const moduleTermOptions: ModuleTerm[] = ["Sep", "Feb", "Jun"];
@@ -27,15 +36,18 @@ const moduleTermOptions: ModuleTerm[] = ["Sep", "Feb", "Jun"];
 type ModuleTeacherDraft = {
   teacherName: string;
   teachingStatus: TeachingStatus;
+  offering: boolean;
 };
 
 function buildDraftFromRow(
   row: ProgrammeModuleTeacherRow,
-  teachers: TeacherRow[]
+  teachers: TeacherRow[],
+  offeringActive: boolean
 ): ModuleTeacherDraft {
   return {
     teacherName: teacherNameFromAssignment(row.assignment, teachers),
     teachingStatus: row.assignment?.teaching_status ?? "PT",
+    offering: offeringActive,
   };
 }
 
@@ -49,26 +61,78 @@ function buildEmptyTeacherForm(academicYear: string) {
   };
 }
 
+function proposedTeachersFromRows(
+  rows: ProgrammeModuleTeacherRow[],
+  drafts: Record<string, ModuleTeacherDraft>,
+  teachers: TeacherRow[]
+) {
+  const names = new Set<string>();
+
+  for (const row of rows) {
+    const key = moduleDefaultAssignmentKey(
+      row.module.module_code,
+      row.module.stream_code
+    );
+    const draft = drafts[key] ?? buildDraftFromRow(row, teachers, true);
+    const teacherName = String(draft.teacherName ?? "").trim();
+
+    if (
+      !teacherName ||
+      isTBC(teacherName) ||
+      isTeacherExcludedFromScheduleDropdown(teacherName)
+    ) {
+      continue;
+    }
+
+    names.add(teacherName);
+  }
+
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
 export function ModuleTeacherAssignmentPage() {
-  const { academicYear, currentOfferedTerm } = useAcademicYear();
+  const { user } = useAuth();
+  const {
+    academicYear: currentAcademicYear,
+    previousAcademicYear,
+    currentOfferedTerm,
+  } = useAcademicYear();
   const { t } = useLanguage();
   const { locks } = useFeatureUpdateLocks();
   const updatesLocked = locks.moduleTeacherLocked;
   const canUpdateTeachers = !updatesLocked;
 
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState(currentAcademicYear);
   const [programmes, setProgrammes] = useState<ProgrammeRow[]>([]);
   const [programmeCode, setProgrammeCode] = useState("");
-  const [streamCode, setStreamCode] = useState("");
   const [moduleTerm, setModuleTerm] = useState<ModuleTerm>(currentOfferedTerm);
   const [rows, setRows] = useState<ProgrammeModuleTeacherRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, ModuleTeacherDraft>>({});
   const [teachers, setTeachers] = useState<TeacherRow[]>([]);
+  const [savedAvailabilityTeachers, setSavedAvailabilityTeachers] = useState<
+    Set<string>
+  >(() => new Set());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [creatingTeacher, setCreatingTeacher] = useState(false);
   const [showNewTeacherForm, setShowNewTeacherForm] = useState(false);
-  const [newTeacherForm, setNewTeacherForm] = useState(buildEmptyTeacherForm(academicYear));
+  const [teacherAvailabilityOpen, setTeacherAvailabilityOpen] = useState(false);
+  const [newTeacherForm, setNewTeacherForm] = useState(
+    buildEmptyTeacherForm(currentAcademicYear)
+  );
   const [message, setMessage] = useState("");
+
+  const normalizedCurrentYear = normalizeAcademicYear(currentAcademicYear);
+
+  const academicYearOptions = useMemo(
+    () => Array.from(new Set([currentAcademicYear, previousAcademicYear])),
+    [currentAcademicYear, previousAcademicYear]
+  );
+
+  const isReadOnlyYear =
+    normalizeAcademicYear(selectedAcademicYear) ===
+    normalizeAcademicYear(previousAcademicYear);
+  const canEditAssignments = !isReadOnlyYear && canUpdateTeachers;
 
   const programmeCodes = useMemo(() => {
     return Array.from(
@@ -90,26 +154,44 @@ export function ModuleTeacherAssignmentPage() {
     [teachers]
   );
 
-  const streamOptions = useMemo(() => {
-    if (!programmeCode) return [];
+  const teachersOnPage = useMemo(
+    () => proposedTeachersFromRows(rows, drafts, teachers),
+    [rows, drafts, teachers]
+  );
 
-    return Array.from(
-      new Set(
-        programmes
-          .filter((programme) => programme.programme_code === programmeCode)
-          .map((programme) => normalizeStream(programme.programme_stream))
-      )
-    ).sort();
-  }, [programmes, programmeCode]);
+  const canOpenTeacherAvailability =
+    Boolean(programmeCode && moduleTerm) && rows.length > 0 && !loading;
 
-  async function loadTeachers() {
-    const data = await listTeachers(academicYear);
+  async function loadTeachers(year = selectedAcademicYear) {
+    const data = await listTeachers(year);
     setTeachers(data);
   }
 
   async function loadProgrammes() {
     const data = await listProgrammes();
     setProgrammes(data);
+  }
+
+  async function refreshAvailabilityStatus(
+    teacherNames: string[],
+    year = selectedAcademicYear
+  ) {
+    if (teacherNames.length === 0) {
+      setSavedAvailabilityTeachers(new Set());
+      return;
+    }
+
+    const savedRows = await listTeacherAvailabilitySaved({
+      academicYear: year,
+      teacherNames,
+    });
+
+    const saved = new Set<string>();
+    for (const row of savedRows) {
+      const teacher = String(row.teacher_name ?? "").trim();
+      if (teacher) saved.add(teacher);
+    }
+    setSavedAvailabilityTeachers(saved);
   }
 
   async function loadRows() {
@@ -122,29 +204,42 @@ export function ModuleTeacherAssignmentPage() {
     setMessage("");
 
     try {
-      const teacherRows = await listTeachers(academicYear);
+      const teacherRows = await listTeachers(selectedAcademicYear);
 
       const data = await listProgrammeModuleTeacherRows({
-        academicYear,
+        academicYear: selectedAcademicYear,
         programmeCode,
-        streamCode: streamCode || undefined,
         moduleTerm,
       });
 
+      const offeringMap = await loadPlanningOfferingByModuleId({
+        academicYear: selectedAcademicYear,
+        programmeCode,
+        moduleTerm,
+      });
+
+      const nextDrafts = Object.fromEntries(
+        data.map((row) => [
+          moduleDefaultAssignmentKey(row.module.module_code, row.module.stream_code),
+          buildDraftFromRow(
+            row,
+            teacherRows,
+            isModuleOfferingActive(offeringMap, row.module.id)
+          ),
+        ])
+      );
+
       setTeachers(teacherRows);
       setRows(data);
-      setDrafts(
-        Object.fromEntries(
-          data.map((row) => [
-            moduleDefaultAssignmentKey(row.module.module_code, row.module.stream_code),
-            buildDraftFromRow(row, teacherRows),
-          ])
-        )
-      );
+      setDrafts(nextDrafts);
+
+      const teacherNames = proposedTeachersFromRows(data, nextDrafts, teacherRows);
+      await refreshAvailabilityStatus(teacherNames);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Load failed.");
       setRows([]);
       setDrafts({});
+      setSavedAvailabilityTeachers(new Set());
     } finally {
       setLoading(false);
     }
@@ -152,24 +247,28 @@ export function ModuleTeacherAssignmentPage() {
 
   useEffect(() => {
     void loadProgrammes();
-    void loadTeachers();
+    void loadTeachers(currentAcademicYear);
   }, []);
 
   useEffect(() => {
-    setNewTeacherForm(buildEmptyTeacherForm(academicYear));
     setModuleTerm(currentOfferedTerm);
-    void loadTeachers();
-  }, [academicYear, currentOfferedTerm]);
+  }, [currentOfferedTerm]);
 
-  function updateDraft(
-    key: string,
-    patch: Partial<ModuleTeacherDraft>
-  ) {
+  useEffect(() => {
+    setNewTeacherForm(buildEmptyTeacherForm(selectedAcademicYear));
+    setRows([]);
+    setDrafts({});
+    setSavedAvailabilityTeachers(new Set());
+    void loadTeachers(selectedAcademicYear);
+  }, [selectedAcademicYear]);
+
+  function updateDraft(key: string, patch: Partial<ModuleTeacherDraft>) {
     setDrafts((prev) => ({
       ...prev,
       [key]: {
         teacherName: prev[key]?.teacherName ?? "TBC",
         teachingStatus: prev[key]?.teachingStatus ?? "PT",
+        offering: prev[key]?.offering ?? true,
         ...patch,
       },
     }));
@@ -194,8 +293,12 @@ export function ModuleTeacherAssignmentPage() {
   async function handleCreateTeacher(event: React.FormEvent) {
     event.preventDefault();
 
-    if (!canUpdateTeachers) {
-      setMessage(t.featureUpdateLocksModuleTeacherBanner);
+    if (!canEditAssignments) {
+      setMessage(
+        isReadOnlyYear
+          ? t.moduleTeacherReadOnlyYear
+          : t.featureUpdateLocksModuleTeacherBanner
+      );
       return;
     }
 
@@ -213,7 +316,7 @@ export function ModuleTeacherAssignmentPage() {
         family_name: newTeacherForm.family_name.trim(),
         other_name: newTeacherForm.other_name || null,
         employment_type: newTeacherForm.employment_type || "PT",
-        academic_year: academicYear,
+        academic_year: selectedAcademicYear,
       });
 
       setTeachers((previous) => {
@@ -230,7 +333,7 @@ export function ModuleTeacherAssignmentPage() {
 
       await loadTeachers();
       setShowNewTeacherForm(false);
-      setNewTeacherForm(buildEmptyTeacherForm(academicYear));
+      setNewTeacherForm(buildEmptyTeacherForm(selectedAcademicYear));
       setMessage(
         `${created.teacher_name} 已加入教師名冊，可於下方「建議教師」下拉選單選用。`
       );
@@ -244,8 +347,17 @@ export function ModuleTeacherAssignmentPage() {
   async function handleSaveAll() {
     if (!programmeCode || rows.length === 0) return;
 
-    if (!canUpdateTeachers) {
-      setMessage(t.featureUpdateLocksModuleTeacherBanner);
+    if (!canEditAssignments) {
+      setMessage(
+        isReadOnlyYear
+          ? t.moduleTeacherReadOnlyYear
+          : t.featureUpdateLocksModuleTeacherBanner
+      );
+      return;
+    }
+
+    if (!user?.id) {
+      setMessage("Please login before saving.");
       return;
     }
 
@@ -258,10 +370,10 @@ export function ModuleTeacherAssignmentPage() {
           row.module.module_code,
           row.module.stream_code
         );
-        const draft = drafts[key] ?? buildDraftFromRow(row, teachers);
+        const draft = drafts[key] ?? buildDraftFromRow(row, teachers, true);
 
         return buildModuleDefaultAssignmentInput({
-          academicYear,
+          academicYear: selectedAcademicYear,
           module: row.module,
           teacherName: draft.teacherName,
           teachingStatus: draft.teachingStatus,
@@ -271,8 +383,27 @@ export function ModuleTeacherAssignmentPage() {
       });
 
       await upsertModuleDefaultAssignments(payload);
+      await syncModuleOfferingsFromTeacherAssignment({
+        academicYear: selectedAcademicYear,
+        programmeCode,
+        moduleTerm,
+        createdBy: user.id,
+        modules: rows.map((row) => row.module),
+        offerings: rows.map((row) => {
+          const key = moduleDefaultAssignmentKey(
+            row.module.module_code,
+            row.module.stream_code
+          );
+          const draft = drafts[key] ?? buildDraftFromRow(row, teachers, true);
+
+          return {
+            moduleId: row.module.id,
+            offering: draft.offering,
+          };
+        }),
+      });
       await loadRows();
-      setMessage(`Saved proposed teachers for ${payload.length} module(s).`);
+      setMessage(`Saved proposed teachers and offering for ${payload.length} module(s).`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed.");
     } finally {
@@ -280,8 +411,15 @@ export function ModuleTeacherAssignmentPage() {
     }
   }
 
+  async function handleTeacherAvailabilityClose() {
+    setTeacherAvailabilityOpen(false);
+    if (rows.length > 0) {
+      await refreshAvailabilityStatus(teachersOnPage);
+    }
+  }
+
   const isBusy = loading || saving || creatingTeacher;
-  const controlsDisabled = isBusy || !canUpdateTeachers;
+  const controlsDisabled = isBusy || !canEditAssignments;
 
   return (
     <div className="page-container">
@@ -296,18 +434,59 @@ export function ModuleTeacherAssignmentPage() {
         </div>
       )}
 
+      {isReadOnlyYear && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {t.moduleTeacherReadOnlyYear}
+        </div>
+      )}
+
       <FeatureUpdateLockBanner feature="moduleTeacher" locked={updatesLocked} />
 
       <div className="card mb-2">
         <div className="card-body flex flex-wrap items-end gap-3">
+          <div className="w-full min-w-[5.5rem] flex-1 sm:max-w-[7rem]">
+            <label className="form-label">{t.academicYear}</label>
+            <select
+              className={cn(
+                "form-select",
+                normalizeAcademicYear(selectedAcademicYear) === normalizedCurrentYear &&
+                  "border-blue-500 font-semibold text-blue-900 ring-2 ring-blue-200"
+              )}
+              value={selectedAcademicYear}
+              title={selectedAcademicYear}
+              onChange={(event) => {
+                setSelectedAcademicYear(event.target.value);
+                setProgrammeCode("");
+                setRows([]);
+                setDrafts({});
+              }}
+              disabled={isBusy}
+            >
+              {academicYearOptions.map((year) => {
+                const isCurrent =
+                  normalizeAcademicYear(year) === normalizedCurrentYear;
+
+                return (
+                  <option
+                    key={year}
+                    value={year}
+                    style={isCurrent ? { fontWeight: 700 } : undefined}
+                  >
+                    {formatAcademicYearShort(year)}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
           <div className="w-full min-w-[9rem] flex-1 sm:max-w-[14rem]">
             <label className="form-label">{t.programmeCode}</label>
             <select
               className="form-select"
               value={programmeCode}
+              title={t.programmeCode}
               onChange={(event) => {
                 setProgrammeCode(event.target.value);
-                setStreamCode("");
                 setRows([]);
                 setDrafts({});
               }}
@@ -327,6 +506,7 @@ export function ModuleTeacherAssignmentPage() {
             <select
               className="form-select"
               value={moduleTerm}
+              title={t.moduleTerm}
               onChange={(event) => {
                 setModuleTerm(event.target.value as ModuleTerm);
                 setRows([]);
@@ -342,24 +522,7 @@ export function ModuleTeacherAssignmentPage() {
             </select>
           </div>
 
-          <div className="w-full min-w-[9rem] flex-1 sm:max-w-[14rem]">
-            <label className="form-label">{t.programmeStream}</label>
-            <select
-              className="form-select"
-              value={streamCode}
-              onChange={(event) => setStreamCode(event.target.value)}
-              disabled={isBusy || !programmeCode}
-            >
-              <option value="">{t.allStreams}</option>
-              {streamOptions.map((stream) => (
-                <option key={stream} value={stream}>
-                  {stream}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex shrink-0 flex-nowrap items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <button
               type="button"
               className="btn btn-primary whitespace-nowrap"
@@ -367,6 +530,20 @@ export function ModuleTeacherAssignmentPage() {
               onClick={() => void loadRows()}
             >
               {loading ? t.loading : t.loadModuleTeachers}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary whitespace-nowrap"
+              disabled={!canOpenTeacherAvailability}
+              title={
+                canOpenTeacherAvailability
+                  ? t.teacherAvailability
+                  : t.teacherAvailabilitySelectFilters
+              }
+              onClick={() => setTeacherAvailabilityOpen(true)}
+            >
+              {t.teacherAvailability}
             </button>
 
             <button
@@ -393,7 +570,7 @@ export function ModuleTeacherAssignmentPage() {
         </div>
       </div>
 
-      {showNewTeacherForm && canUpdateTeachers && (
+      {showNewTeacherForm && canEditAssignments && (
         <form className="card mb-2" onSubmit={(event) => void handleCreateTeacher(event)}>
           <div className="card-body space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -458,6 +635,7 @@ export function ModuleTeacherAssignmentPage() {
                 <select
                   className="form-select"
                   value={newTeacherForm.employment_type ?? "PT"}
+                  title={t.teacherEmploymentStatus}
                   onChange={(event) =>
                     setNewTeacherForm((prev) => ({
                       ...prev,
@@ -501,6 +679,8 @@ export function ModuleTeacherAssignmentPage() {
                 <th>{t.programmeStream}</th>
                 <th>{t.proposedTeacher}</th>
                 <th>{t.teachingStatusForThisModule}</th>
+                <th>{t.moduleOfferingThisYear}</th>
+                <th>{t.teacherAvailability}</th>
               </tr>
             </thead>
             <tbody>
@@ -509,7 +689,15 @@ export function ModuleTeacherAssignmentPage() {
                   row.module.module_code,
                   row.module.stream_code
                 );
-                const draft = drafts[key] ?? buildDraftFromRow(row, teachers);
+                const draft = drafts[key] ?? buildDraftFromRow(row, teachers, true);
+                const teacherName = String(draft.teacherName ?? "").trim();
+                const showAvailabilityStatus =
+                  teacherName &&
+                  !isTBC(teacherName) &&
+                  !isTeacherExcludedFromScheduleDropdown(teacherName);
+                const availabilitySaved =
+                  showAvailabilityStatus &&
+                  savedAvailabilityTeachers.has(teacherName);
 
                 return (
                   <tr key={key}>
@@ -527,9 +715,9 @@ export function ModuleTeacherAssignmentPage() {
                       <InstanceTeacherSelect
                         value={draft.teacherName}
                         teachers={sortedTeachers}
-                        disabled={!canUpdateTeachers}
-                        onChange={(teacherName) =>
-                          handleTeacherChange(key, teacherName)
+                        disabled={!canEditAssignments}
+                        onChange={(nextTeacherName) =>
+                          handleTeacherChange(key, nextTeacherName)
                         }
                       />
                     </td>
@@ -537,7 +725,8 @@ export function ModuleTeacherAssignmentPage() {
                       <select
                         className="form-select min-w-20"
                         value={draft.teachingStatus}
-                        disabled={!canUpdateTeachers}
+                        title={t.teachingStatusForThisModule}
+                        disabled={!canEditAssignments}
                         onChange={(event) =>
                           updateDraft(key, {
                             teachingStatus: event.target.value as TeachingStatus,
@@ -548,6 +737,31 @@ export function ModuleTeacherAssignmentPage() {
                         <option value="FT">FT</option>
                       </select>
                     </td>
+                    <td>
+                      <select
+                        className="form-select min-w-28"
+                        value={draft.offering ? "yes" : "no"}
+                        title={t.moduleOfferingThisYear}
+                        disabled={!canEditAssignments}
+                        onChange={(event) =>
+                          updateDraft(key, {
+                            offering: event.target.value === "yes",
+                          })
+                        }
+                      >
+                        <option value="yes">{t.moduleOfferingYes}</option>
+                        <option value="no">{t.moduleOfferingNo}</option>
+                      </select>
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {!showAvailabilityStatus ? (
+                        <span className="text-slate-400">—</span>
+                      ) : availabilitySaved ? (
+                        <span className="text-emerald-700">{t.teacherAvailabilitySaved}</span>
+                      ) : (
+                        <span className="text-amber-700">{t.teacherAvailabilityMissing}</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -555,6 +769,14 @@ export function ModuleTeacherAssignmentPage() {
           </table>
         </TableViewport>
       )}
+
+      <TeacherAvailabilityModal
+        academicYear={selectedAcademicYear}
+        open={teacherAvailabilityOpen}
+        onClose={() => void handleTeacherAvailabilityClose()}
+        teacherNames={teachersOnPage}
+        readOnly={isReadOnlyYear}
+      />
     </div>
   );
 }

@@ -10,6 +10,20 @@ export function formatAcademicYear(startYear: number) {
   return `${startYear}/${startYear + 1}`;
 }
 
+/** Compact label for dropdowns, e.g. `2026/2027` → `26/27`. */
+export function formatAcademicYearShort(academicYear: string) {
+  const normalized = normalizeAcademicYear(academicYear);
+  const startYear = academicYearToStartYear(normalized);
+
+  if (!Number.isFinite(startYear)) {
+    return academicYear;
+  }
+
+  const startShort = String(startYear).slice(-2);
+  const endShort = String(startYear + 1).slice(-2);
+  return `${startShort}/${endShort}`;
+}
+
 export function academicYearToStartYear(academicYear: string) {
   const [start] = academicYear.split("/");
   return Number(start);

@@ -82,6 +82,7 @@ import { SplitAction } from "./make-timetable/components/SplitAction";
 import { StepTabs } from "./make-timetable/components/StepTabs";
 import { StudentNumberStep } from "./make-timetable/components/StudentNumberStep";
 import { ScheduleStep } from "./make-timetable/components/ScheduleStep";
+import { TeacherAvailabilityModal } from "./make-timetable/components/TeacherAvailabilityModal";
 import { TeacherConfirmStep } from "./make-timetable/components/TeacherConfirmStep";
 import { isHDProgramme } from "./make-study-plan/helpers";
 import { resolveCombinedDefaultTeacherForGroupDetails } from "../../lib/combinedDefaultTeacher";
@@ -199,6 +200,7 @@ export function MakeTimetablePage() {
   const [confirmingTeachers, setConfirmingTeachers] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [offeringBusy, setOfferingBusy] = useState(false);
+  const [teacherAvailabilityOpen, setTeacherAvailabilityOpen] = useState(false);
   const [message, setMessage] = useState("");
   const programmeCodes = useMemo(
     () => [...new Set(programmes.map((p) => p.programme_code))],
@@ -1790,10 +1792,19 @@ export function MakeTimetablePage() {
 
   return (
     <div className="page-container">
-      <PageHeader
-        title={t.makeTimetable}
-        description="Workflow: sync student numbers → combine → split → confirm teachers → schedule."
-      />
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <PageHeader
+          title={t.makeTimetable}
+          description="Workflow: sync student numbers → combine → split → confirm teachers → schedule."
+        />
+        <button
+          type="button"
+          className="btn btn-secondary shrink-0"
+          onClick={() => setTeacherAvailabilityOpen(true)}
+        >
+          {t.teacherAvailability}
+        </button>
+      </div>
 
       {message && (
         <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
@@ -1977,6 +1988,12 @@ export function MakeTimetablePage() {
           }}
         />
       )}
+
+      <TeacherAvailabilityModal
+        academicYear={academicYear}
+        open={teacherAvailabilityOpen}
+        onClose={() => setTeacherAvailabilityOpen(false)}
+      />
     </div>
   );
 }
