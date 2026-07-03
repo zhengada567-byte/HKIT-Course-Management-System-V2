@@ -679,6 +679,7 @@ export function ModuleTeacherAssignmentPage() {
                 <th>{t.programmeStream}</th>
                 <th>{t.proposedTeacher}</th>
                 <th>{t.teachingStatusForThisModule}</th>
+                <th>{t.moduleYear}</th>
                 <th>{t.moduleOfferingThisYear}</th>
                 <th>{t.teacherAvailability}</th>
               </tr>
@@ -736,6 +737,9 @@ export function ModuleTeacherAssignmentPage() {
                         <option value="PT">PT</option>
                         <option value="FT">FT</option>
                       </select>
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {String(row.module.module_year ?? "").trim() || "—"}
                     </td>
                     <td>
                       <select
