@@ -62,6 +62,75 @@ function sortWeeklyGridItems(items: WeeklyGridItem[]) {
   });
 }
 
+const EXPECTED_SIZE_LABEL = "Expected size";
+
+function resolveInstanceStudentNumber(
+  instance?: TimetableModuleInstanceRow | null
+) {
+  if (!instance) return null;
+
+  const expected = instance.instance_expected_size;
+  if (expected != null && expected > 0) return expected;
+
+  return null;
+}
+
+function formatInstanceStudentNumber(
+  instance?: TimetableModuleInstanceRow | null
+) {
+  const size = resolveInstanceStudentNumber(instance);
+  return size != null ? String(size) : "—";
+}
+
+function classroomCapacityHint(params: {
+  studentNumber: number | null;
+  room?: TimetableClassroomRow;
+}) {
+  const { studentNumber, room } = params;
+  if (studentNumber == null || !room) return null;
+
+  const capacity = room.room_size;
+  if (studentNumber > capacity + 10) {
+    return {
+      tone: "error" as const,
+      message: `Students ${studentNumber} exceeds room capacity ${capacity} + 10.`,
+    };
+  }
+
+  if (studentNumber > capacity) {
+    return {
+      tone: "warn" as const,
+      message: `Students ${studentNumber} is above capacity ${capacity} but within +10.`,
+    };
+  }
+
+  return {
+    tone: "ok" as const,
+    message: `Room capacity ${capacity} fits ${studentNumber} students.`,
+  };
+}
+
+function RoomCapacityHint(props: {
+  studentNumber: number | null;
+  room?: TimetableClassroomRow;
+}) {
+  const hint = classroomCapacityHint(props);
+  if (!hint) return null;
+
+  const className =
+    hint.tone === "error"
+      ? "border-red-200 bg-red-50 text-red-800"
+      : hint.tone === "warn"
+        ? "border-amber-200 bg-amber-50 text-amber-900"
+        : "border-slate-200 bg-slate-50 text-slate-700";
+
+  return (
+    <div className={`mt-1 rounded border px-2 py-1 text-xs ${className}`}>
+      {hint.message}
+    </div>
+  );
+}
+
 export function WeeklyTimetableEditor(props: {
   academicYear: string;
   term: TimetableScheduleTerm;
@@ -595,6 +664,42 @@ export function WeeklyTimetableEditor(props: {
     return set;
   }, [savedGrid, weeklyGrid]);
 
+  const editDialogInstance = useMemo(() => {
+    if (!editDialog) return null;
+    return (
+      instanceByCode.get(editDialog.item.moduleInstanceCode.toUpperCase()) ??
+      null
+    );
+  }, [editDialog, instanceByCode]);
+
+  const editDialogStudentNumber = useMemo(
+    () => resolveInstanceStudentNumber(editDialogInstance),
+    [editDialogInstance]
+  );
+
+  const editDialogSelectedRoom = useMemo(
+    () => classrooms.find((room) => room.room_code === editDialog?.roomCode),
+    [classrooms, editDialog?.roomCode]
+  );
+
+  const addDialogInstance = useMemo(() => {
+    if (!addDialog?.moduleInstanceCode.trim()) return null;
+    return (
+      instanceByCode.get(addDialog.moduleInstanceCode.trim().toUpperCase()) ??
+      null
+    );
+  }, [addDialog, instanceByCode]);
+
+  const addDialogStudentNumber = useMemo(
+    () => resolveInstanceStudentNumber(addDialogInstance),
+    [addDialogInstance]
+  );
+
+  const addDialogSelectedRoom = useMemo(
+    () => classrooms.find((room) => room.room_code === addDialog?.roomCode),
+    [addDialog?.roomCode, classrooms]
+  );
+
   return (
     <div className={isEmbedded ? "space-y-4" : "mt-3 space-y-4"}>
       {!isEmbedded && (
@@ -723,7 +828,14 @@ export function WeeklyTimetableEditor(props: {
                             className="border border-slate-200 px-2 py-2 align-top"
                           >
                             <div className="space-y-2">
-                              {items.map((item) => (
+                              {items.map((item) => {
+                                const itemInstance = instanceByCode.get(
+                                  item.moduleInstanceCode.toUpperCase()
+                                );
+                                const studentNumberLabel =
+                                  formatInstanceStudentNumber(itemInstance);
+
+                                return (
                                 <div
                                   key={`${item.roomCode}-${item.moduleInstanceCode}`}
                                   className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5"
@@ -754,6 +866,9 @@ export function WeeklyTimetableEditor(props: {
                                       </div>
                                       <div className="text-xs text-slate-600">
                                         {item.teacherName || "TBC"}
+                                      </div>
+                                      <div className="text-xs text-slate-600">
+                                        {EXPECTED_SIZE_LABEL}: {studentNumberLabel}
                                       </div>
                                     </div>
                                     <div className="flex shrink-0 flex-col gap-1">
@@ -802,7 +917,8 @@ export function WeeklyTimetableEditor(props: {
                                     </div>
                                   </div>
                                 </div>
-                              ))}
+                              );
+                              })}
 
                               <button
                                 type="button"
@@ -847,6 +963,7 @@ export function WeeklyTimetableEditor(props: {
                     <th className="px-3 py-2 text-left">Module name</th>
                     <th className="px-3 py-2 text-left">Year</th>
                     <th className="px-3 py-2 text-left">Teacher</th>
+                    <th className="px-3 py-2 text-left">{EXPECTED_SIZE_LABEL}</th>
                     <th className="px-3 py-2 text-left">Status</th>
                   </tr>
                 </thead>
@@ -854,7 +971,7 @@ export function WeeklyTimetableEditor(props: {
                   {timetableInstances.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={5}
+                        colSpan={6}
                         className="px-3 py-4 text-slate-500"
                       >
                         No module instances for this term.
@@ -883,6 +1000,9 @@ export function WeeklyTimetableEditor(props: {
                           </td>
                           <td className="px-3 py-2">
                             {row.instance_teacher_name || "TBC"}
+                          </td>
+                          <td className="px-3 py-2">
+                            {formatInstanceStudentNumber(row)}
                           </td>
                           <td className="px-3 py-2">
                             {scheduled ? (
@@ -938,6 +1058,13 @@ export function WeeklyTimetableEditor(props: {
               </div>
 
               <div>
+                <label className="form-label">{EXPECTED_SIZE_LABEL}</label>
+                <div className="form-input bg-slate-50 text-slate-700">
+                  {formatInstanceStudentNumber(editDialogInstance)}
+                </div>
+              </div>
+
+              <div>
                 <label className="form-label">Room</label>
                 <select
                   className="form-select"
@@ -956,6 +1083,10 @@ export function WeeklyTimetableEditor(props: {
                     </option>
                   ))}
                 </select>
+                <RoomCapacityHint
+                  studentNumber={editDialogStudentNumber}
+                  room={editDialogSelectedRoom}
+                />
               </div>
             </div>
 
@@ -1026,13 +1157,10 @@ export function WeeklyTimetableEditor(props: {
                 {addDialog.moduleInstanceCode.trim() && (
                   <div className="mt-1 text-xs text-slate-600">
                     {(() => {
-                      const inst = instanceByCode.get(
-                        addDialog.moduleInstanceCode.trim().toUpperCase()
-                      );
-                      if (!inst) return "Unknown instance code.";
-                      return `${inst.module_name || inst.module_code} · ${
-                        inst.instance_teacher_name || "TBC"
-                      }`;
+                      if (!addDialogInstance) return "Unknown instance code.";
+                      return `${addDialogInstance.module_name || addDialogInstance.module_code} · ${
+                        addDialogInstance.instance_teacher_name || "TBC"
+                      } · ${EXPECTED_SIZE_LABEL}: ${formatInstanceStudentNumber(addDialogInstance)}`;
                     })()}
                   </div>
                 )}
@@ -1057,6 +1185,10 @@ export function WeeklyTimetableEditor(props: {
                     </option>
                   ))}
                 </select>
+                <RoomCapacityHint
+                  studentNumber={addDialogStudentNumber}
+                  room={addDialogSelectedRoom}
+                />
               </div>
             </div>
 
