@@ -577,6 +577,7 @@ export function ScheduleStep(props: {
             classrooms={classrooms}
             preferredStartByCode={preferredStartByCode}
             startTimeOptions={startTimeOptions}
+            allowEditAllGridModules
             open={weeklyOpen}
             onOpenChange={setWeeklyOpen}
             refreshToken={weeklyRefreshToken}

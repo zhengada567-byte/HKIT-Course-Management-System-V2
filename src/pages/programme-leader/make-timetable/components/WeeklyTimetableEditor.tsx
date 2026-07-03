@@ -4,7 +4,9 @@ import { Minus, Pencil, Plus } from "lucide-react";
 import { dedupeJoinedModuleName } from "../../../../lib/moduleDisplay";
 import type { SchedulingCombineMember } from "../../../../lib/timetableSchedulingRules";
 import { useAuth } from "../../../../contexts/AuthContext";
-import type { TimetableModuleInstanceRow } from "../../../../services/timetableModuleInstanceService";
+import { listTimetableModuleInstances,
+  type TimetableModuleInstanceRow,
+} from "../../../../services/timetableModuleInstanceService";
 import { loadPlanningModulesByCombineGroupIds } from "../../../../services/splitClassService";
 import {
   buildDraftWeeklyPlacement,
@@ -75,6 +77,8 @@ export function WeeklyTimetableEditor(props: {
   refreshToken?: string | number | null;
   /** Admin: lock to all programmes, hide scope selector. */
   forceViewScopeAll?: boolean;
+  /** PL: allow edit/remove/save for any module shown on the weekly grid. */
+  allowEditAllGridModules?: boolean;
   instancePanelTitle?: string;
   instancePanelDescription?: string;
   onAfterSave?: () => void;
@@ -93,6 +97,7 @@ export function WeeklyTimetableEditor(props: {
     onOpenChange,
     refreshToken,
     forceViewScopeAll = false,
+    allowEditAllGridModules = false,
     instancePanelTitle,
     instancePanelDescription,
     onAfterSave,
@@ -100,6 +105,9 @@ export function WeeklyTimetableEditor(props: {
 
   const isEmbedded = variant === "embedded";
   const panelOpen = isEmbedded || open;
+
+  const canEditAcrossProgrammes =
+    forceViewScopeAll || allowEditAllGridModules;
 
   const [weeklyLoading, setWeeklyLoading] = useState(false);
   const [weeklyError, setWeeklyError] = useState<string | null>(null);
@@ -121,6 +129,9 @@ export function WeeklyTimetableEditor(props: {
   const [combineMembersByGroupId, setCombineMembersByGroupId] = useState<
     Map<string, SchedulingCombineMember[]>
   >(new Map());
+  const [loadedInstancesByCode, setLoadedInstancesByCode] = useState<
+    Map<string, TimetableModuleInstanceRow>
+  >(new Map());
 
   const editableInstanceCodes = useMemo(
     () =>
@@ -135,23 +146,40 @@ export function WeeklyTimetableEditor(props: {
       editableInstanceCodes.map((code) => code.toUpperCase())
     );
 
-    if (forceViewScopeAll && weeklyGrid) {
+    if (canEditAcrossProgrammes && weeklyGrid) {
       for (const placement of collectWeeklyPlacements(weeklyGrid)) {
         codes.add(placement.moduleInstanceCode.toUpperCase());
       }
     }
 
     return codes;
-  }, [editableInstanceCodes, forceViewScopeAll, weeklyGrid]);
+  }, [canEditAcrossProgrammes, editableInstanceCodes, weeklyGrid]);
 
   const instanceByCode = useMemo(() => {
     const map = new Map<string, TimetableModuleInstanceRow>();
+
+    for (const row of loadedInstancesByCode.values()) {
+      const code = String(row.module_instance_code ?? "").trim();
+      if (code) map.set(code.toUpperCase(), row);
+    }
+
     for (const row of timetableInstances) {
       const code = String(row.module_instance_code ?? "").trim();
       if (code) map.set(code.toUpperCase(), row);
     }
+
     return map;
-  }, [timetableInstances]);
+  }, [loadedInstancesByCode, timetableInstances]);
+
+  const addDialogInstanceOptions = useMemo(() => {
+    if (canEditAcrossProgrammes) {
+      return Array.from(instanceByCode.values()).sort((a, b) =>
+        a.module_instance_code.localeCompare(b.module_instance_code)
+      );
+    }
+
+    return timetableInstances;
+  }, [canEditAcrossProgrammes, instanceByCode, timetableInstances]);
 
   const loadWeeklyTimetable = useCallback(async () => {
     setWeeklyLoading(true);
@@ -160,6 +188,30 @@ export function WeeklyTimetableEditor(props: {
 
     try {
       const programmeInstanceCodes = new Set(editableInstanceCodes);
+      let termInstancesForGrid: TimetableModuleInstanceRow[] = timetableInstances;
+
+      if (canEditAcrossProgrammes) {
+        const allInstances = await listTimetableModuleInstances({ academicYear });
+        const instanceMap = new Map<string, TimetableModuleInstanceRow>();
+
+        for (const row of allInstances) {
+          if (row.module_term !== term) continue;
+          const code = String(row.module_instance_code ?? "").trim();
+          if (code) instanceMap.set(code.toUpperCase(), row);
+        }
+
+        setLoadedInstancesByCode(instanceMap);
+        termInstancesForGrid = Array.from(
+          new Map(
+            [...timetableInstances, ...instanceMap.values()].map((row) => [
+              String(row.module_instance_code ?? "").trim().toUpperCase(),
+              row,
+            ])
+          ).values()
+        );
+      } else {
+        setLoadedInstancesByCode(new Map());
+      }
 
       const sessions = await listTimetableSessions({ academicYear });
       const sessionInstanceCodes = Array.from(
@@ -232,7 +284,7 @@ export function WeeklyTimetableEditor(props: {
         term,
         sessions: filteredSessions,
         moduleByInstanceCode,
-        timetableInstances,
+        timetableInstances: termInstancesForGrid,
         preferredStartByCode,
         startTimeOptions,
         combineMembersByGroupId: membersByGroupId,
@@ -248,6 +300,7 @@ export function WeeklyTimetableEditor(props: {
     }
   }, [
     academicYear,
+    canEditAcrossProgrammes,
     editableInstanceCodes,
     preferredStartByCode,
     forceViewScopeAll,
@@ -488,11 +541,14 @@ export function WeeklyTimetableEditor(props: {
     setSaveMessage(null);
 
     try {
-      const codesToPersist = forceViewScopeAll
+      const codesToPersist = canEditAcrossProgrammes
         ? Array.from(
             new Set([
               ...editableInstanceCodes,
               ...collectWeeklyPlacements(weeklyGrid).map(
+                (row) => row.moduleInstanceCode
+              ),
+              ...collectWeeklyPlacements(savedGrid).map(
                 (row) => row.moduleInstanceCode
               ),
             ])
@@ -960,7 +1016,7 @@ export function WeeklyTimetableEditor(props: {
                   }
                 />
                 <datalist id="weekly-instance-code-options">
-                  {timetableInstances.map((row) => (
+                  {addDialogInstanceOptions.map((row) => (
                     <option
                       key={row.id}
                       value={row.module_instance_code}
