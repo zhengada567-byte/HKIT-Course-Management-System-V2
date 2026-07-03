@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Minus, Plus } from "lucide-react";
+import { Minus, Pencil, Plus } from "lucide-react";
 
 import { dedupeJoinedModuleName } from "../../../../lib/moduleDisplay";
 import type { SchedulingCombineMember } from "../../../../lib/timetableSchedulingRules";
@@ -41,7 +41,24 @@ type AddDialogState = {
   roomCode: string;
 };
 
+type EditDialogState = {
+  weekday: 1 | 2 | 3 | 4 | 5 | 6;
+  start: string;
+  end: string;
+  item: WeeklyGridItem;
+  roomCode: string;
+};
+
 type ViewScope = "all" | "programme";
+
+function sortWeeklyGridItems(items: WeeklyGridItem[]) {
+  return [...items].sort((a, b) => {
+    if (a.roomCode !== b.roomCode) {
+      return a.roomCode.localeCompare(b.roomCode);
+    }
+    return a.moduleInstanceCode.localeCompare(b.moduleInstanceCode);
+  });
+}
 
 export function WeeklyTimetableEditor(props: {
   academicYear: string;
@@ -96,6 +113,8 @@ export function WeeklyTimetableEditor(props: {
   const [cellBusyKey, setCellBusyKey] = useState<string | null>(null);
   const [addDialog, setAddDialog] = useState<AddDialogState | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
+  const [editDialog, setEditDialog] = useState<EditDialogState | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
   const [moduleMetaByCode, setModuleMetaByCode] = useState<
     Record<string, TimetableModuleRow>
   >({});
@@ -308,6 +327,76 @@ export function WeeklyTimetableEditor(props: {
     setSaveMessage(null);
   }
 
+  function openEditDialog(params: {
+    weekday: 1 | 2 | 3 | 4 | 5 | 6;
+    start: string;
+    end: string;
+    item: WeeklyGridItem;
+  }) {
+    setEditError(null);
+    setEditDialog({
+      weekday: params.weekday,
+      start: params.start,
+      end: params.end,
+      item: params.item,
+      roomCode: params.item.roomCode,
+    });
+  }
+
+  function handleConfirmEdit() {
+    if (!editDialog || !weeklyGrid) return;
+
+    const { weekday, start, end, item, roomCode } = editDialog;
+    const nextRoomCode = roomCode.trim();
+
+    if (!nextRoomCode) {
+      setEditError("Room is required.");
+      return;
+    }
+
+    if (nextRoomCode === item.roomCode) {
+      setEditDialog(null);
+      setEditError(null);
+      return;
+    }
+
+    const sk = `${start}-${end}`;
+    const existing = weeklyGrid.itemsBySlotAndWeekday[sk]?.[weekday] ?? [];
+    const others = existing.filter(
+      (row) =>
+        !(
+          row.moduleInstanceCode === item.moduleInstanceCode &&
+          row.roomCode === item.roomCode
+        )
+    );
+
+    const updatedPlacement: WeeklyGridItem = {
+      ...item,
+      roomCode: nextRoomCode,
+    };
+
+    const conflict = wouldWeeklyPlacementConflict(others, updatedPlacement);
+    if (conflict) {
+      setEditError(conflict);
+      return;
+    }
+
+    setWeeklyGrid((current) => {
+      if (!current) return current;
+
+      const next = cloneWeeklyGridState(current);
+      next.itemsBySlotAndWeekday[sk] = {
+        ...(next.itemsBySlotAndWeekday[sk] ?? {}),
+        [weekday]: sortWeeklyGridItems([...others, updatedPlacement]),
+      };
+      return next;
+    });
+
+    setEditDialog(null);
+    setEditError(null);
+    setSaveMessage(null);
+  }
+
   function openAddDialog(params: {
     weekday: 1 | 2 | 3 | 4 | 5 | 6;
     start: string;
@@ -377,12 +466,7 @@ export function WeeklyTimetableEditor(props: {
         const next = cloneWeeklyGridState(current);
         next.itemsBySlotAndWeekday[sk] = {
           ...(next.itemsBySlotAndWeekday[sk] ?? {}),
-          [addDialog.weekday]: [...existing, placement].sort((a, b) => {
-            if (a.roomCode !== b.roomCode) {
-              return a.roomCode.localeCompare(b.roomCode);
-            }
-            return a.moduleInstanceCode.localeCompare(b.moduleInstanceCode);
-          }),
+          [addDialog.weekday]: sortWeeklyGridItems([...existing, placement]),
         };
         return next;
       });
@@ -540,6 +624,12 @@ export function WeeklyTimetableEditor(props: {
             </div>
           )}
 
+          <p className="text-xs text-slate-600">
+            Use Edit to change the classroom only. To change the timeslot or teacher,
+            remove the module and add it again in the target slot (or update the
+            teacher in Step 4).
+          </p>
+
           <div className="overflow-x-auto rounded border border-slate-200">
             <table className="min-w-[980px] table-fixed border-collapse text-sm">
               <thead className="bg-slate-50">
@@ -610,27 +700,50 @@ export function WeeklyTimetableEditor(props: {
                                         {item.teacherName || "TBC"}
                                       </div>
                                     </div>
-                                    <button
-                                      type="button"
-                                      className="btn btn-secondary shrink-0 px-1.5 py-0.5 text-xs"
-                                      title="Remove module"
-                                      disabled={
-                                        Boolean(isBusy) ||
-                                        !editableInstanceCodeSet.has(
-                                          item.moduleInstanceCode.toUpperCase()
-                                        )
-                                      }
-                                      onClick={() =>
-                                        handleRemoveItem({
-                                          weekday: day.id,
-                                          start: slot.start,
-                                          end: slot.end,
-                                          item,
-                                        })
-                                      }
-                                    >
-                                      <Minus className="h-3.5 w-3.5" />
-                                    </button>
+                                    <div className="flex shrink-0 flex-col gap-1">
+                                      <button
+                                        type="button"
+                                        className="btn btn-secondary px-1.5 py-0.5 text-xs"
+                                        title="Edit classroom"
+                                        disabled={
+                                          Boolean(isBusy) ||
+                                          !editableInstanceCodeSet.has(
+                                            item.moduleInstanceCode.toUpperCase()
+                                          )
+                                        }
+                                        onClick={() =>
+                                          openEditDialog({
+                                            weekday: day.id,
+                                            start: slot.start,
+                                            end: slot.end,
+                                            item,
+                                          })
+                                        }
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn btn-secondary px-1.5 py-0.5 text-xs"
+                                        title="Remove module"
+                                        disabled={
+                                          Boolean(isBusy) ||
+                                          !editableInstanceCodeSet.has(
+                                            item.moduleInstanceCode.toUpperCase()
+                                          )
+                                        }
+                                        onClick={() =>
+                                          handleRemoveItem({
+                                            weekday: day.id,
+                                            start: slot.start,
+                                            end: slot.end,
+                                            item,
+                                          })
+                                        }
+                                      >
+                                        <Minus className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               ))}
@@ -731,6 +844,92 @@ export function WeeklyTimetableEditor(props: {
             </div>
           </div>
         </>
+      )}
+
+      {editDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-lg border bg-white p-5 shadow-lg">
+            <div className="text-base font-semibold text-slate-900">
+              Edit classroom
+            </div>
+            <div className="mt-1 text-sm text-slate-600">
+              {weekdays.find((d) => d.id === editDialog.weekday)?.label}{" "}
+              {editDialog.start}–{editDialog.end}
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="form-label">Module instance code</label>
+                <div className="form-input bg-slate-50 font-mono text-slate-700">
+                  {editDialog.item.moduleInstanceCode}
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label">Module</label>
+                <div className="form-input bg-slate-50 text-slate-700">
+                  {editDialog.item.moduleName
+                    ? dedupeJoinedModuleName(editDialog.item.moduleName)
+                    : editDialog.item.moduleCode}
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label">Teacher</label>
+                <div className="form-input bg-slate-50 text-slate-700">
+                  {editDialog.item.teacherName || "TBC"}
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label">Room</label>
+                <select
+                  className="form-select"
+                  title="Room"
+                  value={editDialog.roomCode}
+                  onChange={(event) =>
+                    setEditDialog((prev) =>
+                      prev ? { ...prev, roomCode: event.target.value } : prev
+                    )
+                  }
+                >
+                  {classrooms.map((room) => (
+                    <option key={room.room_code} value={room.room_code}>
+                      {room.room_code} ({room.room_size}
+                      {room.room_type === "computer" ? ", computer" : ""})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {editError && (
+              <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {editError}
+              </div>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setEditDialog(null);
+                  setEditError(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => handleConfirmEdit()}
+              >
+                Save classroom
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {addDialog && (
