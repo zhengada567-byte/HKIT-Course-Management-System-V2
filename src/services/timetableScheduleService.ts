@@ -38,6 +38,8 @@ export function effectiveRoomCapacity(
 
 export interface TimetableClassroomRow {
   room_code: string;
+  location: string;
+  room_number: string;
   room_size: number;
   room_type: TimetableRoomType;
 }
@@ -66,13 +68,13 @@ export type TimetableSessionStatus = TimetableSessionRow["status"];
 
 export function defaultClassroomsForHKIT(): TimetableClassroomRow[] {
   return [
-    { room_code: "SSP-101", room_size: 29, room_type: "normal" },
-    { room_code: "SSP-104", room_size: 29, room_type: "normal" },
-    { room_code: "SSP-201", room_size: 29, room_type: "normal" },
-    { room_code: "SSP-204", room_size: 29, room_type: "computer" },
-    { room_code: "SSP-203", room_size: 80, room_type: "normal" },
-    { room_code: "SSP-303", room_size: 110, room_type: "normal" },
-    { room_code: "SSP-103", room_size: 65, room_type: "computer" },
+    { room_code: "SSP-101", location: "SSP", room_number: "101", room_size: 29, room_type: "normal" },
+    { room_code: "SSP-104", location: "SSP", room_number: "104", room_size: 29, room_type: "normal" },
+    { room_code: "SSP-201", location: "SSP", room_number: "201", room_size: 29, room_type: "normal" },
+    { room_code: "SSP-204", location: "SSP", room_number: "204", room_size: 29, room_type: "computer" },
+    { room_code: "SSP-203", location: "SSP", room_number: "203", room_size: 80, room_type: "normal" },
+    { room_code: "SSP-303", location: "SSP", room_number: "303", room_size: 110, room_type: "normal" },
+    { room_code: "SSP-103", location: "SSP", room_number: "103", room_size: 65, room_type: "computer" },
   ];
 }
 
@@ -80,6 +82,8 @@ export async function ensureDefaultTimetableClassrooms() {
   const now = new Date().toISOString();
   const payload = defaultClassroomsForHKIT().map((room) => ({
     room_code: room.room_code,
+    location: room.location,
+    room_number: room.room_number,
     room_size: room.room_size,
     room_type: room.room_type,
     updated_at: now,
@@ -95,7 +99,7 @@ export async function ensureDefaultTimetableClassrooms() {
 export async function listTimetableClassrooms(): Promise<TimetableClassroomRow[]> {
   const { data, error } = await supabase
     .from("timetable_classrooms")
-    .select("room_code, room_size, room_type")
+    .select("room_code, location, room_number, room_size, room_type")
     .order("room_code", { ascending: true });
 
   if (error) {
@@ -103,7 +107,7 @@ export async function listTimetableClassrooms(): Promise<TimetableClassroomRow[]
       await ensureDefaultTimetableClassrooms();
       const { data: retryData, error: retryError } = await supabase
         .from("timetable_classrooms")
-        .select("room_code, room_size, room_type")
+        .select("room_code, location, room_number, room_size, room_type")
         .order("room_code", { ascending: true });
       if (!retryError && retryData && retryData.length > 0) {
         return retryData as TimetableClassroomRow[];
@@ -118,7 +122,7 @@ export async function listTimetableClassrooms(): Promise<TimetableClassroomRow[]
     await ensureDefaultTimetableClassrooms();
     const { data: refreshed, error: refreshError } = await supabase
       .from("timetable_classrooms")
-      .select("room_code, room_size, room_type")
+      .select("room_code, location, room_number, room_size, room_type")
       .order("room_code", { ascending: true });
 
     if (refreshError || !refreshed || refreshed.length === 0) {

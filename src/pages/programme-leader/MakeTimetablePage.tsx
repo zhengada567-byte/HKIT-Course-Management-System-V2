@@ -92,6 +92,7 @@ import { StepTabs } from "./make-timetable/components/StepTabs";
 import { StudentNumberStep } from "./make-timetable/components/StudentNumberStep";
 import { ScheduleStep } from "./make-timetable/components/ScheduleStep";
 import { TeacherAvailabilityModal } from "./make-timetable/components/TeacherAvailabilityModal";
+import { ClassroomManagementModal } from "./make-timetable/components/ClassroomManagementModal";
 import { TeacherConfirmStep } from "./make-timetable/components/TeacherConfirmStep";
 import { CrossProgrammeCombineDrawer } from "./make-timetable/components/CrossProgrammeCombineDrawer";
 import { isHDProgramme } from "./make-study-plan/helpers";
@@ -237,6 +238,8 @@ export function MakeTimetablePage() {
   const [syncing, setSyncing] = useState(false);
   const [offeringBusy, setOfferingBusy] = useState(false);
   const [teacherAvailabilityOpen, setTeacherAvailabilityOpen] = useState(false);
+  const [classroomManagementOpen, setClassroomManagementOpen] = useState(false);
+  const [classroomRefreshToken, setClassroomRefreshToken] = useState(0);
   const [message, setMessage] = useState("");
   const programmeCodes = useMemo(
     () => [...new Set(programmes.map((p) => p.programme_code))],
@@ -2169,13 +2172,22 @@ export function MakeTimetablePage() {
           title={t.makeTimetable}
           description="Workflow: sync student numbers → combine → split → confirm teachers → schedule."
         />
-        <button
-          type="button"
-          className="btn btn-secondary shrink-0"
-          onClick={() => setTeacherAvailabilityOpen(true)}
-        >
-          {t.teacherAvailability}
-        </button>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setClassroomManagementOpen(true)}
+          >
+            {t.classroomManagement}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setTeacherAvailabilityOpen(true)}
+          >
+            {t.teacherAvailability}
+          </button>
+        </div>
       </div>
 
       {message && (
@@ -2365,6 +2377,7 @@ export function MakeTimetablePage() {
               crossProgrammeInstanceCount={
                 scheduleInstances.length - plManagedScheduleInstances.length
               }
+              classroomRefreshToken={classroomRefreshToken}
             />
           )}
         </>
@@ -2389,6 +2402,13 @@ export function MakeTimetablePage() {
         academicYear={academicYear}
         open={teacherAvailabilityOpen}
         onClose={() => setTeacherAvailabilityOpen(false)}
+      />
+
+      <ClassroomManagementModal
+        academicYear={academicYear}
+        open={classroomManagementOpen}
+        onClose={() => setClassroomManagementOpen(false)}
+        onChanged={() => setClassroomRefreshToken((token) => token + 1)}
       />
 
       <CrossProgrammeCombineDrawer

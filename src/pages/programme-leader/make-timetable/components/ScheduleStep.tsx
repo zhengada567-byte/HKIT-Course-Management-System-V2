@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  defaultClassroomsForHKIT,
+  listTimetableClassrooms,
   type TimetableClassroomRow,
   type TimetableScheduleTerm,
 } from "../../../../services/timetableScheduleService";
@@ -33,6 +33,7 @@ export function ScheduleStep(props: {
   /** Timetable modules on this page (split + no-split); used for empty-state hints */
   sourceTimetableModuleCount?: number;
   crossProgrammeInstanceCount?: number;
+  classroomRefreshToken?: number;
 }) {
   const {
     academicYear,
@@ -41,12 +42,27 @@ export function ScheduleStep(props: {
     programmeCode,
     sourceTimetableModuleCount = 0,
     crossProgrammeInstanceCount = 0,
+    classroomRefreshToken = 0,
   } = props;
 
-  const classrooms = useMemo<TimetableClassroomRow[]>(
-    () => defaultClassroomsForHKIT(),
-    []
-  );
+  const [classrooms, setClassrooms] = useState<TimetableClassroomRow[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const rows = await listTimetableClassrooms();
+        if (!cancelled) setClassrooms(rows);
+      } catch {
+        if (!cancelled) setClassrooms([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [classroomRefreshToken]);
 
   const scheduleTerm = moduleTerm as TimetableScheduleTerm;
 
