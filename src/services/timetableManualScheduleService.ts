@@ -393,6 +393,66 @@ export type WeeklyGridState = {
   itemsBySlotAndWeekday: Record<string, Record<number, WeeklyGridItem[]>>;
 };
 
+function normalizeWeeklyRoomCode(value: string | null | undefined) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+export function getOccupiedRoomCodesForWeeklyCell(
+  items: WeeklyGridItem[]
+): Set<string> {
+  return new Set(
+    items.map((item) => normalizeWeeklyRoomCode(item.roomCode)).filter(Boolean)
+  );
+}
+
+export function getRemainingClassroomsForWeeklyCell(params: {
+  items: WeeklyGridItem[];
+  classrooms: TimetableClassroomRow[];
+}): TimetableClassroomRow[] {
+  const occupied = getOccupiedRoomCodesForWeeklyCell(params.items);
+
+  return params.classrooms.filter(
+    (room) => !occupied.has(normalizeWeeklyRoomCode(room.room_code))
+  );
+}
+
+/** Rooms still free on every weekday for the same timeslot row. */
+export function getRemainingClassroomsForWeeklySlotAllDays(params: {
+  grid: WeeklyGridState;
+  slotKey: string;
+  weekdays: number[];
+  classrooms: TimetableClassroomRow[];
+}): TimetableClassroomRow[] {
+  if (params.weekdays.length === 0) {
+    return params.classrooms;
+  }
+
+  let freeCodes: Set<string> | null = null;
+
+  for (const weekday of params.weekdays) {
+    const items = params.grid.itemsBySlotAndWeekday[params.slotKey]?.[weekday] ?? [];
+    const occupied = getOccupiedRoomCodesForWeeklyCell(items);
+    const freeThisDay = new Set(
+      params.classrooms
+        .map((room) => normalizeWeeklyRoomCode(room.room_code))
+        .filter((code) => code && !occupied.has(code))
+    );
+
+    if (freeCodes === null) {
+      freeCodes = freeThisDay;
+      continue;
+    }
+
+    freeCodes = new Set([...freeCodes].filter((code) => freeThisDay.has(code)));
+  }
+
+  const allowed = freeCodes ?? new Set<string>();
+
+  return params.classrooms.filter((room) =>
+    allowed.has(normalizeWeeklyRoomCode(room.room_code))
+  );
+}
+
 export type WeeklyPlacementRecord = WeeklyGridItem & {
   weekday: 1 | 2 | 3 | 4 | 5 | 6;
   start: string;

@@ -13,6 +13,8 @@ import {
   buildWeeklyTimetableGridFromSessions,
   cloneWeeklyGridState,
   collectWeeklyPlacements,
+  getRemainingClassroomsForWeeklyCell,
+  getRemainingClassroomsForWeeklySlotAllDays,
   persistWeeklyTimetableDraft,
   wouldWeeklyPlacementConflict,
   type WeeklyGridItem,
@@ -129,6 +131,47 @@ function RoomCapacityHint(props: {
       {hint.message}
     </div>
   );
+}
+
+function formatRemainingClassroomSummary(params: {
+  remaining: TimetableClassroomRow[];
+  totalCount: number;
+  label: string;
+}) {
+  const { remaining, totalCount, label } = params;
+  const usedCount = totalCount - remaining.length;
+  const roomCodes = remaining.map((room) => room.room_code).join(", ");
+
+  if (remaining.length === 0) {
+    return (
+      <div className="mt-1 text-xs font-medium text-red-700">
+        {label}: 0/{totalCount} free (full)
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mt-1 text-xs text-slate-600"
+      title={roomCodes || undefined}
+    >
+      <span className="font-medium text-slate-700">{label}:</span>{" "}
+      {remaining.length}/{totalCount} free
+      {usedCount > 0 ? ` (${usedCount} in use)` : ""}
+      {roomCodes ? ` — ${roomCodes}` : ""}
+    </div>
+  );
+}
+
+function RemainingClassroomsCellSummary(props: {
+  remaining: TimetableClassroomRow[];
+  totalCount: number;
+}) {
+  return formatRemainingClassroomSummary({
+    remaining: props.remaining,
+    totalCount: props.totalCount,
+    label: "Remaining",
+  });
 }
 
 export function WeeklyTimetableEditor(props: {
@@ -525,12 +568,16 @@ export function WeeklyTimetableEditor(props: {
     end: string;
   }) {
     setAddError(null);
+    const sk = `${params.start}-${params.end}`;
+    const items = weeklyGrid?.itemsBySlotAndWeekday[sk]?.[params.weekday] ?? [];
+    const remaining = getRemainingClassroomsForWeeklyCell({ items, classrooms });
+
     setAddDialog({
       weekday: params.weekday,
       start: params.start,
       end: params.end,
       moduleInstanceCode: "",
-      roomCode: classrooms[0]?.room_code ?? "",
+      roomCode: remaining[0]?.room_code ?? classrooms[0]?.room_code ?? "",
     });
   }
 
@@ -663,6 +710,51 @@ export function WeeklyTimetableEditor(props: {
     }
     return set;
   }, [savedGrid, weeklyGrid]);
+
+  const remainingClassroomsBySlotAndDay = useMemo(() => {
+    const map = new Map<string, TimetableClassroomRow[]>();
+    if (!weeklyGrid) {
+      return map;
+    }
+
+    const weekdayIds = weekdays.map((day) => day.id);
+
+    for (const slot of weeklyGrid.slots) {
+      const sk = `${slot.start}-${slot.end}`;
+
+      for (const day of weekdays) {
+        const items = weeklyGrid.itemsBySlotAndWeekday[sk]?.[day.id] ?? [];
+        map.set(
+          `${sk}|${day.id}`,
+          getRemainingClassroomsForWeeklyCell({ items, classrooms })
+        );
+      }
+
+      map.set(
+        `${sk}|all`,
+        getRemainingClassroomsForWeeklySlotAllDays({
+          grid: weeklyGrid,
+          slotKey: sk,
+          weekdays: weekdayIds,
+          classrooms,
+        })
+      );
+    }
+
+    return map;
+  }, [weeklyGrid, classrooms]);
+
+  const addDialogRemainingClassrooms = useMemo(() => {
+    if (!addDialog || !weeklyGrid) {
+      return classrooms;
+    }
+
+    const sk = `${addDialog.start}-${addDialog.end}`;
+    const items = weeklyGrid.itemsBySlotAndWeekday[sk]?.[addDialog.weekday] ?? [];
+    const remaining = getRemainingClassroomsForWeeklyCell({ items, classrooms });
+
+    return remaining.length > 0 ? remaining : classrooms;
+  }, [addDialog, weeklyGrid, classrooms]);
 
   const editDialogInstance = useMemo(() => {
     if (!editDialog) return null;
@@ -811,14 +903,26 @@ export function WeeklyTimetableEditor(props: {
               <tbody>
                 {weeklyGrid.slots.map((slot) => {
                   const sk = `${slot.start}-${slot.end}`;
+                  const slotRemainingAllDays =
+                    remainingClassroomsBySlotAndDay.get(`${sk}|all`) ?? classrooms;
                   return (
                     <tr key={sk}>
                       <td className="border border-slate-200 px-2 py-2 align-top font-medium">
-                        {slot.start}–{slot.end}
+                        <div>
+                          {slot.start}–{slot.end}
+                        </div>
+                        {formatRemainingClassroomSummary({
+                          remaining: slotRemainingAllDays,
+                          totalCount: classrooms.length,
+                          label: "Free all week",
+                        })}
                       </td>
                       {weekdays.map((day) => {
                         const items =
                           weeklyGrid.itemsBySlotAndWeekday[sk]?.[day.id] ?? [];
+                        const cellRemaining =
+                          remainingClassroomsBySlotAndDay.get(`${sk}|${day.id}`) ??
+                          classrooms;
                         const cellKey = `${sk}|${day.id}`;
                         const isBusy = cellBusyKey?.startsWith(`${day.id}|${slot.start}|${slot.end}`);
 
@@ -936,6 +1040,11 @@ export function WeeklyTimetableEditor(props: {
                                 <Plus className="mr-1 inline h-3.5 w-3.5" />
                                 Add
                               </button>
+
+                              <RemainingClassroomsCellSummary
+                                remaining={cellRemaining}
+                                totalCount={classrooms.length}
+                              />
                             </div>
                           </td>
                         );
@@ -1178,13 +1287,17 @@ export function WeeklyTimetableEditor(props: {
                     )
                   }
                 >
-                  {classrooms.map((room) => (
+                  {addDialogRemainingClassrooms.map((room) => (
                     <option key={room.room_code} value={room.room_code}>
                       {room.room_code} ({room.room_size}
                       {room.room_type === "computer" ? ", computer" : ""})
                     </option>
                   ))}
                 </select>
+                <RemainingClassroomsCellSummary
+                  remaining={addDialogRemainingClassrooms}
+                  totalCount={classrooms.length}
+                />
                 <RoomCapacityHint
                   studentNumber={addDialogStudentNumber}
                   room={addDialogSelectedRoom}
