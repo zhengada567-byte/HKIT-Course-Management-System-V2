@@ -10,11 +10,16 @@ import { resolveBaseModuleCodeForProgramme } from "../lib/combinedModuleCode";
 import { dedupeJoinedModuleName } from "../lib/moduleDisplay";
 import { getAcademicYearVariants, isTBC, normalizeStream } from "../lib/utils";
 import {
+  assertAdminCanMutateCrossProgrammeGroup,
+} from "../lib/crossProgrammeCombine";
+import type { UserRole } from "../types/auth";
+import {
   loadCombinedDefaultTeacherForCombineGroup,
   loadPlanningModulesByCombineGroupIds,
 } from "./splitClassService";
 import { buildModuleIdentityKey } from "./timetableService";
 import type { ModuleDefaultAssignmentRow } from "../types";
+import { isCrossProgrammeCombineGroupId } from "./manualCombineService";
 
 export type TimetableInstanceSourceType = "planning_module" | "combine_group";
 
@@ -136,11 +141,39 @@ export async function listTimetableModuleInstances(params: {
   return (data ?? []) as TimetableModuleInstanceRow[];
 }
 
-import type { UserRole } from "../types/auth";
-import { isCrossProgrammeCombineGroupId } from "./manualCombineService";
-import {
-  assertAdminCanMutateCrossProgrammeGroup,
-} from "../lib/crossProgrammeCombine";
+async function syncTimetableModuleModeForInstance(params: {
+  academicYear: string;
+  instanceId: string;
+  instanceMode: string | null;
+}) {
+  const { data: instanceData, error: instanceError } = await supabase
+    .from("timetable_module_instances")
+    .select("module_instance_code, source_combine_group_id")
+    .eq("id", params.instanceId)
+    .maybeSingle();
+
+  if (instanceError) throw instanceError;
+  if (!instanceData) return;
+
+  const instanceCode = String(instanceData.module_instance_code ?? "").trim();
+  const combineGroupId = String(instanceData.source_combine_group_id ?? "").trim();
+
+  if (!instanceCode && !combineGroupId) return;
+
+  let query = supabase
+    .from("timetable_modules")
+    .update({ mode: params.instanceMode })
+    .eq("academic_year", params.academicYear);
+
+  if (combineGroupId) {
+    query = query.eq("combine_group_id", combineGroupId);
+  } else if (instanceCode) {
+    query = query.eq("module_instance_code", instanceCode);
+  }
+
+  const { error } = await query;
+  if (error) throw error;
+}
 
 export async function upsertTimetableModuleInstances(
   rows: Array<Partial<TimetableModuleInstanceRow> & { id: string }>,
@@ -202,6 +235,25 @@ export async function upsertTimetableModuleInstances(
       .eq("id", row.id);
 
     if (error) throw error;
+
+    if (row.instance_mode !== undefined) {
+      const { data: instanceRow, error: fetchError } = await supabase
+        .from("timetable_module_instances")
+        .select("academic_year")
+        .eq("id", row.id)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+
+      const academicYear = String(instanceRow?.academic_year ?? "").trim();
+      if (academicYear) {
+        await syncTimetableModuleModeForInstance({
+          academicYear,
+          instanceId: row.id,
+          instanceMode: row.instance_mode,
+        });
+      }
+    }
   });
 
   await Promise.all(updates);
@@ -538,7 +590,7 @@ export async function ensureInstancesForTimetableModules(params: {
       fromModuleDefault: defaultTeacher,
     });
 
-    payload.push({
+    const payloadRow: Record<string, unknown> = {
       academic_year: params.academicYear,
       source_type: sourceType,
       source_planning_module_id: tm.planning_module_id ?? null,
@@ -547,9 +599,6 @@ export async function ensureInstancesForTimetableModules(params: {
       module_instance_code: instanceCode,
       module_code: moduleCodeForDefault,
       module_name: dedupeJoinedModuleName(tm.module_name) || tm.module_name,
-      // Do not overwrite PL-edited fields once set.
-      // But if an existing field is empty, backfill from timetable_modules / assignments.
-      instance_mode: existingMode ? existing!.instance_mode : (fallbackMode ? tm.mode : null),
       instance_expected_size: tm.expected_student_number ?? 0,
       instance_actual_size: tm.actual_student_number ?? null,
       instance_teacher_name: resolvedTeacher,
@@ -557,7 +606,17 @@ export async function ensureInstancesForTimetableModules(params: {
       instance_index: 1,
       created_by: params.createdBy,
       updated_at: new Date().toISOString(),
-    });
+    };
+
+    if (existingMode) {
+      payloadRow.instance_mode = existing!.instance_mode;
+    } else if (fallbackMode) {
+      payloadRow.instance_mode = tm.mode;
+    } else {
+      payloadRow.instance_mode = null;
+    }
+
+    payload.push(payloadRow);
   }
 
   if (payload.length === 0) return { createdCount: 0 };

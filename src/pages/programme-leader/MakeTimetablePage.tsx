@@ -20,10 +20,13 @@ import {
   createManualCombineGroup,
   deleteManualCombineGroup,
   getCreateNewManualCombineBlockReason,
+  getManualCombineGroupWithDetailsById,
   joinPlanningModuleToCombineGroup,
   listCrossProgrammeManualCombineGroups,
+  listCrossProgrammeCombineOrphans,
   listJoinableManualCombineGroups,
   listManualCombineGroups,
+  type CrossProgrammeCombineOrphan,
   type CrossProgrammeManualCombineGroupSummary,
   type JoinableManualCombineGroup,
   type ManualCombineGroupWithDetails,
@@ -90,6 +93,7 @@ import { StudentNumberStep } from "./make-timetable/components/StudentNumberStep
 import { ScheduleStep } from "./make-timetable/components/ScheduleStep";
 import { TeacherAvailabilityModal } from "./make-timetable/components/TeacherAvailabilityModal";
 import { TeacherConfirmStep } from "./make-timetable/components/TeacherConfirmStep";
+import { CrossProgrammeCombineDrawer } from "./make-timetable/components/CrossProgrammeCombineDrawer";
 import { isHDProgramme } from "./make-study-plan/helpers";
 import {
   formatCrossProgrammeDownstreamLabel,
@@ -186,6 +190,16 @@ export function MakeTimetablePage() {
   const [crossProgrammeGroups, setCrossProgrammeGroups] = useState<
     CrossProgrammeManualCombineGroupSummary[]
   >([]);
+
+  const [crossProgrammeOrphans, setCrossProgrammeOrphans] = useState<
+    CrossProgrammeCombineOrphan[]
+  >([]);
+
+  const [crossProgrammeDrawerGroup, setCrossProgrammeDrawerGroup] =
+    useState<CrossProgrammeManualCombineGroupSummary | null>(null);
+
+  const [crossProgrammeDrawerRefreshKey, setCrossProgrammeDrawerRefreshKey] =
+    useState(0);
 
   const [manualCombineBaseModule, setManualCombineBaseModule] =
     useState<PlanningModuleWithStudentNumber | null>(null);
@@ -298,18 +312,53 @@ export function MakeTimetablePage() {
     });
   }, [isAdmin, scheduleInstances, crossProgrammeGroupIdSet]);
 
+  const crossProgrammeOrphanCountByGroupId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const orphan of crossProgrammeOrphans) {
+      map.set(
+        orphan.target_combine_group_id,
+        (map.get(orphan.target_combine_group_id) ?? 0) + 1
+      );
+    }
+    return map;
+  }, [crossProgrammeOrphans]);
+
+  useEffect(() => {
+    if (!crossProgrammeDrawerGroup) {
+      return;
+    }
+
+    const updated = crossProgrammeGroups.find(
+      (group) => group.id === crossProgrammeDrawerGroup.id
+    );
+
+    if (updated) {
+      setCrossProgrammeDrawerGroup(updated);
+    }
+  }, [crossProgrammeGroups, crossProgrammeDrawerGroup?.id]);
+
+  const plTeachersConfirmationModules = useMemo(
+    () =>
+      sourceTimetableModules.filter(
+        (module) =>
+          !module.combine_group_id ||
+          !crossProgrammeGroupIdSet.has(module.combine_group_id)
+      ),
+    [sourceTimetableModules, crossProgrammeGroupIdSet]
+  );
+
   const teachersConfirmed = useMemo(() => {
-    if (sourceTimetableModules.length === 0) {
-      return false;
+    if (plTeachersConfirmationModules.length === 0) {
+      return true;
     }
 
     const latestByModule = buildLatestAssignmentByModuleId(assignments);
 
-    return sourceTimetableModules.every((module) => {
+    return plTeachersConfirmationModules.every((module) => {
       const assignment = latestByModule.get(module.id);
       return Boolean(assignment?.confirmed) && hasValidTeacherAssignment(assignment);
     });
-  }, [sourceTimetableModules, assignments]);
+  }, [plTeachersConfirmationModules, assignments]);
 
   useEffect(() => {
     if (prevAcademicYearRef.current !== academicYear) {
@@ -472,17 +521,25 @@ export function MakeTimetablePage() {
 
   async function refreshCrossProgrammeGroups() {
     try {
-      const groups = await listCrossProgrammeManualCombineGroups({
-        academicYear,
-        moduleTerm,
-      });
+      const [groups, orphans] = await Promise.all([
+        listCrossProgrammeManualCombineGroups({
+          academicYear,
+          moduleTerm,
+        }),
+        listCrossProgrammeCombineOrphans({
+          academicYear,
+          moduleTerm,
+        }),
+      ]);
       setCrossProgrammeGroups(groups);
+      setCrossProgrammeOrphans(orphans);
     } catch (error) {
       console.error(
         "[MakeTimetablePage] Load cross-programme combine groups failed:",
         error
       );
       setCrossProgrammeGroups([]);
+      setCrossProgrammeOrphans([]);
     }
   }
 
@@ -948,6 +1005,10 @@ export function MakeTimetablePage() {
         programmeCode,
       });
 
+      if (crossProgrammeDrawerGroup?.id === groupId) {
+        setCrossProgrammeDrawerGroup(null);
+      }
+
       setMessage("Manual combine undone. Modules can be combined again.");
     } catch (error) {
       console.error("[MakeTimetablePage] Undo manual combine failed:", error);
@@ -1010,6 +1071,92 @@ export function MakeTimetablePage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function openCrossProgrammeDrawer(group: CrossProgrammeManualCombineGroupSummary) {
+    setCrossProgrammeDrawerGroup(group);
+  }
+
+  function closeCrossProgrammeDrawer() {
+    setCrossProgrammeDrawerGroup(null);
+  }
+
+  async function refreshCrossProgrammeDrawer() {
+    await refreshCombineGroups({ programmeCode });
+    setCrossProgrammeDrawerRefreshKey((value) => value + 1);
+  }
+
+  async function handleJoinCrossProgrammeOrphan(
+    orphan: CrossProgrammeCombineOrphan
+  ): Promise<{ ok: boolean; message: string }> {
+    if (!user) {
+      const message = "Please login before joining a combine group.";
+      setMessage(message);
+      return { ok: false, message };
+    }
+
+    if (!isAdmin) {
+      const message =
+        "Cross-programme combine groups are managed by Admin only. Please contact Admin.";
+      setMessage(message);
+      return { ok: false, message };
+    }
+
+    if (orphan.target_downstream_state !== "none") {
+      const confirmed = window.confirm(
+        `Join ${orphan.programme_code} / ${orphan.module_code} to ${orphan.target_combined_code}?\n\n` +
+          "This will clear all weekly/daily timetable sessions, split results, module instances, and teaching assignments (including confirmed assignments) for the entire combine group.\n\n" +
+          "After joining, please re-run Split, Teachers, and Schedule for this combine group."
+      );
+
+      if (!confirmed) {
+        return { ok: false, message: "Join cancelled." };
+      }
+    }
+
+    setMessage("");
+
+    try {
+      const result = await joinPlanningModuleToCombineGroup({
+        planningModuleId: orphan.planning_module_id,
+        combineGroupId: orphan.target_combine_group_id,
+        actorRole: user.role,
+        updatedBy: user.id,
+      });
+
+      await refreshPlanning();
+      await refreshCombineGroups({ programmeCode });
+
+      if (step === "split" || step === "schedule") {
+        await refreshTimetableAndAssignments({ programmeCode });
+      }
+
+      if (crossProgrammeDrawerGroup?.id === orphan.target_combine_group_id) {
+        setCrossProgrammeDrawerRefreshKey((value) => value + 1);
+      }
+
+      const message = result.didResetDownstream
+        ? `Joined ${result.group.combined_code}. Schedule and split were cleared for this combine group. Please re-run Split, Teachers, and Schedule.`
+        : `Joined ${result.group.combined_code}.`;
+      setMessage(message);
+      return { ok: true, message };
+    } catch (error) {
+      console.error("[MakeTimetablePage] Join cross-programme orphan failed:", error);
+      const message =
+        error instanceof Error ? error.message : "Join cross-programme orphan failed";
+      setMessage(message);
+      return { ok: false, message };
+    }
+  }
+
+  async function handleUndoCrossProgrammeGroupFromDrawer(groupId: string) {
+    const confirmed = window.confirm(
+      "Undo this cross-programme combine group? Modules will be separated and can be recombined later."
+    );
+    if (!confirmed) return;
+
+    closeCrossProgrammeDrawer();
+    await handleUndoCombinedGroup(groupId);
   }
 
   async function handleUndoAllCombinedGroupsOnPage() {
@@ -1266,15 +1413,17 @@ export function MakeTimetablePage() {
   async function handleCreateCombinedSplit(
     group: CombineGroupRow,
     numberOfClasses: number
-  ) {
+  ): Promise<{ ok: boolean; message: string }> {
     if (!user) {
-      setMessage("Please login before confirming combined split.");
-      return;
+      const message = "Please login before confirming combined split.";
+      setMessage(message);
+      return { ok: false, message };
     }
 
     if (!Number.isFinite(numberOfClasses) || numberOfClasses < 1) {
-      setMessage("Please enter a valid number of classes.");
-      return;
+      const message = "Please enter a valid number of classes.";
+      setMessage(message);
+      return { ok: false, message };
     }
 
     setLoading(true);
@@ -1282,7 +1431,9 @@ export function MakeTimetablePage() {
 
     try {
       const fetched = await getPlanningModulesForCombineGroup(group.id);
-      const groupWithDetails = manualGroups.find((item) => item.id === group.id);
+      const groupWithDetails =
+        manualGroups.find((item) => item.id === group.id) ??
+        (await getManualCombineGroupWithDetailsById(group.id));
 
       const allPlanningWithDefaults =
         await listAllPlanningModulesWithStudentNumbers({
@@ -1332,27 +1483,26 @@ export function MakeTimetablePage() {
           "[MakeTimetablePage] Ensure instances after combined split failed:",
           error
         );
-        setMessage(
-          "Combined split confirmed, but instance table is not ready. Please run migration 014_timetable_module_instances.sql in Supabase, then refresh."
-        );
+        const message =
+          "Combined split confirmed, but instance table is not ready. Please run migration 014_timetable_module_instances.sql in Supabase, then refresh.";
+        setMessage(message);
+        return { ok: false, message };
       }
 
       await refreshPlanning();
+      await refreshCombineGroups({ programmeCode });
+      await refreshTimetableAndAssignments({ programmeCode });
 
-      await refreshCombineGroups({
-        programmeCode,
-      });
-
-      await refreshTimetableAndAssignments({
-        programmeCode,
-      });
-
-      setMessage(
-        "Combined split decision confirmed. Default assignments have been created."
-      );
+      const message =
+        "Combined split decision confirmed. Default assignments have been created.";
+      setMessage(message);
+      return { ok: true, message };
     } catch (error) {
       console.error("[MakeTimetablePage] Combined split failed:", error);
-      setMessage(error instanceof Error ? error.message : "Combined split failed");
+      const message =
+        error instanceof Error ? error.message : "Combined split failed";
+      setMessage(message);
+      return { ok: false, message };
     } finally {
       setLoading(false);
     }
@@ -1420,7 +1570,9 @@ export function MakeTimetablePage() {
       );
 
       const pendingCombinedGroups = latestManualGroups.filter(
-        (group) => !decidedCombineGroupIds.has(group.id)
+        (group) =>
+          !decidedCombineGroupIds.has(group.id) &&
+          !crossProgrammeGroupIdSet.has(group.id)
       );
 
       const pendingSingleModules = latestPlanningModules.filter(
@@ -1694,19 +1846,21 @@ export function MakeTimetablePage() {
       instance: TimetableModuleInstanceRow;
       teacherName: string;
       teachingStatus: TeachingStatus;
-    }>
-  ) {
+    }>,
+    scopeSourceTimetableModules: TimetableModuleRow[] = sourceTimetableModules,
+    options?: { navigateToSchedule?: boolean }
+  ): Promise<{ ok: boolean; message: string }> {
     if (!user) {
-      setMessage("Please login before confirming teachers.");
-      return;
+      const message = "Please login before confirming teachers.";
+      setMessage(message);
+      return { ok: false, message };
     }
 
     const tbcRows = rows.filter((row) => isTBC(row.teacherName));
     if (tbcRows.length > 0) {
-      setMessage(
-        `Please assign a teacher for all instances (${tbcRows.length} still TBC).`
-      );
-      return;
+      const message = `Please assign a teacher for all instances (${tbcRows.length} still TBC).`;
+      setMessage(message);
+      return { ok: false, message };
     }
 
     setConfirmingTeachers(true);
@@ -1722,7 +1876,7 @@ export function MakeTimetablePage() {
       );
 
       for (const row of rows) {
-        const timetableModule = sourceTimetableModules.find(
+        const timetableModule = scopeSourceTimetableModules.find(
           (module) =>
             module.module_instance_code === row.instance.module_instance_code
         );
@@ -1763,7 +1917,9 @@ export function MakeTimetablePage() {
         });
       }
 
-      const pageTimetableModuleIds = sourceTimetableModules.map((module) => module.id);
+      const pageTimetableModuleIds = scopeSourceTimetableModules.map(
+        (module) => module.id
+      );
 
       const result = await confirmAssignments({
         academicYear,
@@ -1775,15 +1931,20 @@ export function MakeTimetablePage() {
         programmeCode,
       });
 
-      setStep("schedule");
-      setMessage(
-        `All teachers confirmed (version ${result.confirmedVersion}). Continue to scheduling.`
-      );
+      const message = `All teachers confirmed (version ${result.confirmedVersion}).`;
+      if (options?.navigateToSchedule !== false) {
+        setStep("schedule");
+        setMessage(`${message} Continue to scheduling.`);
+      } else {
+        setMessage(message);
+      }
+      return { ok: true, message };
     } catch (error) {
       console.error("[MakeTimetablePage] Confirm all teachers failed:", error);
-      setMessage(
-        error instanceof Error ? error.message : "Confirm all teachers failed"
-      );
+      const message =
+        error instanceof Error ? error.message : "Confirm all teachers failed";
+      setMessage(message);
+      return { ok: false, message };
     } finally {
       setConfirmingTeachers(false);
     }
@@ -2020,8 +2181,10 @@ export function MakeTimetablePage() {
 
       <CrossProgrammeCombinePanel
         groups={crossProgrammeGroups}
+        orphanCountByGroupId={crossProgrammeOrphanCountByGroupId}
         isAdmin={isAdmin}
         programmeCode={programmeCode || undefined}
+        onOpenGroup={openCrossProgrammeDrawer}
       />
 
       <div className="card mb-4">
@@ -2176,7 +2339,11 @@ export function MakeTimetablePage() {
               teachers={teachers}
               programmeCode={programmeCode || undefined}
               confirming={confirmingTeachers}
-              onConfirmAllTeachers={handleConfirmAllTeachers}
+              onConfirmAllTeachers={(rows) =>
+                handleConfirmAllTeachers(rows, sourceTimetableModules, {
+                  navigateToSchedule: true,
+                })
+              }
               crossProgrammeInstanceCount={
                 scheduleInstances.length - plManagedScheduleInstances.length
               }
@@ -2218,18 +2385,52 @@ export function MakeTimetablePage() {
         open={teacherAvailabilityOpen}
         onClose={() => setTeacherAvailabilityOpen(false)}
       />
+
+      <CrossProgrammeCombineDrawer
+        open={Boolean(crossProgrammeDrawerGroup)}
+        academicYear={academicYear}
+        groupSummary={crossProgrammeDrawerGroup}
+        refreshKey={crossProgrammeDrawerRefreshKey}
+        isAdmin={isAdmin}
+        teachers={teachers}
+        onClose={closeCrossProgrammeDrawer}
+        onJoinOrphan={handleJoinCrossProgrammeOrphan}
+        onUndoCombine={(groupId) =>
+          void handleUndoCrossProgrammeGroupFromDrawer(groupId)
+        }
+        onCombinedSplit={handleCreateCombinedSplit}
+        onSaveInstanceEdits={async (rows) => {
+          await upsertTimetableModuleInstances(rows, {
+            actorRole: user?.role,
+          });
+          await refreshTimetableAndAssignments({ programmeCode });
+        }}
+        onConfirmTeachers={(rows, scopeSourceTimetableModules) =>
+          handleConfirmAllTeachers(rows, scopeSourceTimetableModules, {
+            navigateToSchedule: false,
+          })
+        }
+        onUndoSplit={async (row) => {
+          await handleUndoTimetableModule(row);
+        }}
+        onRefresh={refreshCrossProgrammeDrawer}
+      />
     </div>
   );
 }
 
 function CrossProgrammeCombinePanel({
   groups,
+  orphanCountByGroupId,
   isAdmin,
   programmeCode,
+  onOpenGroup,
 }: {
   groups: CrossProgrammeManualCombineGroupSummary[];
+  orphanCountByGroupId: Map<string, number>;
   isAdmin: boolean;
   programmeCode?: string;
+  onOpenGroup: (group: CrossProgrammeManualCombineGroupSummary) => void;
 }) {
   if (groups.length === 0) {
     return null;
@@ -2246,8 +2447,8 @@ function CrossProgrammeCombinePanel({
       </div>
       <div className="mt-1 text-sm text-violet-900">
         {isAdmin
-          ? "These groups span multiple programmes. Split, mode, teachers, and scheduling for them are managed here as Admin."
-          : "These groups span multiple programmes and are managed by Admin only. Programme Leaders can view status below but cannot change split, mode, teachers, or schedule for them."}
+          ? "These groups span multiple programmes. Join orphans here, then use the drawer tabs for Split, Teachers, and Schedule."
+          : "These groups span multiple programmes and are managed by Admin. Maintain your programme student numbers in Step 1; split/teachers/schedule for cross-programme groups are not in Steps 3–5."}
       </div>
 
       <div className="mt-3 overflow-x-auto">
@@ -2272,6 +2473,9 @@ function CrossProgrammeCombinePanel({
               <th className="border border-violet-200 bg-violet-100/80 px-2 py-2 text-left">
                 Status
               </th>
+              <th className="border border-violet-200 bg-violet-100/80 px-2 py-2 text-left">
+                Orphans
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -2279,6 +2483,7 @@ function CrossProgrammeCombinePanel({
               const isRelevant =
                 !programmeCode ||
                 group.member_programme_codes.includes(programmeCode);
+              const orphanCount = orphanCountByGroupId.get(group.id) ?? 0;
 
               return (
                 <tr
@@ -2286,7 +2491,13 @@ function CrossProgrammeCombinePanel({
                   className={isRelevant ? "bg-white" : "bg-violet-50/40 opacity-80"}
                 >
                   <td className="border border-violet-200 px-2 py-2 font-medium">
-                    {group.combined_code}
+                    <button
+                      type="button"
+                      className="text-left font-medium text-violet-800 underline-offset-2 hover:underline"
+                      onClick={() => onOpenGroup(group)}
+                    >
+                      {group.combined_code}
+                    </button>
                   </td>
                   <td className="border border-violet-200 px-2 py-2">
                     {group.module_term}
@@ -2302,6 +2513,19 @@ function CrossProgrammeCombinePanel({
                   </td>
                   <td className="border border-violet-200 px-2 py-2">
                     {formatCrossProgrammeDownstreamLabel(group.downstream_state)}
+                  </td>
+                  <td className="border border-violet-200 px-2 py-2">
+                    {orphanCount > 0 ? (
+                      <button
+                        type="button"
+                        className="font-medium text-amber-800 underline-offset-2 hover:underline"
+                        onClick={() => onOpenGroup(group)}
+                      >
+                        {orphanCount}
+                      </button>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                 </tr>
               );
@@ -3054,7 +3278,7 @@ function SplitStep({
   const pendingManualGroups = manualGroups.filter(
     (group) =>
       !decidedCombineGroupIds.has(group.id) &&
-      (isAdmin || !crossProgrammeGroupIdSet.has(group.id))
+      !crossProgrammeGroupIdSet.has(group.id)
   );
 
   const sourceModuleByInstanceCode = useMemo(() => {
@@ -3135,8 +3359,18 @@ function SplitStep({
     >
   >({});
 
+  function isCrossProgrammeInstance(row: TimetableModuleInstanceRow) {
+    const groupId = String(row.source_combine_group_id ?? "").trim();
+    return Boolean(groupId && crossProgrammeGroupIdSet.has(groupId));
+  }
+
+  const splitScopeInstances = useMemo(
+    () => visibleInstances.filter((row) => !isCrossProgrammeInstance(row)),
+    [visibleInstances, crossProgrammeGroupIdSet]
+  );
+
   const instanceRowsForValidation = useMemo(() => {
-    return visibleInstances.map((row) => {
+    return splitScopeInstances.map((row) => {
       const edit = instanceEdits[row.id];
       return {
         ...row,
@@ -3147,12 +3381,7 @@ function SplitStep({
         instance_mode: edit?.instance_mode ?? (row as any).instance_mode ?? null,
       };
     });
-  }, [visibleInstances, instanceEdits]);
-
-  function isCrossProgrammeInstance(row: TimetableModuleInstanceRow) {
-    const groupId = String(row.source_combine_group_id ?? "").trim();
-    return Boolean(groupId && crossProgrammeGroupIdSet.has(groupId));
-  }
+  }, [splitScopeInstances, instanceEdits]);
 
   const canEditInstance = (row: TimetableModuleInstanceRow) =>
     isAdmin || !isCrossProgrammeInstance(row);
@@ -3164,6 +3393,12 @@ function SplitStep({
 
   return (
     <div className="space-y-4">
+      <div className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900">
+        Cross-programme combine groups are split, mode-set, and scheduled in the
+        top panel drawer (Admin). This step only covers single-programme modules
+        and manual combines within the selected programme.
+      </div>
+
       <div className="flex flex-col gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="font-medium text-blue-900">
@@ -3217,7 +3452,7 @@ function SplitStep({
         </div>
 
         <div className="card-body space-y-3">
-          {visibleInstances.length === 0 ? (
+          {splitScopeInstances.length === 0 ? (
             <EmptyState message="No instances yet. If you already clicked Split/No Split, please make sure migration 014_timetable_module_instances.sql has been applied, then refresh the page (or run Confirm All Split Decisions once)." />
           ) : (
             <DataTable

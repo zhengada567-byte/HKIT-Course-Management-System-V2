@@ -13,6 +13,7 @@ import {
 import type { UserRole } from "../types/auth";
 import type { ModuleEnrollmentRow } from "./moduleEnrollmentService";
 import { resetCombineGroupDownstream } from "./splitClassService";
+import { filterActivePlanningModules } from "../lib/timetablePlanningOffering";
 
 export {
   getDistinctProgrammeCodes,
@@ -1066,6 +1067,203 @@ export async function listCrossProgrammeManualCombineGroups(params: {
   }));
 }
 
+export interface CrossProgrammeCombineOrphan {
+  planning_module_id: string;
+  module_code: string;
+  module_name: string | null;
+  programme_code: string;
+  stream_code: string;
+  module_term: ModuleTerm;
+  target_combine_group_id: string;
+  target_combined_code: string;
+  target_downstream_state: CombineGroupDownstreamState;
+}
+
+export async function listCrossProgrammeCombineOrphans(params: {
+  academicYear: string;
+  moduleTerm?: ModuleTerm;
+  combineGroupId?: string;
+}): Promise<CrossProgrammeCombineOrphan[]> {
+  const crossGroups = await listCrossProgrammeManualCombineGroups({
+    academicYear: params.academicYear,
+    moduleTerm: params.moduleTerm,
+  });
+
+  const targetGroups = params.combineGroupId
+    ? crossGroups.filter((group) => group.id === params.combineGroupId)
+    : crossGroups;
+
+  if (targetGroups.length === 0) {
+    return [];
+  }
+
+  const [
+    { data: planningData, error: planningError },
+    { data: relationData, error: relationError },
+  ] = await Promise.all([
+    supabase
+      .from("timetable_planning_modules")
+      .select("*")
+      .eq("academic_year", params.academicYear),
+    supabase.from("combine_group_modules").select("planning_module_id"),
+  ]);
+
+  if (planningError) throw planningError;
+  if (relationError) throw relationError;
+
+  const planningModules = filterActivePlanningModules(
+    (planningData ?? []) as TimetablePlanningModuleRow[]
+  );
+  const inGroupPlanningIds = new Set(
+    (relationData ?? []).map((relation) => relation.planning_module_id)
+  );
+
+  const uncombinedModules = planningModules.filter(
+    (module) =>
+      !module.manual_combine_group_id && !inGroupPlanningIds.has(module.id)
+  );
+
+  const orphans: CrossProgrammeCombineOrphan[] = [];
+
+  for (const group of targetGroups) {
+    const groupModuleCodes = new Set(
+      group.module_codes.map((code) => normalizeCodePart(code))
+    );
+    const groupProgrammes = new Set(
+      group.member_programme_codes.map((code) => normalizeCodePart(code))
+    );
+
+    for (const module of uncombinedModules) {
+      if (params.moduleTerm && module.module_term !== params.moduleTerm) {
+        continue;
+      }
+
+      if (module.module_term !== group.module_term) {
+        continue;
+      }
+
+      if (!groupModuleCodes.has(normalizeCodePart(module.module_code))) {
+        continue;
+      }
+
+      if (groupProgrammes.has(normalizeCodePart(module.programme_code))) {
+        continue;
+      }
+
+      orphans.push({
+        planning_module_id: module.id,
+        module_code: module.module_code,
+        module_name: module.module_name ?? null,
+        programme_code: module.programme_code,
+        stream_code: module.stream_code,
+        module_term: module.module_term,
+        target_combine_group_id: group.id,
+        target_combined_code: group.combined_code,
+        target_downstream_state: group.downstream_state,
+      });
+    }
+  }
+
+  return orphans.sort((a, b) => {
+    const codeDiff = a.module_code.localeCompare(b.module_code);
+    if (codeDiff !== 0) return codeDiff;
+
+    const programmeDiff = a.programme_code.localeCompare(b.programme_code);
+    if (programmeDiff !== 0) return programmeDiff;
+
+    return a.stream_code.localeCompare(b.stream_code);
+  });
+}
+
+export async function getManualCombineGroupWithDetailsById(
+  groupId: string
+): Promise<ManualCombineGroupWithDetails | null> {
+  const [
+    { data: groupData, error: groupError },
+    { data: relationData, error: relationError },
+    { data: planningData, error: planningError },
+    { data: studentData, error: studentError },
+    { data: enrollmentData, error: enrollmentError },
+  ] = await Promise.all([
+    supabase.from("combine_groups").select("*").eq("id", groupId).maybeSingle(),
+    supabase
+      .from("combine_group_modules")
+      .select("*")
+      .eq("combine_group_id", groupId),
+    supabase.from("timetable_planning_modules").select("*"),
+    supabase.from("timetable_student_numbers").select("*"),
+    supabase.from("module_enrollment").select("*"),
+  ]);
+
+  if (groupError) throw groupError;
+  if (relationError) throw relationError;
+  if (planningError) throw planningError;
+  if (studentError) throw studentError;
+  if (enrollmentError) throw enrollmentError;
+
+  const group = groupData as CombineGroupRow | null;
+  if (!group) {
+    return null;
+  }
+
+  const planningModuleMap = new Map(
+    ((planningData ?? []) as TimetablePlanningModuleRow[]).map((module) => [
+      module.id,
+      module,
+    ])
+  );
+
+  const studentNumberMap = buildStudentNumberMap({
+    studentNumbers: (studentData ?? []) as TimetableStudentNumberRow[],
+    moduleEnrollments: (enrollmentData ?? []) as ModuleEnrollmentRow[],
+  });
+
+  const originalModules = ((relationData ?? []) as Array<{
+    planning_module_id: string;
+  }>)
+    .map((relation) => planningModuleMap.get(relation.planning_module_id))
+    .filter(Boolean) as TimetablePlanningModuleRow[];
+
+  if (originalModules.length === 0) {
+    return null;
+  }
+
+  const details = originalModules
+    .map<ManualCombineGroupDetailRow>((module) => {
+      const studentNumber = getStudentNumberForModule({
+        module,
+        studentNumberMap,
+      });
+
+      return {
+        combine_group_id: group.id,
+        planning_module_id: module.id,
+        module_code: module.module_code,
+        module_name: module.module_name ?? null,
+        programme_code: module.programme_code,
+        stream_code: module.stream_code,
+        module_term: module.module_term,
+        expected_student_number:
+          studentNumber?.expected_student_number ?? null,
+        actual_student_number: studentNumber?.actual_student_number ?? null,
+      };
+    })
+    .sort((a, b) => {
+      const programmeDiff = a.programme_code.localeCompare(b.programme_code);
+      if (programmeDiff !== 0) return programmeDiff;
+
+      const streamDiff = a.stream_code.localeCompare(b.stream_code);
+      if (streamDiff !== 0) return streamDiff;
+
+      return a.module_code.localeCompare(b.module_code);
+    });
+
+  return {
+    ...group,
+    details,
+  };
+}
+
 export async function isCrossProgrammeCombineGroupId(groupId: string) {
   const { data: relations, error: relationError } = await supabase
     .from("combine_group_modules")
@@ -1219,7 +1417,7 @@ export async function joinPlanningModuleToCombineGroup(params: {
     );
   }
 
-  if (moduleCodes.length !== 1) {
+  if (moduleCodes.length !== 1 && params.actorRole !== "admin") {
     throw new Error(
       "Only modules with the same module code can join this combine group."
     );
@@ -1250,7 +1448,7 @@ export async function joinPlanningModuleToCombineGroup(params: {
 
   let didResetDownstream = false;
 
-  if (downstreamState !== "none") {
+  if (downstreamState !== "none" && params.actorRole === "admin") {
     await resetCombineGroupDownstream({
       academicYear: group.academic_year,
       combineGroupId: params.combineGroupId,
