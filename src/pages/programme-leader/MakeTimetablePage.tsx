@@ -21,8 +21,10 @@ import {
   deleteManualCombineGroup,
   getCreateNewManualCombineBlockReason,
   joinPlanningModuleToCombineGroup,
+  listCrossProgrammeManualCombineGroups,
   listJoinableManualCombineGroups,
   listManualCombineGroups,
+  type CrossProgrammeManualCombineGroupSummary,
   type JoinableManualCombineGroup,
   type ManualCombineGroupWithDetails,
 } from "../../services/manualCombineService";
@@ -89,6 +91,10 @@ import { ScheduleStep } from "./make-timetable/components/ScheduleStep";
 import { TeacherAvailabilityModal } from "./make-timetable/components/TeacherAvailabilityModal";
 import { TeacherConfirmStep } from "./make-timetable/components/TeacherConfirmStep";
 import { isHDProgramme } from "./make-study-plan/helpers";
+import {
+  formatCrossProgrammeDownstreamLabel,
+  isCrossProgrammeManualGroup,
+} from "../../lib/crossProgrammeCombine";
 import { resolveCombinedDefaultTeacherForGroupDetails } from "../../lib/combinedDefaultTeacher";
 import { dedupeJoinedModuleName } from "../../lib/moduleDisplay";
 import {
@@ -177,6 +183,10 @@ export function MakeTimetablePage() {
     ManualCombineGroupWithDetails[]
   >([]);
 
+  const [crossProgrammeGroups, setCrossProgrammeGroups] = useState<
+    CrossProgrammeManualCombineGroupSummary[]
+  >([]);
+
   const [manualCombineBaseModule, setManualCombineBaseModule] =
     useState<PlanningModuleWithStudentNumber | null>(null);
 
@@ -235,6 +245,11 @@ export function MakeTimetablePage() {
     [programmeCode, selectedProgrammeType]
   );
 
+  const crossProgrammeGroupIdSet = useMemo(
+    () => new Set(crossProgrammeGroups.map((group) => group.id)),
+    [crossProgrammeGroups]
+  );
+
   const scheduleInstances = useMemo(() => {
     const planningIdSet = new Set(planningModules.map((m) => m.id));
     const combineIdSet = new Set(manualGroups.map((g) => g.id));
@@ -272,6 +287,17 @@ export function MakeTimetablePage() {
     moduleTerm,
   ]);
 
+  const plManagedScheduleInstances = useMemo(() => {
+    if (isAdmin) {
+      return scheduleInstances;
+    }
+
+    return scheduleInstances.filter((row) => {
+      const groupId = String(row.source_combine_group_id ?? "").trim();
+      return !groupId || !crossProgrammeGroupIdSet.has(groupId);
+    });
+  }, [isAdmin, scheduleInstances, crossProgrammeGroupIdSet]);
+
   const teachersConfirmed = useMemo(() => {
     if (sourceTimetableModules.length === 0) {
       return false;
@@ -301,6 +327,10 @@ export function MakeTimetablePage() {
   useEffect(() => {
     void init();
   }, []);
+
+  useEffect(() => {
+    void refreshCrossProgrammeGroups();
+  }, [academicYear, moduleTerm]);
 
   async function refreshPlanning() {
     const data = await listPlanningModulesWithStudentNumbers({
@@ -437,6 +467,23 @@ export function MakeTimetablePage() {
     });
 
     setManualGroups(manual);
+    await refreshCrossProgrammeGroups();
+  }
+
+  async function refreshCrossProgrammeGroups() {
+    try {
+      const groups = await listCrossProgrammeManualCombineGroups({
+        academicYear,
+        moduleTerm,
+      });
+      setCrossProgrammeGroups(groups);
+    } catch (error) {
+      console.error(
+        "[MakeTimetablePage] Load cross-programme combine groups failed:",
+        error
+      );
+      setCrossProgrammeGroups([]);
+    }
   }
 
   async function refreshSourceTimetableModules(
@@ -769,6 +816,13 @@ export function MakeTimetablePage() {
         return;
       }
 
+      if (!isAdmin && selectedGroup.is_cross_programme) {
+        setMessage(
+          "Cross-programme combine groups are managed by Admin only. Please contact Admin."
+        );
+        return;
+      }
+
       if (!isAdmin && selectedGroup.downstream_state !== "none") {
         setMessage(
           selectedGroup.downstream_state === "scheduled"
@@ -847,6 +901,16 @@ export function MakeTimetablePage() {
       return;
     }
 
+    if (
+      !isAdmin &&
+      isCrossProgrammeManualGroup([manualCombineBaseModule, ...selectedCandidates])
+    ) {
+      setMessage(
+        "Cross-programme manual combine groups can only be created by Admin."
+      );
+      return;
+    }
+
     setLoading(true);
     setMessage("");
 
@@ -854,6 +918,7 @@ export function MakeTimetablePage() {
       await createManualCombineGroup({
         selectedModules: [manualCombineBaseModule, ...selectedCandidates],
         createdBy: user.id,
+        actorRole: user.role,
       });
 
       closeManualCombineDialog();
@@ -875,7 +940,7 @@ export function MakeTimetablePage() {
 
   async function handleDeleteManualCombine(groupId: string) {
     try {
-      await deleteManualCombineGroup(groupId);
+      await deleteManualCombineGroup(groupId, { actorRole: user.role });
 
       await refreshPlanning();
 
@@ -928,7 +993,7 @@ export function MakeTimetablePage() {
     setMessage("Undoing combined group...");
 
     try {
-      await deleteManualCombineGroup(groupId);
+      await deleteManualCombineGroup(groupId, { actorRole: user.role });
 
       await refreshPlanning();
       await refreshCombineGroups({ programmeCode });
@@ -994,11 +1059,23 @@ export function MakeTimetablePage() {
     setMessage("Undoing all combined groups on this page...");
 
     try {
-      const groupIds = manualGroups.map((g) => g.id);
+      const groupIds = manualGroups
+        .filter(
+          (group) => isAdmin || !crossProgrammeGroupIdSet.has(group.id)
+        )
+        .map((group) => group.id);
+
+      if (groupIds.length === 0) {
+        setMessage(
+          "No undoable manual combine groups on this page. Cross-programme groups are managed by Admin only."
+        );
+        setLoading(false);
+        return;
+      }
 
       // Delete manual combine groups (sequential to keep error location clear).
       for (const id of groupIds) {
-        await deleteManualCombineGroup(id);
+        await deleteManualCombineGroup(id, { actorRole: user.role });
       }
 
       await refreshPlanning();
@@ -1232,6 +1309,7 @@ export function MakeTimetablePage() {
         relatedPlanningModules: related,
         numberOfClasses,
         createdBy: user.id,
+        actorRole: user.role,
         preferredDefaultTeacher,
       });
 
@@ -1382,6 +1460,7 @@ export function MakeTimetablePage() {
           relatedPlanningModules: related,
           numberOfClasses: 1,
           createdBy: user.id,
+          actorRole: user.role,
           preferredDefaultTeacher,
         });
 
@@ -1485,6 +1564,7 @@ export function MakeTimetablePage() {
     try {
       await undoTimetableModuleDecision({
         timetableModule: row,
+        actorRole: user.role,
       });
 
       await refreshPlanning();
@@ -1637,7 +1717,8 @@ export function MakeTimetablePage() {
         rows.map((row) => ({
           id: row.instance.id,
           instance_teacher_name: row.teacherName,
-        }))
+        })),
+        { actorRole: user.role }
       );
 
       for (const row of rows) {
@@ -1937,6 +2018,12 @@ export function MakeTimetablePage() {
         </div>
       )}
 
+      <CrossProgrammeCombinePanel
+        groups={crossProgrammeGroups}
+        isAdmin={isAdmin}
+        programmeCode={programmeCode || undefined}
+      />
+
       <div className="card mb-4">
         <div className="card-body grid gap-3 md:grid-cols-2 lg:grid-cols-4">
           <div>
@@ -2047,6 +2134,8 @@ export function MakeTimetablePage() {
               onUndoCombinedGroup={handleUndoCombinedGroup}
               onUndoAllCombinedGroupsOnPage={handleUndoAllCombinedGroupsOnPage}
               onConfirmAllModulesCombined={handleConfirmAllModulesCombined}
+              isAdmin={isAdmin}
+              crossProgrammeGroupIdSet={crossProgrammeGroupIdSet}
             />
           )}
 
@@ -2067,23 +2156,30 @@ export function MakeTimetablePage() {
               onUndoAllSplitDecisionsOnPage={handleUndoAllSplitDecisionsOnPage}
               onConfirmAllSplitDecisions={handleConfirmAllSplitDecisions}
               onSaveInstanceEdits={async (rows) => {
-                await upsertTimetableModuleInstances(rows);
+                await upsertTimetableModuleInstances(rows, {
+                  actorRole: user?.role,
+                });
                 await refreshTimetableAndAssignments({
                   programmeCode,
                 });
               }}
+              isAdmin={isAdmin}
+              crossProgrammeGroupIdSet={crossProgrammeGroupIdSet}
             />
           )}
 
           {step === "teachers" && programmeCode && (
             <TeacherConfirmStep
-              instances={scheduleInstances}
+              instances={plManagedScheduleInstances}
               sourceTimetableModules={sourceTimetableModules}
               assignments={assignments}
               teachers={teachers}
               programmeCode={programmeCode || undefined}
               confirming={confirmingTeachers}
               onConfirmAllTeachers={handleConfirmAllTeachers}
+              crossProgrammeInstanceCount={
+                scheduleInstances.length - plManagedScheduleInstances.length
+              }
             />
           )}
 
@@ -2091,9 +2187,12 @@ export function MakeTimetablePage() {
             <ScheduleStep
               academicYear={academicYear}
               moduleTerm={moduleTerm}
-              timetableInstances={scheduleInstances}
+              timetableInstances={plManagedScheduleInstances}
               programmeCode={programmeCode || undefined}
               sourceTimetableModuleCount={sourceTimetableModules.length}
+              crossProgrammeInstanceCount={
+                scheduleInstances.length - plManagedScheduleInstances.length
+              }
             />
           )}
         </>
@@ -2123,6 +2222,104 @@ export function MakeTimetablePage() {
   );
 }
 
+function CrossProgrammeCombinePanel({
+  groups,
+  isAdmin,
+  programmeCode,
+}: {
+  groups: CrossProgrammeManualCombineGroupSummary[];
+  isAdmin: boolean;
+  programmeCode?: string;
+}) {
+  if (groups.length === 0) {
+    return null;
+  }
+
+  const relevantGroups = programmeCode
+    ? groups.filter((group) => group.member_programme_codes.includes(programmeCode))
+    : groups;
+
+  return (
+    <div className="mb-4 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3">
+      <div className="font-medium text-violet-950">
+        Cross-programme combined modules
+      </div>
+      <div className="mt-1 text-sm text-violet-900">
+        {isAdmin
+          ? "These groups span multiple programmes. Split, mode, teachers, and scheduling for them are managed here as Admin."
+          : "These groups span multiple programmes and are managed by Admin only. Programme Leaders can view status below but cannot change split, mode, teachers, or schedule for them."}
+      </div>
+
+      <div className="mt-3 overflow-x-auto">
+        <table className="min-w-[720px] border-collapse text-sm">
+          <thead>
+            <tr>
+              <th className="border border-violet-200 bg-violet-100/80 px-2 py-2 text-left">
+                Combined code
+              </th>
+              <th className="border border-violet-200 bg-violet-100/80 px-2 py-2 text-left">
+                Term
+              </th>
+              <th className="border border-violet-200 bg-violet-100/80 px-2 py-2 text-left">
+                Programmes
+              </th>
+              <th className="border border-violet-200 bg-violet-100/80 px-2 py-2 text-left">
+                Modules
+              </th>
+              <th className="border border-violet-200 bg-violet-100/80 px-2 py-2 text-left">
+                Expected
+              </th>
+              <th className="border border-violet-200 bg-violet-100/80 px-2 py-2 text-left">
+                Status
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((group) => {
+              const isRelevant =
+                !programmeCode ||
+                group.member_programme_codes.includes(programmeCode);
+
+              return (
+                <tr
+                  key={group.id}
+                  className={isRelevant ? "bg-white" : "bg-violet-50/40 opacity-80"}
+                >
+                  <td className="border border-violet-200 px-2 py-2 font-medium">
+                    {group.combined_code}
+                  </td>
+                  <td className="border border-violet-200 px-2 py-2">
+                    {group.module_term}
+                  </td>
+                  <td className="border border-violet-200 px-2 py-2">
+                    {group.member_programme_codes.join(", ")}
+                  </td>
+                  <td className="border border-violet-200 px-2 py-2">
+                    {group.module_codes.join(", ")}
+                  </td>
+                  <td className="border border-violet-200 px-2 py-2">
+                    {group.total_expected_student_number ?? 0}
+                  </td>
+                  <td className="border border-violet-200 px-2 py-2">
+                    {formatCrossProgrammeDownstreamLabel(group.downstream_state)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {!isAdmin && relevantGroups.length > 0 ? (
+        <div className="mt-3 text-xs text-violet-800">
+          {relevantGroups.length} cross-programme group(s) include {programmeCode}.
+          Contact Admin to join modules, split, set mode, or schedule them.
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function CombineStep({
   planningModules,
   manualGroups,
@@ -2131,6 +2328,8 @@ function CombineStep({
   onUndoCombinedGroup,
   onUndoAllCombinedGroupsOnPage,
   onConfirmAllModulesCombined,
+  isAdmin,
+  crossProgrammeGroupIdSet,
 }: {
   planningModules: PlanningModuleWithStudentNumber[];
   manualGroups: ManualCombineGroupWithDetails[];
@@ -2139,6 +2338,8 @@ function CombineStep({
   onUndoCombinedGroup: (groupId: string) => void;
   onUndoAllCombinedGroupsOnPage: () => void;
   onConfirmAllModulesCombined: () => void;
+  isAdmin: boolean;
+  crossProgrammeGroupIdSet: Set<string>;
 }) {
   const [selectedManualGroup, setSelectedManualGroup] =
     useState<ManualCombineGroupWithDetails | null>(null);
@@ -2310,15 +2511,28 @@ function CombineStep({
                   {
                     key: "undo",
                     header: "Undo",
-                    render: (row) => (
-                      <button
-                        type="button"
-                        className="btn btn-secondary py-1 text-xs"
-                        onClick={() => onUndoCombinedGroup(row.id)}
-                      >
-                        Undo
-                      </button>
-                    ),
+                    render: (row) => {
+                      const isCrossProgramme =
+                        crossProgrammeGroupIdSet.has(row.id) ||
+                        isCrossProgrammeManualGroup(row.details);
+                      const canUndo = isAdmin || !isCrossProgramme;
+
+                      return (
+                        <button
+                          type="button"
+                          className="btn btn-secondary py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={!canUndo}
+                          title={
+                            canUndo
+                              ? "Undo this manual combine group."
+                              : "Cross-programme combine groups are managed by Admin only."
+                          }
+                          onClick={() => onUndoCombinedGroup(row.id)}
+                        >
+                          Undo
+                        </button>
+                      );
+                    },
                   },
                 ]}
               />
@@ -2449,7 +2663,8 @@ function ManualCombineDialog({
               <div className="space-y-2">
                 {joinableGroups.map((group) => {
                   const joinDisabled =
-                    !isAdmin && group.downstream_state !== "none";
+                    !isAdmin &&
+                    (group.downstream_state !== "none" || group.is_cross_programme);
 
                   return (
                     <label
@@ -2484,8 +2699,11 @@ function ManualCombineDialog({
 
                         <div className="mt-1 text-xs text-slate-500">
                           Status: {formatJoinGroupDownstreamLabel(group.downstream_state)}
+                          {group.is_cross_programme ? " · Cross-programme" : ""}
                           {joinDisabled
-                            ? " · Contact Admin to join this group"
+                            ? group.is_cross_programme
+                              ? " · Admin only"
+                              : " · Contact Admin to join this group"
                             : ""}
                         </div>
                       </div>
@@ -2737,6 +2955,8 @@ function SplitStep({
   onUndoAllSplitDecisionsOnPage = () => {},
   onConfirmAllSplitDecisions,
   onSaveInstanceEdits,
+  isAdmin,
+  crossProgrammeGroupIdSet,
 }: {
   planningModules: PlanningModuleWithStudentNumber[];
   studentRows: StudentNumberInputRow[];
@@ -2767,6 +2987,8 @@ function SplitStep({
         >
       >>
   ) => Promise<void>;
+  isAdmin: boolean;
+  crossProgrammeGroupIdSet: Set<string>;
 }) {
   const assignmentMap = new Map(
     assignments.map((assignment) => [assignment.timetable_module_id, assignment])
@@ -2830,7 +3052,9 @@ function SplitStep({
   );
 
   const pendingManualGroups = manualGroups.filter(
-    (group) => !decidedCombineGroupIds.has(group.id)
+    (group) =>
+      !decidedCombineGroupIds.has(group.id) &&
+      (isAdmin || !crossProgrammeGroupIdSet.has(group.id))
   );
 
   const sourceModuleByInstanceCode = useMemo(() => {
@@ -2925,6 +3149,14 @@ function SplitStep({
     });
   }, [visibleInstances, instanceEdits]);
 
+  function isCrossProgrammeInstance(row: TimetableModuleInstanceRow) {
+    const groupId = String(row.source_combine_group_id ?? "").trim();
+    return Boolean(groupId && crossProgrammeGroupIdSet.has(groupId));
+  }
+
+  const canEditInstance = (row: TimetableModuleInstanceRow) =>
+    isAdmin || !isCrossProgrammeInstance(row);
+
   const hasUnsavedInstanceEdits = useMemo(
     () => Object.keys(instanceEdits).length > 0,
     [instanceEdits]
@@ -3017,6 +3249,7 @@ function SplitStep({
                       className="form-select min-w-28"
                       value={(row as any).instance_mode ?? ""}
                       title="Mode"
+                      disabled={!canEditInstance(row)}
                       onChange={(e) => {
                         setInstanceEdits((prev) => ({
                           ...prev,
@@ -3045,6 +3278,7 @@ function SplitStep({
                       value={row.instance_expected_size ?? 0}
                       title="Instance size"
                       placeholder="0"
+                      disabled={!canEditInstance(row)}
                       onChange={(e) => {
                         const next = Number(e.target.value);
                         setInstanceEdits((prev) => ({
@@ -3071,15 +3305,25 @@ function SplitStep({
                   header: "Undo",
                   render: (row) => {
                     const tm = sourceModuleByInstanceCode.get(row.module_instance_code);
+                    const canUndo =
+                      Boolean(tm) &&
+                      (isAdmin ||
+                        !(
+                          tm?.combine_group_id &&
+                          crossProgrammeGroupIdSet.has(tm.combine_group_id)
+                        ));
+
                     return (
                       <button
                         type="button"
-                        className="btn btn-secondary"
-                        disabled={!tm}
+                        className="btn btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!canUndo}
                         title={
-                          tm
-                            ? "Undo split/no-split decision for this source."
-                            : "Cannot resolve timetable module row for undo."
+                          !tm
+                            ? "Cannot resolve timetable module row for undo."
+                            : canUndo
+                              ? "Undo split/no-split decision for this source."
+                              : "Cross-programme combine groups are managed by Admin only."
                         }
                         onClick={() => {
                           if (!tm) return;

@@ -5,6 +5,12 @@ import {
 import { resolveBaseModuleCodeForProgramme } from "../lib/combinedModuleCode";
 import { joinUniqueModuleNames } from "../lib/moduleDisplay";
 import { supabase } from "../lib/supabase";
+import type { UserRole } from "../types/auth";
+import {
+  assertAdminCanMutateCrossProgrammeGroup,
+  isCrossProgrammeManualGroup,
+} from "../lib/crossProgrammeCombine";
+import { isCrossProgrammeCombineGroupId } from "./manualCombineService";
 import { getAcademicYearVariants, isTBC } from "../lib/utils";
 import type {
   CombineGroupRow,
@@ -590,9 +596,16 @@ export async function createCombinedTimetableModules(params: {
   relatedPlanningModules: TimetablePlanningModuleRow[];
   numberOfClasses: number;
   createdBy: string;
+  actorRole: UserRole;
   /** When Split UI already shows a default teacher, pass it through to assignments. */
   preferredDefaultTeacher?: string | null;
 }) {
+  assertAdminCanMutateCrossProgrammeGroup({
+    actorRole: params.actorRole,
+    isCrossProgramme: isCrossProgrammeManualGroup(params.relatedPlanningModules),
+    action: "split a cross-programme manual combine group",
+  });
+
   if (
     params.combineGroup.status !== "auto_confirmed" &&
     params.combineGroup.status !== "confirmed"
@@ -989,8 +1002,21 @@ export async function getPlanningModulesForCombineGroup(groupId: string) {
 
 export async function undoTimetableModuleDecision(params: {
   timetableModule: TimetableModuleRow;
+  actorRole?: UserRole;
 }) {
   const module = params.timetableModule;
+
+  if (module.combine_group_id && params.actorRole) {
+    const isCrossProgramme = await isCrossProgrammeCombineGroupId(
+      module.combine_group_id
+    );
+
+    assertAdminCanMutateCrossProgrammeGroup({
+      actorRole: params.actorRole,
+      isCrossProgramme,
+      action: "undo split for a cross-programme manual combine group",
+    });
+  }
 
   let query = supabase
     .from("timetable_modules")

@@ -5,9 +5,19 @@ import type {
   TimetablePlanningModuleRow,
   TimetableStudentNumberRow,
 } from "../types";
+import {
+  assertAdminCanMutateCrossProgrammeGroup,
+  getDistinctProgrammeCodes,
+  isCrossProgrammeManualGroup,
+} from "../lib/crossProgrammeCombine";
 import type { UserRole } from "../types/auth";
 import type { ModuleEnrollmentRow } from "./moduleEnrollmentService";
 import { resetCombineGroupDownstream } from "./splitClassService";
+
+export {
+  getDistinctProgrammeCodes,
+  isCrossProgrammeManualGroup,
+} from "../lib/crossProgrammeCombine";
 
 export interface ManualCombineGroupDetailRow {
   combine_group_id: string;
@@ -442,6 +452,7 @@ function calculateManualCombineTotals(params: {
 export async function createManualCombineGroup(params: {
   selectedModules: TimetablePlanningModuleRow[];
   createdBy: string;
+  actorRole: UserRole;
   /**
    * Programme intra-stream auto combine: combined_code = module code only
    * (no stream/programme suffix, no term suffix). Term stays in module_term column.
@@ -453,6 +464,12 @@ export async function createManualCombineGroup(params: {
   if (!validation.valid) {
     throw new Error(validation.message);
   }
+
+  assertAdminCanMutateCrossProgrammeGroup({
+    actorRole: params.actorRole,
+    isCrossProgramme: isCrossProgrammeManualGroup(params.selectedModules),
+    action: "create a cross-programme manual combine group",
+  });
 
   const first = params.selectedModules[0];
 
@@ -802,6 +819,7 @@ export interface JoinableManualCombineGroup {
   member_programme_codes: string[];
   total_expected_student_number: number | null;
   downstream_state: CombineGroupDownstreamState;
+  is_cross_programme: boolean;
 }
 
 async function loadDownstreamStateByCombineGroupId(params: {
@@ -952,16 +970,128 @@ export async function listJoinableManualCombineGroups(params: {
         id: meta.group.id,
         combined_code: meta.group.combined_code,
         module_term: meta.group.module_term,
-        member_programme_codes: uniqueSorted(
-          meta.members.map((module) => module.programme_code)
-        ),
+        member_programme_codes: getDistinctProgrammeCodes(meta.members),
         total_expected_student_number:
           meta.group.total_expected_student_number ?? null,
         downstream_state:
           downstreamStateMap.get(groupId) ?? ("none" as const),
+        is_cross_programme: isCrossProgrammeManualGroup(meta.members),
       } satisfies JoinableManualCombineGroup;
     })
     .filter(Boolean) as JoinableManualCombineGroup[];
+}
+
+export interface CrossProgrammeManualCombineGroupSummary {
+  id: string;
+  combined_code: string;
+  module_term: ModuleTerm;
+  member_programme_codes: string[];
+  module_codes: string[];
+  total_expected_student_number: number | null;
+  downstream_state: CombineGroupDownstreamState;
+}
+
+export async function listCrossProgrammeManualCombineGroups(params: {
+  academicYear: string;
+  moduleTerm?: ModuleTerm;
+}): Promise<CrossProgrammeManualCombineGroupSummary[]> {
+  const [
+    { data: groupData, error: groupError },
+    { data: relationData, error: relationError },
+    { data: planningData, error: planningError },
+  ] = await Promise.all([
+    supabase
+      .from("combine_groups")
+      .select("*")
+      .eq("academic_year", params.academicYear)
+      .eq("combine_type", "manual")
+      .order("combined_code")
+      .order("module_term"),
+    supabase.from("combine_group_modules").select("*"),
+    supabase
+      .from("timetable_planning_modules")
+      .select("*")
+      .eq("academic_year", params.academicYear),
+  ]);
+
+  if (groupError) throw groupError;
+  if (relationError) throw relationError;
+  if (planningError) throw planningError;
+
+  const groups = (groupData ?? []) as CombineGroupRow[];
+  const relations = (relationData ?? []) as Array<{
+    combine_group_id: string;
+    planning_module_id: string;
+  }>;
+  const planningModules = (planningData ?? []) as TimetablePlanningModuleRow[];
+  const planningModuleMap = new Map(
+    planningModules.map((module) => [module.id, module])
+  );
+
+  const summaries: CrossProgrammeManualCombineGroupSummary[] = [];
+
+  for (const group of groups) {
+    if (params.moduleTerm && group.module_term !== params.moduleTerm) {
+      continue;
+    }
+
+    const members = relations
+      .filter((relation) => relation.combine_group_id === group.id)
+      .map((relation) => planningModuleMap.get(relation.planning_module_id))
+      .filter(Boolean) as TimetablePlanningModuleRow[];
+
+    if (!isCrossProgrammeManualGroup(members)) {
+      continue;
+    }
+
+    summaries.push({
+      id: group.id,
+      combined_code: group.combined_code,
+      module_term: group.module_term,
+      member_programme_codes: getDistinctProgrammeCodes(members),
+      module_codes: uniqueSorted(members.map((module) => module.module_code)),
+      total_expected_student_number: group.total_expected_student_number ?? null,
+      downstream_state: "none",
+    });
+  }
+
+  const downstreamStateMap = await loadDownstreamStateByCombineGroupId({
+    academicYear: params.academicYear,
+    combineGroupIds: summaries.map((group) => group.id),
+  });
+
+  return summaries.map((group) => ({
+    ...group,
+    downstream_state: downstreamStateMap.get(group.id) ?? "none",
+  }));
+}
+
+export async function isCrossProgrammeCombineGroupId(groupId: string) {
+  const { data: relations, error: relationError } = await supabase
+    .from("combine_group_modules")
+    .select("planning_module_id")
+    .eq("combine_group_id", groupId);
+
+  if (relationError) throw relationError;
+
+  const planningModuleIds = (relations ?? []).map(
+    (relation) => relation.planning_module_id
+  );
+
+  if (planningModuleIds.length === 0) {
+    return false;
+  }
+
+  const { data: planningData, error: planningError } = await supabase
+    .from("timetable_planning_modules")
+    .select("programme_code")
+    .in("id", planningModuleIds);
+
+  if (planningError) throw planningError;
+
+  return isCrossProgrammeManualGroup(
+    (planningData ?? []) as TimetablePlanningModuleRow[]
+  );
 }
 
 export function getCreateNewManualCombineBlockReason(params: {
@@ -1102,6 +1232,14 @@ export async function joinPlanningModuleToCombineGroup(params: {
   const downstreamState =
     downstreamStateMap.get(params.combineGroupId) ?? "none";
 
+  const willBeCrossProgramme = isCrossProgrammeManualGroup(allMembers);
+
+  assertAdminCanMutateCrossProgrammeGroup({
+    actorRole: params.actorRole,
+    isCrossProgramme: willBeCrossProgramme,
+    action: "join a cross-programme manual combine group",
+  });
+
   if (downstreamState !== "none" && params.actorRole !== "admin") {
     throw new Error(
       downstreamState === "scheduled"
@@ -1207,7 +1345,20 @@ export async function joinPlanningModuleToCombineGroup(params: {
   };
 }
 
-export async function deleteManualCombineGroup(groupId: string) {
+export async function deleteManualCombineGroup(
+  groupId: string,
+  params?: { actorRole?: UserRole }
+) {
+  const isCrossProgramme = await isCrossProgrammeCombineGroupId(groupId);
+
+  if (params?.actorRole) {
+    assertAdminCanMutateCrossProgrammeGroup({
+      actorRole: params.actorRole,
+      isCrossProgramme,
+      action: "undo a cross-programme manual combine group",
+    });
+  }
+
   const { data: relations, error: relationFetchError } = await supabase
     .from("combine_group_modules")
     .select("planning_module_id")

@@ -23,6 +23,7 @@ export function TeacherConfirmStep(props: {
   teachers: TeacherRow[];
   programmeCode?: string;
   confirming?: boolean;
+  crossProgrammeInstanceCount?: number;
   onConfirmAllTeachers: (
     rows: Array<{
       instance: TimetableModuleInstanceRow;
@@ -38,6 +39,7 @@ export function TeacherConfirmStep(props: {
     teachers,
     programmeCode,
     confirming = false,
+    crossProgrammeInstanceCount = 0,
     onConfirmAllTeachers,
   } = props;
 
@@ -162,6 +164,13 @@ export function TeacherConfirmStep(props: {
           {confirming ? "Confirming…" : "Confirm All Teachers → Schedule"}
         </button>
       </div>
+
+      {crossProgrammeInstanceCount > 0 && (
+        <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-900">
+          {crossProgrammeInstanceCount} cross-programme combined instance(s) on
+          this page are managed by Admin only and are hidden from this list.
+        </div>
+      )}
 
       {tbcCount > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">

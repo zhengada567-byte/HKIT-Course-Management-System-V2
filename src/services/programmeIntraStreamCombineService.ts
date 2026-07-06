@@ -136,6 +136,7 @@ export async function applyProgrammeIntraStreamAutoCombine(params: {
     await createManualCombineGroup({
       selectedModules: candidate.modules,
       createdBy: params.createdBy,
+      actorRole: "programme_leader",
       combinedCodeBase: candidate.module_code,
     });
 

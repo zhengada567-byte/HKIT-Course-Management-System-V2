@@ -32,6 +32,7 @@ export function ScheduleStep(props: {
   programmeCode?: string;
   /** Timetable modules on this page (split + no-split); used for empty-state hints */
   sourceTimetableModuleCount?: number;
+  crossProgrammeInstanceCount?: number;
 }) {
   const {
     academicYear,
@@ -39,6 +40,7 @@ export function ScheduleStep(props: {
     timetableInstances,
     programmeCode,
     sourceTimetableModuleCount = 0,
+    crossProgrammeInstanceCount = 0,
   } = props;
 
   const classrooms = useMemo<TimetableClassroomRow[]>(
@@ -357,6 +359,14 @@ export function ScheduleStep(props: {
 
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="text-sm font-medium text-slate-900">自動排課前設定</div>
+
+        {crossProgrammeInstanceCount > 0 && (
+          <div className="mt-3 rounded border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-900">
+            {crossProgrammeInstanceCount} cross-programme combined instance(s) on
+            this page are managed by Admin only and are hidden from scheduling
+            here.
+          </div>
+        )}
 
         {!availabilityWarningLoading &&
           teachersMissingAvailability.length > 0 && (

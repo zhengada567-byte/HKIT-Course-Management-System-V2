@@ -136,10 +136,42 @@ export async function listTimetableModuleInstances(params: {
   return (data ?? []) as TimetableModuleInstanceRow[];
 }
 
+import type { UserRole } from "../types/auth";
+import { isCrossProgrammeCombineGroupId } from "./manualCombineService";
+import {
+  assertAdminCanMutateCrossProgrammeGroup,
+} from "../lib/crossProgrammeCombine";
+
 export async function upsertTimetableModuleInstances(
-  rows: Array<Partial<TimetableModuleInstanceRow> & { id: string }>
+  rows: Array<Partial<TimetableModuleInstanceRow> & { id: string }>,
+  options?: { actorRole?: UserRole }
 ) {
   if (rows.length === 0) return;
+
+  if (options?.actorRole && options.actorRole !== "admin") {
+    const { data: instanceRows, error: instanceError } = await supabase
+      .from("timetable_module_instances")
+      .select("id, source_combine_group_id")
+      .in(
+        "id",
+        rows.map((row) => row.id)
+      );
+
+    if (instanceError) throw instanceError;
+
+    for (const instance of instanceRows ?? []) {
+      const combineGroupId = String(instance.source_combine_group_id ?? "").trim();
+      if (!combineGroupId) continue;
+
+      const isCrossProgramme = await isCrossProgrammeCombineGroupId(combineGroupId);
+
+      assertAdminCanMutateCrossProgrammeGroup({
+        actorRole: options.actorRole,
+        isCrossProgramme,
+        action: "edit instances for a cross-programme manual combine group",
+      });
+    }
+  }
 
   // Use UPDATE-only to avoid accidental INSERT with missing required columns.
   // (Upsert by id would attempt insert if the id doesn't exist yet.)
