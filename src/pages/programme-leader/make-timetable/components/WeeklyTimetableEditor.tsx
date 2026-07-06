@@ -14,7 +14,6 @@ import {
   cloneWeeklyGridState,
   collectWeeklyPlacements,
   getRemainingClassroomsForWeeklyCell,
-  getRemainingClassroomsForWeeklySlotAllDays,
   persistWeeklyTimetableDraft,
   wouldWeeklyPlacementConflict,
   type WeeklyGridItem,
@@ -717,8 +716,6 @@ export function WeeklyTimetableEditor(props: {
       return map;
     }
 
-    const weekdayIds = weekdays.map((day) => day.id);
-
     for (const slot of weeklyGrid.slots) {
       const sk = `${slot.start}-${slot.end}`;
 
@@ -729,16 +726,6 @@ export function WeeklyTimetableEditor(props: {
           getRemainingClassroomsForWeeklyCell({ items, classrooms })
         );
       }
-
-      map.set(
-        `${sk}|all`,
-        getRemainingClassroomsForWeeklySlotAllDays({
-          grid: weeklyGrid,
-          slotKey: sk,
-          weekdays: weekdayIds,
-          classrooms,
-        })
-      );
     }
 
     return map;
@@ -903,19 +890,10 @@ export function WeeklyTimetableEditor(props: {
               <tbody>
                 {weeklyGrid.slots.map((slot) => {
                   const sk = `${slot.start}-${slot.end}`;
-                  const slotRemainingAllDays =
-                    remainingClassroomsBySlotAndDay.get(`${sk}|all`) ?? classrooms;
                   return (
                     <tr key={sk}>
                       <td className="border border-slate-200 px-2 py-2 align-top font-medium">
-                        <div>
-                          {slot.start}–{slot.end}
-                        </div>
-                        {formatRemainingClassroomSummary({
-                          remaining: slotRemainingAllDays,
-                          totalCount: classrooms.length,
-                          label: "Free all week",
-                        })}
+                        {slot.start}–{slot.end}
                       </td>
                       {weekdays.map((day) => {
                         const items =
