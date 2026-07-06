@@ -19,7 +19,11 @@ import {
 import {
   createManualCombineGroup,
   deleteManualCombineGroup,
+  getCreateNewManualCombineBlockReason,
+  joinPlanningModuleToCombineGroup,
+  listJoinableManualCombineGroups,
   listManualCombineGroups,
+  type JoinableManualCombineGroup,
   type ManualCombineGroupWithDetails,
 } from "../../services/manualCombineService";
 import { applyProgrammeIntraStreamAutoCombine } from "../../services/programmeIntraStreamCombineService";
@@ -150,7 +154,8 @@ function isSameStudentNumberRow(
 }
 
 export function MakeTimetablePage() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
+  const isAdmin = role === "admin";
   const { academicYear, currentOfferedTerm } = useAcademicYear();
   const { t } = useLanguage();
 
@@ -178,6 +183,13 @@ export function MakeTimetablePage() {
   const [manualCombineCandidates, setManualCombineCandidates] = useState<
     PlanningModuleWithStudentNumber[]
   >([]);
+
+  const [manualCombineJoinableGroups, setManualCombineJoinableGroups] =
+    useState<JoinableManualCombineGroup[]>([]);
+
+  const [selectedJoinGroupId, setSelectedJoinGroupId] = useState<string | null>(
+    null
+  );
 
   const [selectedManualCandidateIds, setSelectedManualCandidateIds] = useState<
     string[]
@@ -671,12 +683,28 @@ export function MakeTimetablePage() {
     );
   }
 
+  function closeManualCombineDialog() {
+    setManualCombineBaseModule(null);
+    setManualCombineCandidates([]);
+    setManualCombineJoinableGroups([]);
+    setSelectedJoinGroupId(null);
+    setSelectedManualCandidateIds([]);
+  }
+
   async function openManualCombineDialog(
     baseModule: PlanningModuleWithStudentNumber
   ) {
-    const allModules = await listAllPlanningModulesWithStudentNumbers({
-      academicYear,
-    });
+    const [allModules, joinableGroups] = await Promise.all([
+      listAllPlanningModulesWithStudentNumbers({
+        academicYear,
+      }),
+      listJoinableManualCombineGroups({
+        academicYear,
+        moduleCode: baseModule.module_code,
+        moduleTerm: baseModule.module_term,
+        excludePlanningModuleId: baseModule.id,
+      }),
+    ]);
 
     const baseTerm = normalizeCompareText(baseModule.module_term);
 
@@ -697,17 +725,32 @@ export function MakeTimetablePage() {
       return true;
     });
 
+    const defaultJoinGroup =
+      joinableGroups.find(
+        (group) => isAdmin || group.downstream_state === "none"
+      ) ?? null;
+
     setManualCombineBaseModule(baseModule);
     setManualCombineCandidates(candidates);
+    setManualCombineJoinableGroups(joinableGroups);
+    setSelectedJoinGroupId(defaultJoinGroup?.id ?? null);
     setSelectedManualCandidateIds([]);
   }
 
   function toggleManualCandidate(id: string) {
+    setSelectedJoinGroupId(null);
     setSelectedManualCandidateIds((prev) =>
       prev.includes(id)
         ? prev.filter((item) => item !== id)
         : [...prev, id]
     );
+  }
+
+  function selectJoinGroup(id: string | null) {
+    setSelectedJoinGroupId(id);
+    if (id) {
+      setSelectedManualCandidateIds([]);
+    }
   }
 
   async function handleConfirmManualCombineFromDialog() {
@@ -716,14 +759,96 @@ export function MakeTimetablePage() {
       return;
     }
 
+    if (selectedJoinGroupId) {
+      const selectedGroup = manualCombineJoinableGroups.find(
+        (group) => group.id === selectedJoinGroupId
+      );
+
+      if (!selectedGroup) {
+        setMessage("Please select a combine group to join.");
+        return;
+      }
+
+      if (!isAdmin && selectedGroup.downstream_state !== "none") {
+        setMessage(
+          selectedGroup.downstream_state === "scheduled"
+            ? "This combine group is already scheduled. Please contact Admin to join modules to it."
+            : "This combine group has already been split. Please contact Admin to join modules to it."
+        );
+        return;
+      }
+
+      if (isAdmin && selectedGroup.downstream_state !== "none") {
+        const confirmed = window.confirm(
+          `Join ${manualCombineBaseModule.programme_code} / ${manualCombineBaseModule.module_code} to ${selectedGroup.combined_code}?\n\n` +
+            "This will clear all weekly/daily timetable sessions, split results, module instances, and teaching assignments (including confirmed assignments) for the entire combine group.\n\n" +
+            "After joining, please re-run Split, Teachers, and Schedule for this combine group."
+        );
+
+        if (!confirmed) return;
+      }
+
+      setLoading(true);
+      setMessage("");
+
+      try {
+        const result = await joinPlanningModuleToCombineGroup({
+          planningModuleId: manualCombineBaseModule.id,
+          combineGroupId: selectedJoinGroupId,
+          actorRole: user.role,
+          updatedBy: user.id,
+        });
+
+        closeManualCombineDialog();
+
+        await refreshPlanning();
+        await refreshCombineGroups({ programmeCode });
+
+        if (step === "split" || step === "schedule") {
+          await refreshTimetableAndAssignments({ programmeCode });
+        }
+
+        setMessage(
+          result.didResetDownstream
+            ? `Joined ${result.group.combined_code}. Schedule and split were cleared for this combine group. Please re-run Split, Teachers, and Schedule.`
+            : `Joined ${result.group.combined_code}.`
+        );
+      } catch (error) {
+        console.error("[MakeTimetablePage] Join manual combine failed:", error);
+        setMessage(
+          error instanceof Error ? error.message : "Join manual combine failed"
+        );
+      } finally {
+        setLoading(false);
+      }
+
+      return;
+    }
+
     const selectedCandidates = manualCombineCandidates.filter((module) =>
       selectedManualCandidateIds.includes(module.id)
     );
 
     if (selectedCandidates.length === 0) {
-      setMessage("Please select at least one module to combine with.");
+      setMessage(
+        "Please select an existing combine group to join, or select at least one module to create a new combine group."
+      );
       return;
     }
+
+    const createBlockReason = getCreateNewManualCombineBlockReason({
+      baseModule: manualCombineBaseModule,
+      selectedCandidates,
+      joinableGroups: manualCombineJoinableGroups,
+    });
+
+    if (createBlockReason) {
+      setMessage(createBlockReason);
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
 
     try {
       await createManualCombineGroup({
@@ -731,9 +856,7 @@ export function MakeTimetablePage() {
         createdBy: user.id,
       });
 
-      setManualCombineBaseModule(null);
-      setManualCombineCandidates([]);
-      setSelectedManualCandidateIds([]);
+      closeManualCombineDialog();
 
       await refreshPlanning();
 
@@ -745,6 +868,8 @@ export function MakeTimetablePage() {
     } catch (error) {
       console.error("[MakeTimetablePage] Manual combine failed:", error);
       setMessage(error instanceof Error ? error.message : "Manual combine failed");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -1977,15 +2102,15 @@ export function MakeTimetablePage() {
       {manualCombineBaseModule && (
         <ManualCombineDialog
           baseModule={manualCombineBaseModule}
+          joinableGroups={manualCombineJoinableGroups}
+          selectedJoinGroupId={selectedJoinGroupId}
+          selectJoinGroup={selectJoinGroup}
           candidates={manualCombineCandidates}
           selectedCandidateIds={selectedManualCandidateIds}
           toggleCandidate={toggleManualCandidate}
+          isAdmin={isAdmin}
           onConfirm={handleConfirmManualCombineFromDialog}
-          onClose={() => {
-            setManualCombineBaseModule(null);
-            setManualCombineCandidates([]);
-            setSelectedManualCandidateIds([]);
-          }}
+          onClose={closeManualCombineDialog}
         />
       )}
 
@@ -2041,9 +2166,9 @@ function CombineStep({
 
             <div className="text-sm text-blue-700">
               Same programme, same module code across different streams are
-              combined automatically (combined code = module code). Use manual
-              combine only for cross-programme or different module codes. When
-              ready, continue to Split.
+              combined automatically (combined code = module code). Use Combine
+              to join an existing cross-programme group or create a new manual
+              combine. When ready, continue to Split.
             </div>
 
             <div className="mt-1 text-xs text-blue-600">
@@ -2217,22 +2342,56 @@ function CombineStep({
   );
 }
 
+function formatJoinGroupDownstreamLabel(
+  state: JoinableManualCombineGroup["downstream_state"]
+) {
+  if (state === "scheduled") return "Scheduled";
+  if (state === "split_only") return "Split (not scheduled)";
+  return "Combine only";
+}
+
 function ManualCombineDialog({
   baseModule,
+  joinableGroups,
+  selectedJoinGroupId,
+  selectJoinGroup,
   candidates,
   selectedCandidateIds,
   toggleCandidate,
+  isAdmin,
   onConfirm,
   onClose,
 }: {
   baseModule: PlanningModuleWithStudentNumber;
+  joinableGroups: JoinableManualCombineGroup[];
+  selectedJoinGroupId: string | null;
+  selectJoinGroup: (id: string | null) => void;
   candidates: PlanningModuleWithStudentNumber[];
   selectedCandidateIds: string[];
   toggleCandidate: (id: string) => void;
+  isAdmin: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }) {
-  const hasSelection = selectedCandidateIds.length > 0;
+  const hasJoinSelection = Boolean(selectedJoinGroupId);
+  const hasCreateSelection = selectedCandidateIds.length > 0;
+  const canConfirm = hasJoinSelection || hasCreateSelection;
+
+  const selectedJoinGroup = joinableGroups.find(
+    (group) => group.id === selectedJoinGroupId
+  );
+
+  const createBlockReason = getCreateNewManualCombineBlockReason({
+    baseModule,
+    selectedCandidates: candidates.filter((module) =>
+      selectedCandidateIds.includes(module.id)
+    ),
+    joinableGroups,
+  });
+
+  const joinableForCurrentUser = joinableGroups.filter(
+    (group) => isAdmin || group.downstream_state === "none"
+  );
 
   return (
     <div
@@ -2246,7 +2405,7 @@ function ManualCombineDialog({
         <div className="shrink-0 flex items-start justify-between border-b border-slate-200 px-5 py-4">
           <div>
             <div className="text-lg font-semibold text-slate-900">
-              Create Manual Combine
+              Combine Module
             </div>
 
             <div className="mt-1 text-sm text-slate-500">
@@ -2259,9 +2418,8 @@ function ManualCombineDialog({
             </div>
 
             <div className="mt-1 text-xs text-slate-400">
-              Showing all same-term modules that are not already manually
-              combined. Select one or more modules to create a manual combine
-              group.
+              Join an existing combine group with the same module code, or
+              combine with other uncombined modules to create a new group.
             </div>
           </div>
 
@@ -2275,66 +2433,166 @@ function ManualCombineDialog({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto p-5">
-          {candidates.length === 0 ? (
-            <EmptyState message="No eligible modules available for manual combine." />
-          ) : (
-            <DataTable
-              rows={candidates}
-              rowKey={(row) => row.id}
-              columns={[
-                {
-                  key: "select",
-                  header: "Select",
-                  render: (row) => (
-                    <input
-                      type="checkbox"
-                      checked={selectedCandidateIds.includes(row.id)}
-                      onChange={() => toggleCandidate(row.id)}
-                      aria-label={`Select ${row.module_code}`}
-                    />
-                  ),
-                },
-                {
-                  key: "module",
-                  header: "Module",
-                  render: (row) => renderModuleCodeAndName(row),
-                },
-                {
-                  key: "programme",
-                  header: "Programme",
-                  render: (row) => row.programme_code,
-                },
-                {
-                  key: "stream",
-                  header: "Stream",
-                  render: (row) => displayStream(row.stream_code),
-                },
-                {
-                  key: "term",
-                  header: "Term",
-                  render: (row) => row.module_term,
-                },
-                {
-                  key: "expected",
-                  header: "Expected",
-                  render: (row) => row.expected_student_number ?? "-",
-                },
-                {
-                  key: "actual",
-                  header: "Actual",
-                  render: (row) => row.actual_student_number ?? "-",
-                },
-              ]}
-            />
-          )}
+        <div className="min-h-0 flex-1 overflow-auto p-5 space-y-6">
+          <div>
+            <div className="mb-2 text-sm font-semibold text-slate-800">
+              Join existing combine group
+            </div>
+
+            {joinableGroups.length === 0 ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                No existing manual combine group found for {baseModule.module_code}{" "}
+                in {baseModule.module_term}. Create a new combine group below, or
+                ask another programme leader to combine first.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {joinableGroups.map((group) => {
+                  const joinDisabled =
+                    !isAdmin && group.downstream_state !== "none";
+
+                  return (
+                    <label
+                      key={group.id}
+                      className={`flex cursor-pointer items-start gap-3 rounded-lg border px-4 py-3 ${
+                        selectedJoinGroupId === group.id
+                          ? "border-blue-300 bg-blue-50"
+                          : "border-slate-200 bg-white"
+                      } ${joinDisabled ? "cursor-not-allowed opacity-60" : ""}`}
+                    >
+                      <input
+                        type="radio"
+                        name="join-combine-group"
+                        className="mt-1"
+                        checked={selectedJoinGroupId === group.id}
+                        disabled={joinDisabled}
+                        onChange={() => selectJoinGroup(group.id)}
+                      />
+
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium text-slate-900">
+                          {group.combined_code}
+                        </div>
+
+                        <div className="mt-1 text-sm text-slate-600">
+                          Programmes: {group.member_programme_codes.join(", ")}
+                          {" · "}
+                          Expected: {group.total_expected_student_number ?? 0}
+                          {" · "}
+                          Term: {group.module_term}
+                        </div>
+
+                        <div className="mt-1 text-xs text-slate-500">
+                          Status: {formatJoinGroupDownstreamLabel(group.downstream_state)}
+                          {joinDisabled
+                            ? " · Contact Admin to join this group"
+                            : ""}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+
+                {joinableForCurrentUser.length === 0 && joinableGroups.length > 0 ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    Existing combine groups for {baseModule.module_code} have
+                    already progressed beyond Combine. Programme Leaders cannot
+                    join them. Please contact Admin.
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="mb-2 text-sm font-semibold text-slate-800">
+              Or combine with other uncombined modules
+            </div>
+
+            {createBlockReason ? (
+              <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {createBlockReason}
+              </div>
+            ) : null}
+
+            {candidates.length === 0 ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                No other uncombined modules in the same term are available for
+                creating a new combine group.
+              </div>
+            ) : (
+              <DataTable
+                rows={candidates}
+                rowKey={(row) => row.id}
+                columns={[
+                  {
+                    key: "select",
+                    header: "Select",
+                    render: (row) => (
+                      <input
+                        type="checkbox"
+                        checked={selectedCandidateIds.includes(row.id)}
+                        disabled={Boolean(createBlockReason)}
+                        onChange={() => toggleCandidate(row.id)}
+                        aria-label={`Select ${row.module_code}`}
+                      />
+                    ),
+                  },
+                  {
+                    key: "module",
+                    header: "Module",
+                    render: (row) => renderModuleCodeAndName(row),
+                  },
+                  {
+                    key: "programme",
+                    header: "Programme",
+                    render: (row) => row.programme_code,
+                  },
+                  {
+                    key: "stream",
+                    header: "Stream",
+                    render: (row) => displayStream(row.stream_code),
+                  },
+                  {
+                    key: "term",
+                    header: "Term",
+                    render: (row) => row.module_term,
+                  },
+                  {
+                    key: "expected",
+                    header: "Expected",
+                    render: (row) => row.expected_student_number ?? "-",
+                  },
+                  {
+                    key: "actual",
+                    header: "Actual",
+                    render: (row) => row.actual_student_number ?? "-",
+                  },
+                ]}
+              />
+            )}
+          </div>
+
+          {isAdmin &&
+          selectedJoinGroup &&
+          selectedJoinGroup.downstream_state !== "none" ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Admin join will clear timetable sessions, split results, module
+              instances, and teaching assignments (including confirmed
+              assignments) for the entire{" "}
+              <span className="font-medium">{selectedJoinGroup.combined_code}</span>{" "}
+              combine group. Re-run Split, Teachers, and Schedule after joining.
+            </div>
+          ) : null}
         </div>
 
         <div className="shrink-0 flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-4">
           <div className="text-sm text-slate-500">
-            {hasSelection
-              ? `${selectedCandidateIds.length + 1} modules selected including base module.`
-              : "Select at least one module to combine with the base module."}
+            {hasJoinSelection
+              ? `Joining ${baseModule.module_code} into ${selectedJoinGroup?.combined_code ?? "selected group"}.`
+              : hasCreateSelection
+                ? `${selectedCandidateIds.length + 1} modules selected including base module.`
+                : "Select an existing group to join, or select modules to create a new combine group."}
           </div>
 
           <div className="flex items-center gap-2">
@@ -2346,9 +2604,9 @@ function ManualCombineDialog({
               type="button"
               className="btn btn-primary disabled:cursor-not-allowed disabled:opacity-50"
               onClick={onConfirm}
-              disabled={!hasSelection}
+              disabled={!canConfirm}
             >
-              Confirm Manual Combine
+              Confirm Combine
             </button>
           </div>
         </div>

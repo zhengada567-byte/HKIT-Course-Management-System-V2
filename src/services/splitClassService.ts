@@ -1088,6 +1088,40 @@ export async function undoTimetableModuleDecision(params: {
   if (deleteError) throw deleteError;
 }
 
+/**
+ * Clears weekly/daily timetable sessions, split results, assignments, and
+ * module instances for a manual combine group so it can be re-merged.
+ */
+export async function resetCombineGroupDownstream(params: {
+  academicYear: string;
+  combineGroupId: string;
+}) {
+  const { data: modules, error: fetchError } = await supabase
+    .from("timetable_modules")
+    .select("id")
+    .eq("academic_year", params.academicYear)
+    .eq("combine_group_id", params.combineGroupId);
+
+  if (fetchError) throw fetchError;
+
+  const timetableModuleIds = (modules ?? []).map((row) => row.id);
+
+  if (timetableModuleIds.length > 0) {
+    const { error: sessionError } = await supabase
+      .from("timetable_sessions")
+      .delete()
+      .in("timetable_module_id", timetableModuleIds);
+
+    if (sessionError) throw sessionError;
+  }
+
+  await undoTimetableDecisionsForSources({
+    academicYear: params.academicYear,
+    planningModuleIds: [],
+    combineGroupIds: [params.combineGroupId],
+  });
+}
+
 export async function undoTimetableDecisionsForSources(params: {
   academicYear: string;
   planningModuleIds: string[];

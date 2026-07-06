@@ -5,7 +5,9 @@ import type {
   TimetablePlanningModuleRow,
   TimetableStudentNumberRow,
 } from "../types";
+import type { UserRole } from "../types/auth";
 import type { ModuleEnrollmentRow } from "./moduleEnrollmentService";
+import { resetCombineGroupDownstream } from "./splitClassService";
 
 export interface ManualCombineGroupDetailRow {
   combine_group_id: string;
@@ -789,6 +791,420 @@ export async function listManualCombineGroups(params: {
   }
 
   return results;
+}
+
+export type CombineGroupDownstreamState = "none" | "split_only" | "scheduled";
+
+export interface JoinableManualCombineGroup {
+  id: string;
+  combined_code: string;
+  module_term: ModuleTerm;
+  member_programme_codes: string[];
+  total_expected_student_number: number | null;
+  downstream_state: CombineGroupDownstreamState;
+}
+
+async function loadDownstreamStateByCombineGroupId(params: {
+  academicYear: string;
+  combineGroupIds: string[];
+}): Promise<Map<string, CombineGroupDownstreamState>> {
+  const result = new Map<string, CombineGroupDownstreamState>();
+
+  for (const groupId of params.combineGroupIds) {
+    result.set(groupId, "none");
+  }
+
+  if (params.combineGroupIds.length === 0) {
+    return result;
+  }
+
+  const { data: timetableModules, error: moduleError } = await supabase
+    .from("timetable_modules")
+    .select("id, combine_group_id")
+    .eq("academic_year", params.academicYear)
+    .in("combine_group_id", params.combineGroupIds);
+
+  if (moduleError) throw moduleError;
+
+  const modules = timetableModules ?? [];
+  const modulesByGroupId = new Map<string, string[]>();
+
+  for (const row of modules) {
+    const groupId = String(row.combine_group_id ?? "").trim();
+    if (!groupId) continue;
+
+    const bucket = modulesByGroupId.get(groupId) ?? [];
+    bucket.push(String(row.id));
+    modulesByGroupId.set(groupId, bucket);
+  }
+
+  for (const [groupId, moduleIds] of modulesByGroupId) {
+    if (moduleIds.length === 0) {
+      continue;
+    }
+
+    const { count, error: sessionError } = await supabase
+      .from("timetable_sessions")
+      .select("*", { count: "exact", head: true })
+      .in("timetable_module_id", moduleIds);
+
+    if (sessionError) throw sessionError;
+
+    result.set(
+      groupId,
+      Number(count ?? 0) > 0 ? "scheduled" : "split_only"
+    );
+  }
+
+  return result;
+}
+
+export async function listJoinableManualCombineGroups(params: {
+  academicYear: string;
+  moduleCode: string;
+  moduleTerm: ModuleTerm;
+  excludePlanningModuleId: string;
+}): Promise<JoinableManualCombineGroup[]> {
+  const normalizedModuleCode = normalizeCodePart(params.moduleCode);
+
+  const [
+    { data: groupData, error: groupError },
+    { data: relationData, error: relationError },
+    { data: planningData, error: planningError },
+  ] = await Promise.all([
+    supabase
+      .from("combine_groups")
+      .select("*")
+      .eq("academic_year", params.academicYear)
+      .eq("combine_type", "manual")
+      .eq("module_term", params.moduleTerm)
+      .order("combined_code"),
+    supabase.from("combine_group_modules").select("*"),
+    supabase
+      .from("timetable_planning_modules")
+      .select("*")
+      .eq("academic_year", params.academicYear),
+  ]);
+
+  if (groupError) throw groupError;
+  if (relationError) throw relationError;
+  if (planningError) throw planningError;
+
+  const groups = (groupData ?? []) as CombineGroupRow[];
+  const relations = (relationData ?? []) as Array<{
+    combine_group_id: string;
+    planning_module_id: string;
+  }>;
+  const planningModules = (planningData ?? []) as TimetablePlanningModuleRow[];
+  const planningModuleMap = new Map(
+    planningModules.map((module) => [module.id, module])
+  );
+
+  const candidateGroupIds: string[] = [];
+  const candidateMeta = new Map<
+    string,
+    {
+      group: CombineGroupRow;
+      members: TimetablePlanningModuleRow[];
+    }
+  >();
+
+  for (const group of groups) {
+    const groupRelations = relations.filter(
+      (relation) => relation.combine_group_id === group.id
+    );
+
+    const members = groupRelations
+      .map((relation) => planningModuleMap.get(relation.planning_module_id))
+      .filter(Boolean) as TimetablePlanningModuleRow[];
+
+    if (members.length === 0) {
+      continue;
+    }
+
+    if (members.some((module) => module.id === params.excludePlanningModuleId)) {
+      continue;
+    }
+
+    const sameModuleCode = members.every(
+      (module) => normalizeCodePart(module.module_code) === normalizedModuleCode
+    );
+
+    if (!sameModuleCode) {
+      continue;
+    }
+
+    candidateGroupIds.push(group.id);
+    candidateMeta.set(group.id, { group, members });
+  }
+
+  const downstreamStateMap = await loadDownstreamStateByCombineGroupId({
+    academicYear: params.academicYear,
+    combineGroupIds: candidateGroupIds,
+  });
+
+  return candidateGroupIds
+    .map((groupId) => {
+      const meta = candidateMeta.get(groupId);
+      if (!meta) return null;
+
+      return {
+        id: meta.group.id,
+        combined_code: meta.group.combined_code,
+        module_term: meta.group.module_term,
+        member_programme_codes: uniqueSorted(
+          meta.members.map((module) => module.programme_code)
+        ),
+        total_expected_student_number:
+          meta.group.total_expected_student_number ?? null,
+        downstream_state:
+          downstreamStateMap.get(groupId) ?? ("none" as const),
+      } satisfies JoinableManualCombineGroup;
+    })
+    .filter(Boolean) as JoinableManualCombineGroup[];
+}
+
+export function getCreateNewManualCombineBlockReason(params: {
+  baseModule: TimetablePlanningModuleRow;
+  selectedCandidates: TimetablePlanningModuleRow[];
+  joinableGroups: JoinableManualCombineGroup[];
+}) {
+  if (params.joinableGroups.length === 0) {
+    return null;
+  }
+
+  const allModules = [params.baseModule, ...params.selectedCandidates];
+  const moduleCodes = uniqueSorted(
+    allModules.map((module) => module.module_code)
+  );
+
+  if (moduleCodes.length !== 1) {
+    return null;
+  }
+
+  return `A combine group for ${moduleCodes[0]} already exists. Join an existing group instead of creating a duplicate.`;
+}
+
+async function buildCombinedCodeForModules(
+  modules: TimetablePlanningModuleRow[]
+) {
+  if (modules.length === 0) {
+    throw new Error("No modules provided for combined code generation.");
+  }
+
+  const first = modules[0];
+  const streamAbbrMap = await getStreamAbbrMapForModules(modules);
+
+  return `${generateManualCombinedCodeFromModules({
+    selectedModules: modules,
+    streamAbbrMap,
+  })}_${normalizeCodePart(first.module_term)}`;
+}
+
+export async function joinPlanningModuleToCombineGroup(params: {
+  planningModuleId: string;
+  combineGroupId: string;
+  actorRole: UserRole;
+  updatedBy: string;
+}) {
+  const { data: planningData, error: planningError } = await supabase
+    .from("timetable_planning_modules")
+    .select("*")
+    .eq("id", params.planningModuleId)
+    .maybeSingle();
+
+  if (planningError) throw planningError;
+
+  const planningModule = planningData as TimetablePlanningModuleRow | null;
+
+  if (!planningModule) {
+    throw new Error("Planning module not found.");
+  }
+
+  if (planningModule.manual_combine_group_id) {
+    throw new Error(
+      "This module is already in a manual combine group. Undo that combine first."
+    );
+  }
+
+  const { data: groupData, error: groupError } = await supabase
+    .from("combine_groups")
+    .select("*")
+    .eq("id", params.combineGroupId)
+    .maybeSingle();
+
+  if (groupError) throw groupError;
+
+  const group = groupData as CombineGroupRow | null;
+
+  if (!group || group.combine_type !== "manual") {
+    throw new Error("Manual combine group not found.");
+  }
+
+  const { data: relationData, error: relationError } = await supabase
+    .from("combine_group_modules")
+    .select("planning_module_id")
+    .eq("combine_group_id", params.combineGroupId);
+
+  if (relationError) throw relationError;
+
+  const existingPlanningModuleIds = (relationData ?? []).map(
+    (relation) => relation.planning_module_id
+  );
+
+  if (existingPlanningModuleIds.includes(params.planningModuleId)) {
+    throw new Error("This module is already a member of the selected combine group.");
+  }
+
+  const { data: memberPlanningData, error: memberPlanningError } =
+    await supabase
+      .from("timetable_planning_modules")
+      .select("*")
+      .in("id", existingPlanningModuleIds);
+
+  if (memberPlanningError) throw memberPlanningError;
+
+  const existingMembers = (memberPlanningData ??
+    []) as TimetablePlanningModuleRow[];
+
+  if (existingMembers.length === 0) {
+    throw new Error("Selected combine group has no planning modules.");
+  }
+
+  const allMembers = [...existingMembers, planningModule];
+
+  const academicYears = uniqueSorted(
+    allMembers.map((module) => module.academic_year)
+  );
+  const moduleTerms = uniqueSorted(
+    allMembers.map((module) => module.module_term)
+  );
+  const moduleCodes = uniqueSorted(
+    allMembers.map((module) => module.module_code)
+  );
+
+  if (academicYears.length !== 1 || moduleTerms.length !== 1) {
+    throw new Error(
+      "Only modules in the same academic year and term can join the same combine group."
+    );
+  }
+
+  if (moduleCodes.length !== 1) {
+    throw new Error(
+      "Only modules with the same module code can join this combine group."
+    );
+  }
+
+  const downstreamStateMap = await loadDownstreamStateByCombineGroupId({
+    academicYear: group.academic_year,
+    combineGroupIds: [params.combineGroupId],
+  });
+  const downstreamState =
+    downstreamStateMap.get(params.combineGroupId) ?? "none";
+
+  if (downstreamState !== "none" && params.actorRole !== "admin") {
+    throw new Error(
+      downstreamState === "scheduled"
+        ? "This combine group is already scheduled. Programme Leaders cannot join modules to it. Please contact Admin."
+        : "This combine group has already been split. Programme Leaders cannot join modules to it. Please contact Admin."
+    );
+  }
+
+  let didResetDownstream = false;
+
+  if (downstreamState !== "none") {
+    await resetCombineGroupDownstream({
+      academicYear: group.academic_year,
+      combineGroupId: params.combineGroupId,
+    });
+    didResetDownstream = true;
+  }
+
+  const newCombinedCode = await buildCombinedCodeForModules(allMembers);
+
+  if (newCombinedCode !== group.combined_code) {
+    const { data: conflictingGroup, error: conflictError } = await supabase
+      .from("combine_groups")
+      .select("id")
+      .eq("academic_year", group.academic_year)
+      .eq("combined_code", newCombinedCode)
+      .neq("id", group.id)
+      .maybeSingle();
+
+    if (conflictError) throw conflictError;
+
+    if (conflictingGroup) {
+      throw new Error(
+        `Cannot rename combine group to ${newCombinedCode} because another group already uses that code.`
+      );
+    }
+  }
+
+  const [
+    { data: studentData, error: studentError },
+    { data: enrollmentData, error: enrollmentError },
+  ] = await Promise.all([
+    supabase
+      .from("timetable_student_numbers")
+      .select("*")
+      .eq("academic_year", group.academic_year),
+    supabase
+      .from("module_enrollment")
+      .select("*")
+      .eq("academic_year", group.academic_year),
+  ]);
+
+  if (studentError) throw studentError;
+  if (enrollmentError) throw enrollmentError;
+
+  const totals = calculateManualCombineTotals({
+    selectedModules: allMembers,
+    studentNumbers: (studentData ?? []) as TimetableStudentNumberRow[],
+    moduleEnrollments: (enrollmentData ?? []) as ModuleEnrollmentRow[],
+  });
+
+  const { error: insertRelationError } = await supabase
+    .from("combine_group_modules")
+    .insert({
+      combine_group_id: params.combineGroupId,
+      planning_module_id: params.planningModuleId,
+    });
+
+  if (insertRelationError) throw insertRelationError;
+
+  const { data: updatedGroupData, error: updateGroupError } = await supabase
+    .from("combine_groups")
+    .update({
+      combined_code: newCombinedCode,
+      combine_type: "manual",
+      total_expected_student_number: totals.totalExpected,
+      total_actual_student_number: totals.totalActual,
+      actual_student_number_status: totals.actualStatus,
+      status: "confirmed",
+      confirmed_at: new Date().toISOString(),
+    })
+    .eq("id", params.combineGroupId)
+    .select("*")
+    .single();
+
+  if (updateGroupError) throw updateGroupError;
+
+  const { error: syncPlanningError } = await supabase
+    .from("timetable_planning_modules")
+    .update({
+      manual_combine_group_id: params.combineGroupId,
+      natural_combine_code: null,
+    })
+    .eq("id", params.planningModuleId);
+
+  if (syncPlanningError) throw syncPlanningError;
+
+  const updatedGroup = updatedGroupData as CombineGroupRow;
+
+  return {
+    group: updatedGroup,
+    didResetDownstream,
+  };
 }
 
 export async function deleteManualCombineGroup(groupId: string) {
