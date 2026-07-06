@@ -996,6 +996,11 @@ export function MakeTimetablePage() {
   }
 
   async function handleDeleteManualCombine(groupId: string) {
+    if (!user) {
+      setMessage("Please login before undoing manual combine.");
+      return;
+    }
+
     try {
       await deleteManualCombineGroup(groupId, { actorRole: user.role });
 
@@ -2339,11 +2344,11 @@ export function MakeTimetablePage() {
               teachers={teachers}
               programmeCode={programmeCode || undefined}
               confirming={confirmingTeachers}
-              onConfirmAllTeachers={(rows) =>
-                handleConfirmAllTeachers(rows, sourceTimetableModules, {
+              onConfirmAllTeachers={async (rows) => {
+                await handleConfirmAllTeachers(rows, sourceTimetableModules, {
                   navigateToSchedule: true,
-                })
-              }
+                });
+              }}
               crossProgrammeInstanceCount={
                 scheduleInstances.length - plManagedScheduleInstances.length
               }
