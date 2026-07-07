@@ -264,6 +264,19 @@ function RemainingClassroomsCellSummary(props: {
   });
 }
 
+function classroomLocationKey(room: TimetableClassroomRow) {
+  const fromLocation = String(room.location ?? "").trim().toUpperCase();
+  if (fromLocation) return fromLocation;
+
+  const roomCode = String(room.room_code ?? "").trim().toUpperCase();
+  const dashIndex = roomCode.indexOf("-");
+  if (dashIndex > 0) {
+    return roomCode.slice(0, dashIndex);
+  }
+
+  return roomCode;
+}
+
 function filterClassroomsByLocation(
   classrooms: TimetableClassroomRow[],
   location?: string
@@ -271,13 +284,7 @@ function filterClassroomsByLocation(
   const key = String(location ?? "").trim().toUpperCase();
   if (!key) return classrooms;
 
-  return classrooms.filter((room) => {
-    const roomLocation =
-      String(room.location ?? "").trim().toUpperCase() ||
-      String(room.room_code ?? "").split("-")[0]?.trim().toUpperCase() ||
-      "";
-    return roomLocation === key;
-  });
+  return classrooms.filter((room) => classroomLocationKey(room) === key);
 }
 
 export function WeeklyTimetableEditor(props: {
@@ -301,7 +308,7 @@ export function WeeklyTimetableEditor(props: {
   hideInstancePanel?: boolean;
   /** View-only: hide save/add/edit/remove (e.g. PL on weekly & daily timetable). */
   readOnly?: boolean;
-  /** Limit remaining-room summary to one campus (e.g. SSP only in Make Timetable). */
+  /** Limit remaining-room summary to one campus; defaults to SSP. Pass "" for all locations. */
   availabilitySummaryLocation?: string;
   instancePanelTitle?: string;
   instancePanelDescription?: string;
@@ -330,6 +337,11 @@ export function WeeklyTimetableEditor(props: {
     onAfterSave,
   } = props;
 
+  const summaryLocation =
+    availabilitySummaryLocation === ""
+      ? undefined
+      : (availabilitySummaryLocation ?? "SSP");
+
   const isEmbedded = variant === "embedded";
   const panelOpen = isEmbedded || open;
 
@@ -337,9 +349,8 @@ export function WeeklyTimetableEditor(props: {
     !readOnly && (forceViewScopeAll || allowEditAllGridModules);
 
   const availabilitySummaryClassrooms = useMemo(
-    () =>
-      filterClassroomsByLocation(classrooms, availabilitySummaryLocation),
-    [availabilitySummaryLocation, classrooms]
+    () => filterClassroomsByLocation(classrooms, summaryLocation),
+    [classrooms, summaryLocation]
   );
 
   const [weeklyLoading, setWeeklyLoading] = useState(false);
@@ -1201,8 +1212,8 @@ export function WeeklyTimetableEditor(props: {
                                 remaining={cellRemaining}
                                 totalCount={availabilitySummaryClassrooms.length}
                                 label={
-                                  availabilitySummaryLocation
-                                    ? `${availabilitySummaryLocation} remaining`
+                                  summaryLocation
+                                    ? `${summaryLocation} remaining`
                                     : "Remaining"
                                 }
                               />
@@ -1487,8 +1498,14 @@ export function WeeklyTimetableEditor(props: {
                   ))}
                 </select>
                 <RemainingClassroomsCellSummary
-                  remaining={addDialogRemainingClassrooms}
-                  totalCount={classrooms.length}
+                  remaining={filterClassroomsByLocation(
+                    addDialogRemainingClassrooms,
+                    summaryLocation
+                  )}
+                  totalCount={availabilitySummaryClassrooms.length}
+                  label={
+                    summaryLocation ? `${summaryLocation} remaining` : "Remaining"
+                  }
                 />
                 <RoomCapacityHint
                   studentNumber={addDialogStudentNumber}
