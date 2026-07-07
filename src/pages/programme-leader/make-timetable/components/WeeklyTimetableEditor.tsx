@@ -255,11 +255,28 @@ function formatRemainingClassroomSummary(params: {
 function RemainingClassroomsCellSummary(props: {
   remaining: TimetableClassroomRow[];
   totalCount: number;
+  label?: string;
 }) {
   return formatRemainingClassroomSummary({
     remaining: props.remaining,
     totalCount: props.totalCount,
-    label: "Remaining",
+    label: props.label ?? "Remaining",
+  });
+}
+
+function filterClassroomsByLocation(
+  classrooms: TimetableClassroomRow[],
+  location?: string
+) {
+  const key = String(location ?? "").trim().toUpperCase();
+  if (!key) return classrooms;
+
+  return classrooms.filter((room) => {
+    const roomLocation =
+      String(room.location ?? "").trim().toUpperCase() ||
+      String(room.room_code ?? "").split("-")[0]?.trim().toUpperCase() ||
+      "";
+    return roomLocation === key;
   });
 }
 
@@ -282,6 +299,10 @@ export function WeeklyTimetableEditor(props: {
   allowEditAllGridModules?: boolean;
   /** Hide the bottom module-instance list (e.g. weekly & daily timetable page). */
   hideInstancePanel?: boolean;
+  /** View-only: hide save/add/edit/remove (e.g. PL on weekly & daily timetable). */
+  readOnly?: boolean;
+  /** Limit remaining-room summary to one campus (e.g. SSP only in Make Timetable). */
+  availabilitySummaryLocation?: string;
   instancePanelTitle?: string;
   instancePanelDescription?: string;
   onAfterSave?: () => void;
@@ -302,6 +323,8 @@ export function WeeklyTimetableEditor(props: {
     forceViewScopeAll = false,
     allowEditAllGridModules = false,
     hideInstancePanel = false,
+    readOnly = false,
+    availabilitySummaryLocation,
     instancePanelTitle,
     instancePanelDescription,
     onAfterSave,
@@ -311,7 +334,13 @@ export function WeeklyTimetableEditor(props: {
   const panelOpen = isEmbedded || open;
 
   const canEditAcrossProgrammes =
-    forceViewScopeAll || allowEditAllGridModules;
+    !readOnly && (forceViewScopeAll || allowEditAllGridModules);
+
+  const availabilitySummaryClassrooms = useMemo(
+    () =>
+      filterClassroomsByLocation(classrooms, availabilitySummaryLocation),
+    [availabilitySummaryLocation, classrooms]
+  );
 
   const [weeklyLoading, setWeeklyLoading] = useState(false);
   const [weeklyError, setWeeklyError] = useState<string | null>(null);
@@ -346,6 +375,10 @@ export function WeeklyTimetableEditor(props: {
   );
 
   const editableInstanceCodeSet = useMemo(() => {
+    if (readOnly) {
+      return new Set<string>();
+    }
+
     const codes = new Set(
       editableInstanceCodes.map((code) => code.toUpperCase())
     );
@@ -357,7 +390,7 @@ export function WeeklyTimetableEditor(props: {
     }
 
     return codes;
-  }, [canEditAcrossProgrammes, editableInstanceCodes, weeklyGrid]);
+  }, [canEditAcrossProgrammes, editableInstanceCodes, readOnly, weeklyGrid]);
 
   const instanceByCode = useMemo(() => {
     const map = new Map<string, TimetableModuleInstanceRow>();
@@ -816,13 +849,16 @@ export function WeeklyTimetableEditor(props: {
         const items = weeklyGrid.itemsBySlotAndWeekday[sk]?.[day.id] ?? [];
         map.set(
           `${sk}|${day.id}`,
-          getRemainingClassroomsForWeeklyCell({ items, classrooms })
+          getRemainingClassroomsForWeeklyCell({
+            items,
+            classrooms: availabilitySummaryClassrooms,
+          })
         );
       }
     }
 
     return map;
-  }, [weeklyGrid, classrooms]);
+  }, [availabilitySummaryClassrooms, weeklyGrid]);
 
   const addDialogRemainingClassrooms = useMemo(() => {
     if (!addDialog || !weeklyGrid) {
@@ -936,12 +972,13 @@ export function WeeklyTimetableEditor(props: {
               </div>
             )}
 
-            {isDirty && (
+            {isDirty && !readOnly && (
               <span className="text-sm font-medium text-amber-800">
                 有未保存的變更
               </span>
             )}
 
+            {!readOnly && (
             <button
               type="button"
               className="btn btn-primary"
@@ -950,6 +987,7 @@ export function WeeklyTimetableEditor(props: {
             >
               {saving ? "Saving..." : "Save Timetable"}
             </button>
+            )}
           </div>
 
           {saveMessage && (
@@ -958,11 +996,13 @@ export function WeeklyTimetableEditor(props: {
             </div>
           )}
 
+          {!readOnly && (
           <p className="text-xs text-slate-600">
             Use Edit to change the classroom only. To change the timeslot or teacher,
             remove the module and add it again in the target slot (or update the
             teacher in Step 4).
           </p>
+          )}
 
           <div className="rounded border border-slate-200">
             <table className="w-full border-collapse text-sm">
@@ -1004,7 +1044,7 @@ export function WeeklyTimetableEditor(props: {
                           weeklyGrid.itemsBySlotAndWeekday[sk]?.[day.id] ?? [];
                         const cellRemaining =
                           remainingClassroomsBySlotAndDay.get(`${sk}|${day.id}`) ??
-                          classrooms;
+                          availabilitySummaryClassrooms;
                         const cellKey = `${sk}|${day.id}`;
                         const isBusy = cellBusyKey?.startsWith(`${day.id}|${slot.start}|${slot.end}`);
 
@@ -1086,6 +1126,8 @@ export function WeeklyTimetableEditor(props: {
                                       </div>
                                     </div>
                                     <div className="flex shrink-0 flex-col gap-1">
+                                      {!readOnly && (
+                                      <>
                                       <button
                                         type="button"
                                         className="btn btn-secondary px-1.5 py-0.5 text-xs"
@@ -1128,12 +1170,15 @@ export function WeeklyTimetableEditor(props: {
                                       >
                                         <Minus className="h-3.5 w-3.5" />
                                       </button>
+                                      </>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
                               );
                               })}
 
+                              {!readOnly && (
                               <button
                                 type="button"
                                 className="btn btn-secondary w-full py-0.5 text-xs"
@@ -1150,10 +1195,16 @@ export function WeeklyTimetableEditor(props: {
                                 <Plus className="mr-1 inline h-3.5 w-3.5" />
                                 Add
                               </button>
+                              )}
 
                               <RemainingClassroomsCellSummary
                                 remaining={cellRemaining}
-                                totalCount={classrooms.length}
+                                totalCount={availabilitySummaryClassrooms.length}
+                                label={
+                                  availabilitySummaryLocation
+                                    ? `${availabilitySummaryLocation} remaining`
+                                    : "Remaining"
+                                }
                               />
                             </div>
                           </div>

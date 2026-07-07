@@ -42,7 +42,8 @@ const termOptions: TimetableScheduleTerm[] = ["Sep", "Feb"];
 
 export function DailyTimetablePage() {
   const { academicYear } = useAcademicYear();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
+  const isAdmin = role === "admin";
   const { t } = useLanguage();
 
   const [term, setTerm] = useState<TimetableScheduleTerm>("Sep");
@@ -310,19 +311,21 @@ export function DailyTimetablePage() {
         title={t.weeklyDailyTimetable}
         description={t.weeklyDailyTimetableDescription}
         actions={
-          <button
-            type="button"
-            className="btn btn-primary inline-flex items-center gap-2"
-            disabled={exporting || contextLoading}
-            onClick={() => void handleExportExcel()}
-          >
-            {exporting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            {exporting ? t.loading : t.exportWeeklyDailyTimetableExcel}
-          </button>
+          isAdmin ? (
+            <button
+              type="button"
+              className="btn btn-primary inline-flex items-center gap-2"
+              disabled={exporting || contextLoading}
+              onClick={() => void handleExportExcel()}
+            >
+              {exporting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              {exporting ? t.loading : t.exportWeeklyDailyTimetableExcel}
+            </button>
+          ) : undefined
         }
       />
 
@@ -381,9 +384,15 @@ export function DailyTimetablePage() {
               {t.weeklyTimetableStep}
             </h2>
             <p className="mt-1 text-sm text-slate-600">
-              {t.weeklyTimetableStepHint}
+              {isAdmin ? t.weeklyTimetableStepHint : t.weeklyTimetablePlViewHint}
             </p>
           </div>
+
+          {!isAdmin && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              {t.weeklyTimetablePlViewOnly}
+            </div>
+          )}
 
           {contextLoading ? (
             <LoadingState />
@@ -400,14 +409,16 @@ export function DailyTimetablePage() {
               open={weeklyOpen}
               onOpenChange={setWeeklyOpen}
               refreshToken={weeklyRefreshToken}
-              allowEditAllGridModules
+              allowEditAllGridModules={isAdmin}
+              readOnly={!isAdmin}
               hideInstancePanel
-              onAfterSave={handleWeeklySaved}
+              onAfterSave={isAdmin ? handleWeeklySaved : undefined}
             />
           )}
         </div>
       </section>
 
+      {isAdmin && (
       <section className="card">
         <div className="card-body space-y-4">
           <div>
@@ -634,6 +645,7 @@ export function DailyTimetablePage() {
           {result && result.modules.length === 0 && <EmptyState />}
         </div>
       </section>
+      )}
     </div>
   );
 }

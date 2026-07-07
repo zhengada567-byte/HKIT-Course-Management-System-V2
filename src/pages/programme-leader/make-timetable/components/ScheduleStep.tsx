@@ -589,6 +589,7 @@ export function ScheduleStep(props: {
             preferredStartByCode={preferredStartByCode}
             startTimeOptions={startTimeOptions}
             allowEditAllGridModules
+            availabilitySummaryLocation="SSP"
             open={weeklyOpen}
             onOpenChange={setWeeklyOpen}
             refreshToken={weeklyRefreshToken}

@@ -131,6 +131,10 @@ export const en = {
   weeklyTimetableStep: "1. Weekly timetable",
   weeklyTimetableStepHint:
     "Select a programme first. Switch between all courses or this programme only, save, then generate the daily timetable below.",
+  weeklyTimetablePlViewHint:
+    "Select a programme and view scope to browse the weekly timetable (view only).",
+  weeklyTimetablePlViewOnly:
+    "Programme leaders can view the weekly timetable only. Contact admin to edit or generate the daily timetable.",
   dailyTimetableStep: "2. Daily timetable",
   dailyTimetableStepHint:
     "Assigns L1–L9 / T1–T3 (most HD), L1–L12 only (HD401/HD402/HD405), or teaching+tutorial labels from contact hours, using study-week dates only.",

@@ -125,6 +125,10 @@ export const zhHant = {
   weeklyTimetableStep: "1. 周時間表",
   weeklyTimetableStepHint:
     "請先選擇課程；可切換「显示所有课程」或「只显示本 Programme」，儲存後再於下方產生每日時間表。",
+  weeklyTimetablePlViewHint:
+    "請先選擇課程；可切換顯示範圍檢視周時間表（僅供查閱，不可編輯）。",
+  weeklyTimetablePlViewOnly:
+    "課程主任僅可檢視周時間表；編輯及產生每日時間表請聯絡管理員。",
   dailyTimetableStep: "2. 每日時間表",
   dailyTimetableStepHint:
     "依授課／導修時數及學習週日期產生 L/T 標籤（一般 HD：L1–L9、T1–T3；HD401/HD402/HD405：僅 L1–L12）。",
