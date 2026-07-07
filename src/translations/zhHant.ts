@@ -113,6 +113,7 @@ export const zhHant = {
   edit: "編輯",
   delete: "刪除",
   create: "新增",
+  exportCsv: "匯出 CSV",
   addNewModule: "新增科目",
   moduleTeachingContactHours: "授課時數",
   moduleTutorialContactHours: "導修時數",
@@ -129,7 +130,27 @@ export const zhHant = {
     "請先選擇課程；可切換顯示範圍檢視周時間表（僅供查閱，不可編輯）。",
   weeklyTimetablePlViewOnly:
     "課程主任僅可檢視周時間表；編輯及產生每日時間表請聯絡管理員。",
-  dailyTimetableStep: "2. 每日時間表",
+  studentWeeklyConflictStep: "2. 衝突學生列表",
+  studentWeeklyConflictStepHint:
+    "檢查所選學期內所有課程的學習計劃學生周時間表撞堂（僅周模式，不含每日課節）。可用右側「課程篩選」只查看某個 Programme。依每位學生的入讀班別；未分班或無周時間表僅顯示警告，不計入衝突。",
+  studentWeeklyConflictDetect: "檢測撞堂",
+  studentWeeklyConflictSelectProgramme: "請先選擇課程。",
+  studentWeeklyConflictProgrammeFilter: "課程篩選",
+  studentWeeklyConflictDetectFailed: "檢測學生撞堂失敗。",
+  studentWeeklyConflictEmpty: "按「檢測撞堂」檢查學生周時間表衝突（僅周模式）。",
+  studentWeeklyConflictNone: "未發現周時間表撞堂。",
+  studentWeeklyConflictSummary:
+    "{students} 名學生 · {modules} 條計劃科目 · {conflicts} 項衝突 · {warnings} 項警告",
+  studentWeeklyConflictOverlap: "重疊時段",
+  studentWeeklyConflictModuleA: "科目 A",
+  studentWeeklyConflictModuleB: "科目 B",
+  studentWeeklyConflictWarningsTitle: "警告（不計入衝突）",
+  studentWeeklyConflictWarnMissingClass: "未設定入讀班別",
+  studentWeeklyConflictWarnMissingPattern: "入讀班別無周時間表",
+  studentWeeklyConflictWarningsMore: "…另有 {count} 項警告。",
+  studentId: "學號",
+  weekday: "星期",
+  dailyTimetableStep: "3. 每日時間表",
   dailyTimetableStepHint:
     "依授課／導修時數及學習週日期產生 L/T 標籤（一般 HD：L1–L9、T1–T3；HD401/HD402/HD405：僅 L1–L12）。",
   weeklyTimetableAdminInstanceHint:

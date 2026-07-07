@@ -15,6 +15,7 @@ import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import { downloadWeeklyDailyTimetableExcel } from "../../services/dailyTimetableExportService";
+import { StudentWeeklyConflictPanel } from "./components/StudentWeeklyConflictPanel";
 import { WeeklyTimetableEditor } from "../programme-leader/make-timetable/components/WeeklyTimetableEditor";
 import {
   buildDailyTimetable,
@@ -417,6 +418,12 @@ export function DailyTimetablePage() {
           )}
         </div>
       </section>
+
+      <StudentWeeklyConflictPanel
+        academicYear={academicYear}
+        term={term}
+        programmeCodes={programmeCodes}
+      />
 
       {isAdmin && (
       <section className="card">

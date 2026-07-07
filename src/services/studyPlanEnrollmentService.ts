@@ -57,6 +57,7 @@ interface TimetableInstanceRow {
   module_term: string | null;
   instance_mode: string | null;
   split_group_size: number | null;
+  source_combine_group_id?: string | null;
 }
 
 interface TimetableModuleRow {
@@ -233,6 +234,62 @@ async function loadEnrollmentRows(params: {
   return rows;
 }
 
+async function loadCombineGroupMembersByGroupId(params: {
+  combineGroupIds: string[];
+}): Promise<Map<string, Array<{ module_code: string; programme_code: string }>>> {
+  const result = new Map<string, Array<{ module_code: string; programme_code: string }>>();
+
+  const ids = params.combineGroupIds.map((id) => normalizeText(id)).filter(Boolean);
+  if (ids.length === 0) return result;
+
+  const { data: relations, error: relationError } = await supabase
+    .from("combine_group_modules")
+    .select("combine_group_id, planning_module_id")
+    .in("combine_group_id", ids);
+
+  if (relationError) throw relationError;
+
+  const relationRows = (relations ?? []) as Array<{
+    combine_group_id: string;
+    planning_module_id: string;
+  }>;
+
+  const planningIds = Array.from(
+    new Set(relationRows.map((row) => normalizeText(row.planning_module_id)).filter(Boolean))
+  );
+
+  if (planningIds.length === 0) return result;
+
+  const { data: planningModules, error: planningError } = await supabase
+    .from("timetable_planning_modules")
+    .select("id, module_code, programme_code")
+    .in("id", planningIds);
+
+  if (planningError) throw planningError;
+
+  const planningById = new Map(
+    (planningModules ?? []).map((row) => [
+      normalizeText((row as any).id),
+      {
+        module_code: normalizeText((row as any).module_code),
+        programme_code: normalizeText((row as any).programme_code),
+      },
+    ])
+  );
+
+  for (const row of relationRows) {
+    const groupId = normalizeText(row.combine_group_id);
+    const planning = planningById.get(normalizeText(row.planning_module_id));
+    if (!groupId || !planning?.module_code) continue;
+
+    const bucket = result.get(groupId) ?? [];
+    bucket.push(planning);
+    result.set(groupId, bucket);
+  }
+
+  return result;
+}
+
 async function loadTimetableEnrollmentContext(params: {
   academicYear: string;
   offeredTerm?: ModuleTerm;
@@ -246,7 +303,7 @@ async function loadTimetableEnrollmentContext(params: {
         let query = supabase
           .from("timetable_module_instances")
           .select(
-            "module_instance_code, module_code, module_term, instance_mode, split_group_size"
+            "module_instance_code, module_code, module_term, instance_mode, split_group_size, source_combine_group_id"
           )
           .in("academic_year", yearVariants)
           .order("module_instance_code", { ascending: true })
@@ -320,6 +377,17 @@ async function loadTimetableEnrollmentContext(params: {
   const splitGroupSizeByInstance = new Map<string, number>();
   const instancesByModuleCode = new Map<string, EnrollmentInstanceOption[]>();
 
+  const combineGroupIds = Array.from(
+    new Set(
+      instances
+        .map((row) => normalizeText(row.source_combine_group_id))
+        .filter(Boolean)
+    )
+  );
+  const combineMembersByGroupId = await loadCombineGroupMembersByGroupId({
+    combineGroupIds,
+  });
+
   const registerInstance = (option: EnrollmentInstanceOption) => {
     const moduleCode = normalizeText(option.moduleCode).toUpperCase();
     const instanceCode = normalizeText(option.moduleInstanceCode);
@@ -343,18 +411,31 @@ async function loadTimetableEnrollmentContext(params: {
   for (const row of instances) {
     const instanceCode = normalizeText(row.module_instance_code);
     const moduleCode = normalizeText(row.module_code).toUpperCase();
+    const combineGroupId = normalizeText(row.source_combine_group_id);
 
-    if (!instanceCode || !moduleCode) {
+    if (!instanceCode || (!moduleCode && !combineGroupId)) {
       continue;
     }
 
-    registerInstance({
-      moduleCode,
+    const option: Omit<EnrollmentInstanceOption, "moduleCode"> = {
       moduleInstanceCode: instanceCode,
       instanceMode: normalizeInstanceMode(row.instance_mode),
       splitGroupSize: Number(row.split_group_size ?? 1),
       roomSize: roomSizeByInstance.get(instanceCode) ?? null,
-    });
+    };
+
+    if (combineGroupId) {
+      const members = combineMembersByGroupId.get(combineGroupId) ?? [];
+      for (const member of members) {
+        const baseCode = normalizeText(member.module_code).toUpperCase();
+        if (!baseCode) continue;
+        registerInstance({ moduleCode: baseCode, ...option });
+      }
+      continue;
+    }
+
+    if (!moduleCode) continue;
+    registerInstance({ moduleCode, ...option });
   }
 
   for (const row of timetableModules) {

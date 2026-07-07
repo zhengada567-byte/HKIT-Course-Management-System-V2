@@ -119,6 +119,7 @@ export const en = {
   edit: "Edit",
   delete: "Delete",
   create: "Create",
+  exportCsv: "Export CSV",
   addNewModule: "Add New Module",
   moduleTeachingContactHours: "Teaching hours",
   moduleTutorialContactHours: "Tutorial hours",
@@ -135,7 +136,28 @@ export const en = {
     "Select a programme and view scope to browse the weekly timetable (view only).",
   weeklyTimetablePlViewOnly:
     "Programme leaders can view the weekly timetable only. Contact admin to edit or generate the daily timetable.",
-  dailyTimetableStep: "2. Daily timetable",
+  studentWeeklyConflictStep: "2. Student timetable conflicts",
+  studentWeeklyConflictStepHint:
+    "Detect weekly pattern clashes for study-plan students across all programmes in the selected term. Use the programme filter to view a specific programme. Uses each student's enrolled class; missing class or timetable shows as warnings only.",
+  studentWeeklyConflictDetect: "Detect conflicts",
+  studentWeeklyConflictSelectProgramme: "Select a programme first.",
+  studentWeeklyConflictProgrammeFilter: "Programme filter",
+  studentWeeklyConflictDetectFailed: "Failed to detect student timetable conflicts.",
+  studentWeeklyConflictEmpty:
+    "Click detect to check weekly timetable clashes for students (weekly pattern only).",
+  studentWeeklyConflictNone: "No weekly timetable conflicts found.",
+  studentWeeklyConflictSummary:
+    "{students} student(s) · {modules} planned module row(s) · {conflicts} conflict(s) · {warnings} warning(s)",
+  studentWeeklyConflictOverlap: "Overlap",
+  studentWeeklyConflictModuleA: "Module A",
+  studentWeeklyConflictModuleB: "Module B",
+  studentWeeklyConflictWarningsTitle: "Warnings (not counted as conflicts)",
+  studentWeeklyConflictWarnMissingClass: "No enrolled class",
+  studentWeeklyConflictWarnMissingPattern: "No weekly timetable for enrolled class",
+  studentWeeklyConflictWarningsMore: "…and {count} more warning(s).",
+  studentId: "Student ID",
+  weekday: "Weekday",
+  dailyTimetableStep: "3. Daily timetable",
   dailyTimetableStepHint:
     "Assigns L1–L9 / T1–T3 (most HD), L1–L12 only (HD401/HD402/HD405), or teaching+tutorial labels from contact hours, using study-week dates only.",
   weeklyTimetableAdminInstanceHint:
