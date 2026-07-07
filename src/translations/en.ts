@@ -44,7 +44,7 @@ export const en = {
   moduleTeacherAssignment: "Module Teacher Assignment",
   moduleBasicSettings: "Module Basic Settings",
   moduleBasicSettingsDescription:
-    "Set proposed teachers, teaching status, and whether each module is offered this year.",
+    "Set proposed teachers, teaching status, default mode (Day / Night / Sat), and whether each module is offered this year.",
   moduleTeacherAssignmentDescription:
     "Select a programme to load proposed (default) teachers per module. Change teachers from the dropdown and save. New teachers are saved to the database and appear in the dropdown immediately.",
   loadModuleTeachers: "Load Modules",
@@ -92,6 +92,7 @@ export const en = {
   teacherOtherName: "Teacher Other Name",
   teacherEmploymentStatus: "Teacher Employment Status",
   teachingStatusForThisModule: "Teaching Status for This Module",
+  moduleMode: "Mode",
   expectedStudentNumber: "Expected Student Number",
   actualStudentNumber: "Actual Student Number",
   combineModules: "Combine Modules",

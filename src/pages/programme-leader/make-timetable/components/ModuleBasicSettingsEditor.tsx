@@ -28,14 +28,30 @@ import { listTeachers, upsertTeacher } from "../../../../services/teacherService
 import { listTeacherAvailabilitySaved } from "../../../../services/timetableTeacherAvailabilityService";
 import { InstanceTeacherSelect } from "./InstanceTeacherSelect";
 import { TeacherAvailabilityModal } from "./TeacherAvailabilityModal";
-import type { EmploymentType, ModuleTerm, ProgrammeRow, TeacherRow, TeachingStatus } from "../../../../types";
+import type { EmploymentType, ModuleTerm, ProgrammeRow, TeacherRow, TeachingMode, TeachingStatus } from "../../../../types";
 
 const moduleTermOptions: ModuleTerm[] = ["Sep", "Feb", "Jun"];
+const modeOptions: TeachingMode[] = ["Day", "Night", "Saturday"];
+
+function modeOptionLabel(mode: TeachingMode) {
+  return mode === "Saturday" ? "Sat" : mode;
+}
+
+function modeFromAssignment(
+  assignment: ProgrammeModuleTeacherRow["assignment"]
+): TeachingMode {
+  const mode = assignment?.mode;
+  if (mode === "Day" || mode === "Night" || mode === "Saturday") {
+    return mode;
+  }
+  return "Night";
+}
 
 type ModuleTeacherDraft = {
   teacherName: string;
   teachingStatus: TeachingStatus;
   offering: boolean;
+  mode: TeachingMode;
 };
 
 function buildDraftFromRow(
@@ -47,6 +63,7 @@ function buildDraftFromRow(
     teacherName: teacherNameFromAssignment(row.assignment, teachers),
     teachingStatus: row.assignment?.teaching_status ?? "PT",
     offering: offeringActive,
+    mode: modeFromAssignment(row.assignment),
   };
 }
 
@@ -300,6 +317,7 @@ export function ModuleBasicSettingsEditor({
         teacherName: prev[key]?.teacherName ?? "TBC",
         teachingStatus: prev[key]?.teachingStatus ?? "PT",
         offering: prev[key]?.offering ?? true,
+        mode: prev[key]?.mode ?? "Night",
         ...patch,
       },
     }));
@@ -409,7 +427,7 @@ export function ModuleBasicSettingsEditor({
           teacherName: draft.teacherName,
           teachingStatus: draft.teachingStatus,
           teachers,
-          mode: row.assignment?.mode,
+          mode: draft.mode,
         });
       });
 
@@ -715,6 +733,7 @@ export function ModuleBasicSettingsEditor({
                 <th>{t.programmeStream}</th>
                 <th>{t.proposedTeacher}</th>
                 <th>{t.teachingStatusForThisModule}</th>
+                <th>{t.moduleMode}</th>
                 <th>{t.moduleYear}</th>
                 <th>{t.moduleOfferingThisYear}</th>
                 <th>{t.teacherAvailability}</th>
@@ -772,6 +791,25 @@ export function ModuleBasicSettingsEditor({
                       >
                         <option value="PT">PT</option>
                         <option value="FT">FT</option>
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        className="form-select min-w-24"
+                        value={draft.mode}
+                        title={t.moduleMode}
+                        disabled={!canEditAssignments}
+                        onChange={(event) =>
+                          updateDraft(key, {
+                            mode: event.target.value as TeachingMode,
+                          })
+                        }
+                      >
+                        {modeOptions.map((mode) => (
+                          <option key={mode} value={mode}>
+                            {modeOptionLabel(mode)}
+                          </option>
+                        ))}
                       </select>
                     </td>
                     <td className="whitespace-nowrap">
