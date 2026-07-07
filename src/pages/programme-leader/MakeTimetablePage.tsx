@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Minus, Plus } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 
 import { DataTable } from "../../components/tables/DataTable";
@@ -2484,6 +2485,8 @@ function CrossProgrammeCombinePanel({
   programmeCode?: string;
   onOpenGroup: (group: CrossProgrammeManualCombineGroupSummary) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   if (groups.length === 0) {
     return null;
   }
@@ -2494,15 +2497,33 @@ function CrossProgrammeCombinePanel({
 
   return (
     <div className="mb-4 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3">
-      <div className="font-medium text-violet-950">
-        Cross-programme combined modules
-      </div>
-      <div className="mt-1 text-sm text-violet-900">
-        {isAdmin
-          ? "These groups span multiple programmes. Join orphans here, then use the drawer tabs for Split, Teachers, and Schedule."
-          : "These groups span multiple programmes and are managed by Admin. Maintain your programme student numbers in Step 1; split/teachers/schedule for cross-programme groups are not in Steps 3–5."}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-violet-950">
+            Cross-programme combined modules
+          </div>
+          <div className="mt-1 text-sm text-violet-900">
+            {isAdmin
+              ? "These groups span multiple programmes. Join orphans here, then use the drawer tabs for Split, Teachers, and Schedule."
+              : "These groups span multiple programmes and are managed by Admin. Maintain your programme student numbers in Step 1; split/teachers/schedule for cross-programme groups are not in Steps 3–5."}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="btn btn-secondary shrink-0 px-2 py-1"
+          title={expanded ? "Collapse" : "Expand"}
+          onClick={() => setExpanded((open) => !open)}
+        >
+          {expanded ? (
+            <Minus className="h-4 w-4" />
+          ) : (
+            <Plus className="h-4 w-4" />
+          )}
+        </button>
       </div>
 
+      {expanded && (
+        <>
       <div className="mt-3 overflow-x-auto">
         <table className="min-w-[720px] border-collapse text-sm">
           <thead>
@@ -2592,6 +2613,8 @@ function CrossProgrammeCombinePanel({
           Contact Admin to join modules, split, set mode, or schedule them.
         </div>
       ) : null}
+        </>
+      )}
     </div>
   );
 }

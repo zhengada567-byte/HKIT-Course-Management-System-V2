@@ -3,6 +3,7 @@ import { Minus, Pencil, Plus } from "lucide-react";
 
 import { dedupeJoinedModuleName } from "../../../../lib/moduleDisplay";
 import type { SchedulingCombineMember } from "../../../../lib/timetableSchedulingRules";
+import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../contexts/AuthContext";
 import { listTimetableModuleInstances,
   type TimetableModuleInstanceRow,
@@ -53,6 +54,23 @@ type EditDialogState = {
 };
 
 type ViewScope = "all" | "programme";
+
+const WEEKLY_DAY_COLUMN_CLASS =
+  "w-40 min-w-[10rem] shrink-0 border-l border-slate-200 px-2 py-2 align-top";
+const WEEKLY_DAY_ROW_MIN_WIDTH = "min-w-[60rem]";
+
+function isSelectedProgrammeHighlight(
+  moduleProgrammeCode: string | undefined,
+  selectedProgrammeCode: string | undefined,
+  viewScope: ViewScope
+) {
+  if (viewScope !== "all" || !selectedProgrammeCode) return false;
+
+  return (
+    String(moduleProgrammeCode ?? "").trim().toUpperCase() ===
+    String(selectedProgrammeCode).trim().toUpperCase()
+  );
+}
 
 function sortWeeklyGridItems(items: WeeklyGridItem[]) {
   return [...items].sort((a, b) => {
@@ -870,21 +888,28 @@ export function WeeklyTimetableEditor(props: {
             teacher in Step 4).
           </p>
 
-          <div className="overflow-x-auto rounded border border-slate-200">
-            <table className="min-w-[980px] table-fixed border-collapse text-sm">
+          <div className="rounded border border-slate-200">
+            <table className="w-full border-collapse text-sm">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="w-28 border border-slate-200 px-2 py-2 text-left">
                     Time
                   </th>
-                  {weekdays.map((day) => (
-                    <th
-                      key={day.id}
-                      className="border border-slate-200 px-2 py-2 text-left"
-                    >
-                      {day.label}
-                    </th>
-                  ))}
+                  <th
+                    colSpan={weekdays.length}
+                    className="border border-slate-200 p-0 text-left"
+                  >
+                    <div className={`flex ${WEEKLY_DAY_ROW_MIN_WIDTH}`}>
+                      {weekdays.map((day) => (
+                        <div
+                          key={day.id}
+                          className={`${WEEKLY_DAY_COLUMN_CLASS} border-t-0 font-medium`}
+                        >
+                          {day.label}
+                        </div>
+                      ))}
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -895,7 +920,10 @@ export function WeeklyTimetableEditor(props: {
                       <td className="border border-slate-200 px-2 py-2 align-top font-medium">
                         {slot.start}–{slot.end}
                       </td>
-                      {weekdays.map((day) => {
+                      <td colSpan={weekdays.length} className="border border-slate-200 p-0">
+                        <div className="overflow-x-auto">
+                          <div className={`flex ${WEEKLY_DAY_ROW_MIN_WIDTH}`}>
+                            {weekdays.map((day) => {
                         const items =
                           weeklyGrid.itemsBySlotAndWeekday[sk]?.[day.id] ?? [];
                         const cellRemaining =
@@ -905,9 +933,9 @@ export function WeeklyTimetableEditor(props: {
                         const isBusy = cellBusyKey?.startsWith(`${day.id}|${slot.start}|${slot.end}`);
 
                         return (
-                          <td
+                          <div
                             key={cellKey}
-                            className="border border-slate-200 px-2 py-2 align-top"
+                            className={WEEKLY_DAY_COLUMN_CLASS}
                           >
                             <div className="space-y-2">
                               {items.map((item) => {
@@ -916,11 +944,21 @@ export function WeeklyTimetableEditor(props: {
                                 );
                                 const studentNumberLabel =
                                   formatInstanceStudentNumber(itemInstance);
+                                const highlightProgramme = isSelectedProgrammeHighlight(
+                                  item.programmeCode,
+                                  programmeCode,
+                                  viewScope
+                                );
 
                                 return (
                                 <div
                                   key={`${item.roomCode}-${item.moduleInstanceCode}`}
-                                  className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5"
+                                  className={cn(
+                                    "rounded border px-2 py-1.5",
+                                    highlightProgramme
+                                      ? "border-amber-300 bg-amber-50"
+                                      : "border-slate-200 bg-slate-50"
+                                  )}
                                 >
                                   <div className="flex items-start justify-between gap-1">
                                     <div className="min-w-0 flex-1">
@@ -1024,9 +1062,12 @@ export function WeeklyTimetableEditor(props: {
                                 totalCount={classrooms.length}
                               />
                             </div>
-                          </td>
+                          </div>
                         );
                       })}
+                          </div>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -1072,8 +1113,19 @@ export function WeeklyTimetableEditor(props: {
                       const meta =
                         moduleMetaByCode[row.module_instance_code] ??
                         moduleMetaByCode[row.module_instance_code.toUpperCase()];
+                      const highlightProgramme = isSelectedProgrammeHighlight(
+                        meta?.programme_code,
+                        programmeCode,
+                        viewScope
+                      );
                       return (
-                        <tr key={row.id} className="border-t">
+                        <tr
+                          key={row.id}
+                          className={cn(
+                            "border-t",
+                            highlightProgramme && "bg-amber-50"
+                          )}
+                        >
                           <td className="px-3 py-2 font-mono font-medium">
                             {row.module_instance_code}
                           </td>

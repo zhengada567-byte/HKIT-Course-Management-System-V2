@@ -340,14 +340,6 @@ export function ScheduleStep(props: {
           以 <span className="font-medium">module_instance_code</span>{" "}
           為排課單位（來自分班後的 instances 表）。
         </div>
-
-        <div className="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-          流程：在頁面頂部「Teacher Availability」設定老師 Not Available → 設置 Day/Sat
-          開始時間 → 點「自動排課」→ 系統寫入 timetable_sessions（已排課科目會跳過；班房優先
-          SSP，SSP 無合適空位時才用 CSW）；亦可展開 Weekly Timetable 手動以 + / − 編輯後按
-          Save Timetable 儲存。預設顯示全部課程已儲存時段；可切換「只看本 Programme」。衝突：同一
-          時段內相同老師 + programme + stream + 年級不可重複。
-        </div>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4">
