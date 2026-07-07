@@ -47,7 +47,7 @@ export function DailyTimetablePage() {
 
   const [term, setTerm] = useState<TimetableScheduleTerm>("Sep");
   const [programmes, setProgrammes] = useState<ProgrammeRow[]>([]);
-  const [programmeFilter, setProgrammeFilter] = useState("");
+  const [programmeCode, setProgrammeCode] = useState("");
   const [instances, setInstances] = useState<TimetableModuleInstanceRow[]>([]);
   const [classrooms, setClassrooms] = useState<TimetableClassroomRow[]>([]);
   const [contextLoading, setContextLoading] = useState(true);
@@ -107,7 +107,6 @@ export function DailyTimetablePage() {
     setResult(null);
     setSelectedModuleId("");
     setSelectedDate("");
-    setProgrammeFilter("");
   }, [term]);
 
   const programmeCodes = useMemo(
@@ -120,19 +119,27 @@ export function DailyTimetablePage() {
     [programmes]
   );
 
+  useEffect(() => {
+    if (programmeCode) return;
+    if (programmeCodes.length === 0) return;
+    setProgrammeCode(programmeCodes[0]!);
+  }, [programmeCode, programmeCodes]);
+
   const programmeFilterOptions = useMemo(
     () => [...programmeCodes, MIXED_PROGRAMME_CODE],
     [programmeCodes]
   );
 
+  const dailyProgrammeFilter = programmeCode;
+
   const filteredModules = useMemo(() => {
     const modules = result?.modules ?? [];
 
-    if (!programmeFilter) {
+    if (!dailyProgrammeFilter) {
       return modules;
     }
 
-    if (isMixedProgrammeCode(programmeFilter)) {
+    if (isMixedProgrammeCode(dailyProgrammeFilter)) {
       const knownProgrammeCodes = new Set(
         programmeCodes.map((code) => code.toUpperCase())
       );
@@ -148,8 +155,8 @@ export function DailyTimetablePage() {
       });
     }
 
-    return modules.filter((row) => row.programmeCode === programmeFilter);
-  }, [programmeCodes, programmeFilter, result]);
+    return modules.filter((row) => row.programmeCode === dailyProgrammeFilter);
+  }, [dailyProgrammeFilter, programmeCodes, result]);
 
   const filteredModuleIds = useMemo(
     () => new Set(filteredModules.map((row) => row.timetableModuleId)),
@@ -342,6 +349,22 @@ export function DailyTimetablePage() {
               ))}
             </select>
           </div>
+
+          <div>
+            <label className="form-label">{t.programmeCode}</label>
+            <select
+              className="form-select min-w-36"
+              value={programmeCode}
+              onChange={(event) => setProgrammeCode(event.target.value)}
+            >
+              <option value="">—</option>
+              {programmeFilterOptions.map((code) => (
+                <option key={code} value={code}>
+                  {formatProgrammeCodeOptionLabel(code)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -369,6 +392,7 @@ export function DailyTimetablePage() {
               variant="embedded"
               academicYear={academicYear}
               term={term}
+              programmeCode={programmeCode || undefined}
               timetableInstances={instancesForTerm}
               classrooms={classrooms}
               preferredStartByCode={{}}
@@ -376,9 +400,8 @@ export function DailyTimetablePage() {
               open={weeklyOpen}
               onOpenChange={setWeeklyOpen}
               refreshToken={weeklyRefreshToken}
-              forceViewScopeAll
-              instancePanelTitle={`${t.allProgrammes} · ${term}`}
-              instancePanelDescription={t.weeklyTimetableAdminInstanceHint}
+              allowEditAllGridModules
+              hideInstancePanel
               onAfterSave={handleWeeklySaved}
             />
           )}
@@ -467,22 +490,6 @@ export function DailyTimetablePage() {
           {result && result.modules.length > 0 && (
             <>
               <div className="flex flex-wrap items-end gap-3">
-                <div>
-                  <label className="form-label">{t.programmeCode}</label>
-                  <select
-                    className="form-select min-w-36"
-                    value={programmeFilter}
-                    onChange={(event) => setProgrammeFilter(event.target.value)}
-                  >
-                    <option value="">{t.allProgrammes}</option>
-                    {programmeFilterOptions.map((code) => (
-                      <option key={code} value={code}>
-                        {formatProgrammeCodeOptionLabel(code)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
                 <button
                   type="button"
                   className={`btn ${viewMode === "module" ? "btn-primary" : "btn-secondary"}`}

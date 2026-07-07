@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import {
   BookOpenCheck,
   CalendarDays,
+  CalendarRange,
   FileSpreadsheet,
   Gauge,
   GraduationCap,
@@ -74,6 +75,12 @@ export function ProgrammeLeaderDashboard() {
       label: t.makeTimetable,
       description: t.guidePlMakeTimetable,
       icon: FileSpreadsheet,
+    },
+    {
+      to: "/admin/daily-timetable",
+      label: t.weeklyDailyTimetable,
+      description: t.guidePlWeeklyDailyTimetable,
+      icon: CalendarRange,
     },
     {
       to: "/programme-leader/daily-timetable",

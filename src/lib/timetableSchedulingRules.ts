@@ -16,6 +16,40 @@ export const SCHEDULING_WEEKDAY_LABEL: Record<SchedulingWeekday, string> = {
   5: "Fri",
 };
 
+export const ALL_SCHEDULING_WEEKDAYS = [1, 2, 3, 4, 5, 6] as const;
+
+export type AllSchedulingWeekday = (typeof ALL_SCHEDULING_WEEKDAYS)[number];
+
+export const ALL_SCHEDULING_WEEKDAY_LABEL: Record<AllSchedulingWeekday, string> = {
+  1: "Mon",
+  2: "Tue",
+  3: "Wed",
+  4: "Thu",
+  5: "Fri",
+  6: "Sat",
+};
+
+export function schedulingWeekdayLabel(weekday: number) {
+  return (
+    ALL_SCHEDULING_WEEKDAY_LABEL[
+      weekday as AllSchedulingWeekday
+    ] ?? String(weekday)
+  );
+}
+
+/** Day / Saturday auto-schedule start options (30-minute steps). */
+export function buildDayAutoScheduleStartOptions() {
+  const options: string[] = [];
+  const startMinutes = 8 * 60;
+  const endMinutes = 14 * 60 + 30;
+  for (let m = startMinutes; m <= endMinutes; m += 30) {
+    const hh = String(Math.floor(m / 60)).padStart(2, "0");
+    const mm = String(m % 60).padStart(2, "0");
+    options.push(`${hh}:${mm}`);
+  }
+  return options;
+}
+
 export function isFtEmploymentType(value: unknown): boolean {
   return String(value ?? "").trim().toUpperCase() === "FT";
 }

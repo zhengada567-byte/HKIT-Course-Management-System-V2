@@ -151,7 +151,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       to: "/admin/daily-timetable",
       label: t.weeklyDailyTimetable,
       icon: CalendarRange,
-      roles: ["admin"],
+      roles: ["admin", "programme_leader"],
     },
     {
       to: "/admin/study-plan-enrollment",

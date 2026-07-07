@@ -9,6 +9,7 @@ import type { TimetableModuleInstanceRow } from "../../../../services/timetableM
 import { dedupeJoinedModuleName } from "../../../../lib/moduleDisplay";
 import {
   isTeacherExcludedFromScheduleDropdown,
+  buildDayAutoScheduleStartOptions,
 } from "../../../../lib/timetableSchedulingRules";
 import {
   listTeacherAvailabilitySaved,
@@ -226,15 +227,15 @@ export function ScheduleStep(props: {
           moduleInstanceCodes: instanceCodesForTerm,
         });
         if (cancelled) return;
-        const map: Record<string, string> = {};
+        const startMap: Record<string, string> = {};
         for (const row of rows) {
-          if (!row.preferred_start_time) continue;
-          map[row.module_instance_code] = String(row.preferred_start_time).slice(
-            0,
-            5
-          );
+          if (row.preferred_start_time) {
+            startMap[row.module_instance_code] = String(
+              row.preferred_start_time
+            ).slice(0, 5);
+          }
         }
-        setPreferredStartByCode(map);
+        setPreferredStartByCode(startMap);
       } catch (error) {
         if (cancelled) return;
         setPrefError(
@@ -253,25 +254,14 @@ export function ScheduleStep(props: {
     };
   }, [academicYear, instanceCodesForTerm]);
 
-  const startTimeOptions = useMemo(() => {
-    const options: string[] = [];
-    const startMinutes = 8 * 60;
-    const endMinutes = 14 * 60 + 30;
-    for (let m = startMinutes; m <= endMinutes; m += 30) {
-      const hh = String(Math.floor(m / 60)).padStart(2, "0");
-      const mm = String(m % 60).padStart(2, "0");
-      options.push(`${hh}:${mm}`);
-    }
-    return options;
-  }, []);
+  const startTimeOptions = useMemo(() => buildDayAutoScheduleStartOptions(), []);
 
   async function savePreferences() {
-    const rows = Object.entries(preferredStartByCode).map(
-      ([module_instance_code, preferred_start_time]) => ({
-        module_instance_code,
-        preferred_start_time: preferred_start_time || null,
-      })
-    );
+    const rows = moduleOptions.map((module) => ({
+      module_instance_code: module.moduleInstanceCode,
+      preferred_start_time:
+        preferredStartByCode[module.moduleInstanceCode] || null,
+    }));
 
     try {
       await upsertInstancePreferences({
@@ -390,11 +380,10 @@ export function ScheduleStep(props: {
           )}
 
         <div className="mt-6">
-          <div className="text-sm font-medium text-slate-900">
-            Day / Saturday start time（4 hours）
-          </div>
+          <div className="text-sm font-medium text-slate-900">排課偏好</div>
           <div className="mt-1 text-xs text-slate-600">
-            只对 Day/Saturday 生效（Night 固定 18:30）。可选 08:00–14:30（每 30 分钟）。
+            Preferred start 預設 Any time（Day/Saturday 會在 08:00–14:30
+            內嘗試）。Night 固定 18:30。星期由老師 Availability 決定。
           </div>
 
           {prefError && (
@@ -404,17 +393,14 @@ export function ScheduleStep(props: {
           )}
 
           <div className="mt-3 overflow-x-auto">
-            <table className="min-w-[720px] border-collapse text-sm">
+            <table className="min-w-[640px] border-collapse text-sm">
               <thead>
                 <tr>
                   <th className="border border-slate-200 bg-slate-50 px-2 py-2 text-left">
                     Module instance
                   </th>
                   <th className="border border-slate-200 bg-slate-50 px-2 py-2 text-left">
-                    Module year
-                  </th>
-                  <th className="border border-slate-200 bg-slate-50 px-2 py-2 text-left">
-                    Stream
+                    Year
                   </th>
                   <th className="border border-slate-200 bg-slate-50 px-2 py-2 text-left">
                     Mode
@@ -423,7 +409,7 @@ export function ScheduleStep(props: {
                     Teacher
                   </th>
                   <th className="border border-slate-200 bg-slate-50 px-2 py-2 text-left">
-                    Expected size
+                    Size
                   </th>
                   <th className="border border-slate-200 bg-slate-50 px-2 py-2 text-left">
                     Preferred start
@@ -434,44 +420,49 @@ export function ScheduleStep(props: {
                 {moduleOptions.map((m) => {
                   const isEditable =
                     m.mode === "Day" || m.mode === "Saturday";
-                  const value = preferredStartByCode[m.moduleInstanceCode] ?? "";
+                  const startValue =
+                    preferredStartByCode[m.moduleInstanceCode] ?? "";
                   return (
                     <tr key={m.id}>
                       <td className="border border-slate-200 px-2 py-2">
-                        {m.moduleInstanceCode}{" "}
-                        {m.moduleName
-                          ? `- ${dedupeJoinedModuleName(m.moduleName)}`
-                          : ""}
+                        <div className="font-medium">{m.moduleInstanceCode}</div>
+                        {m.moduleName ? (
+                          <div className="text-xs text-slate-600">
+                            {dedupeJoinedModuleName(m.moduleName)}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="border border-slate-200 px-2 py-2">
-                        {m.moduleYear || "(empty)"}
+                        {m.moduleYear || "—"}
                       </td>
                       <td className="border border-slate-200 px-2 py-2">
-                        {m.streamCode || "(empty)"}
+                        {m.mode || "—"}
                       </td>
                       <td className="border border-slate-200 px-2 py-2">
-                        {m.mode || "(empty)"}
+                        {m.teacherName || "—"}
                       </td>
                       <td className="border border-slate-200 px-2 py-2">
-                        {m.teacherName || "(empty)"}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2">
-                        {m.size ?? "(empty)"}
+                        {m.size ?? "—"}
                       </td>
                       <td className="border border-slate-200 px-2 py-2">
                         {isEditable ? (
                           <select
-                            className="form-select"
-                            value={value}
+                            className="form-select min-w-[6.5rem]"
+                            value={startValue}
                             title={`Preferred start time for ${m.moduleInstanceCode}`}
                             disabled={prefLoading}
                             onChange={(e) => {
                               const next = { ...preferredStartByCode };
-                              next[m.moduleInstanceCode] = e.target.value;
+                              const value = e.target.value;
+                              if (!value) {
+                                delete next[m.moduleInstanceCode];
+                              } else {
+                                next[m.moduleInstanceCode] = value;
+                              }
                               setPreferredStartByCode(next);
                             }}
                           >
-                            <option value="">(not set)</option>
+                            <option value="">Any time</option>
                             {startTimeOptions.map((t) => (
                               <option key={t} value={t}>
                                 {t}
@@ -480,7 +471,7 @@ export function ScheduleStep(props: {
                           </select>
                         ) : (
                           <span className="text-slate-500">
-                            {m.mode === "Night" ? "18:30" : "-"}
+                            {m.mode === "Night" ? "18:30" : "—"}
                           </span>
                         )}
                       </td>
@@ -496,9 +487,9 @@ export function ScheduleStep(props: {
               type="button"
               className="btn btn-secondary"
               onClick={() => void savePreferences()}
-              disabled={prefLoading}
+              disabled={prefLoading || moduleOptions.length === 0}
             >
-              Save start time preferences
+              Save preferences
             </button>
             <button
               type="button"

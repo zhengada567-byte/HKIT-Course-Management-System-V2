@@ -63,8 +63,8 @@ type ViewScope = "all" | "programme";
 const WEEKLY_DAY_COLUMN_CLASS =
   "w-40 min-w-[10rem] shrink-0 border-l border-slate-200 px-2 py-2 align-top";
 const WEEKLY_DAY_ROW_MIN_WIDTH = "min-w-[60rem]";
-const SELECTED_PROGRAMME_HIGHLIGHT_CELL = "border-red-300 bg-red-50";
-const SELECTED_PROGRAMME_HIGHLIGHT_ROW = "bg-red-50";
+const SELECTED_PROGRAMME_HIGHLIGHT_CELL = "border-red-400 bg-red-100";
+const SELECTED_PROGRAMME_HIGHLIGHT_ROW = "bg-red-100";
 
 function programmeMatchesSelectedFamily(
   moduleProgrammeCode: string | null | undefined,
@@ -280,6 +280,8 @@ export function WeeklyTimetableEditor(props: {
   forceViewScopeAll?: boolean;
   /** PL: allow edit/remove/save for any module shown on the weekly grid. */
   allowEditAllGridModules?: boolean;
+  /** Hide the bottom module-instance list (e.g. weekly & daily timetable page). */
+  hideInstancePanel?: boolean;
   instancePanelTitle?: string;
   instancePanelDescription?: string;
   onAfterSave?: () => void;
@@ -299,6 +301,7 @@ export function WeeklyTimetableEditor(props: {
     refreshToken,
     forceViewScopeAll = false,
     allowEditAllGridModules = false,
+    hideInstancePanel = false,
     instancePanelTitle,
     instancePanelDescription,
     onAfterSave,
@@ -924,9 +927,10 @@ export function WeeklyTimetableEditor(props: {
                     setViewScope(next);
                   }}
                 >
-                  <option value="all">全部課程（系統已儲存）</option>
+                  <option value="all">显示所有课程</option>
                   <option value="programme">
-                    只看本 Programme{programmeCode ? `（${programmeCode}）` : ""}
+                    只显示本 Programme
+                    {programmeCode ? `（${programmeCode}）` : ""}
                   </option>
                 </select>
               </div>
@@ -1165,6 +1169,7 @@ export function WeeklyTimetableEditor(props: {
             </table>
           </div>
 
+          {!hideInstancePanel && (
           <div className="rounded-lg border border-slate-200 bg-white p-4">
             <div className="text-sm font-medium text-slate-900">
               {instancePanelTitle ?? `待編時間表模組（${term}）`}
@@ -1263,6 +1268,7 @@ export function WeeklyTimetableEditor(props: {
               </table>
             </div>
           </div>
+          )}
         </>
       )}
 

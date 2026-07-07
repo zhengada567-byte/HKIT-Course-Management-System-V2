@@ -25,6 +25,8 @@ export const zhHant = {
     "管理學生學習計劃、修讀科目與學期，並匯出計劃或檢視 Quota 報表。",
   guidePlMakeTimetable:
     "同步學生人數、合班分班、科目基本設定、課室管理、教師可用時間，並製作周時間表。",
+  guidePlWeeklyDailyTimetable:
+    "檢視及調整周時間表，產生每日 L/T 課節；可選課程並以淺紅色標示。",
   guidePlDailyTimetable:
     "檢視及編輯本課程每日 L/T 課節（狀態、補課、備註等）。",
   courseSearch: "課程搜尋",
@@ -122,7 +124,7 @@ export const zhHant = {
     "檢視及調整所有課程已儲存的周時間表，再產生 L/T 每日課節標籤。",
   weeklyTimetableStep: "1. 周時間表",
   weeklyTimetableStepHint:
-    "顯示所選學期全部課程；請先儲存，再於下方產生每日時間表。",
+    "請先選擇課程；可切換「显示所有课程」或「只显示本 Programme」，儲存後再於下方產生每日時間表。",
   dailyTimetableStep: "2. 每日時間表",
   dailyTimetableStepHint:
     "依授課／導修時數及學習週日期產生 L/T 標籤（一般 HD：L1–L9、T1–T3；HD401/HD402/HD405：僅 L1–L12）。",

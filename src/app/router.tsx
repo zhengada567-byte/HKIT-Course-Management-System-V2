@@ -130,7 +130,7 @@ export const routes: RouteObject[] = [
       {
         path: "admin/daily-timetable",
         element: (
-          <ProtectedRoute allowedRoles={["admin"]}>
+          <ProtectedRoute allowedRoles={["admin", "programme_leader"]}>
             <DailyTimetablePage />
           </ProtectedRoute>
         ),

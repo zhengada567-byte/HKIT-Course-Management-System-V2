@@ -17,6 +17,7 @@ import {
 } from "../lib/combinedModuleCode";
 import {
   applyFtWednesdayAmInstitutionalBlock,
+  buildDayAutoScheduleStartOptions,
   buildModuleStreamAlignKey,
   instanceTeacherIncludesFt,
   buildFtTeacherNameSet,
@@ -26,8 +27,8 @@ import {
   normalizeSchedulingStream,
   recordAutoSchedulePlacement,
   resolveSchedulingIdentities,
-  SCHEDULING_WEEKDAY_LABEL,
   SCHEDULING_WEEKDAYS,
+  schedulingWeekdayLabel,
   scoreAutoScheduleSlot,
   type StreamYearSchedulingIdentity,
   type StreamYearTimeslotState,
@@ -83,6 +84,43 @@ function resolveInstanceMode(
   return String(timetableModule.mode ?? "").trim();
 }
 
+function resolveAutoScheduleWeekdays(mode: string): Weekday[] {
+  if (mode === "Saturday") {
+    return [6];
+  }
+
+  return [...SCHEDULING_WEEKDAYS];
+}
+
+function resolveAutoScheduleStartWindows(params: {
+  mode: string;
+  preferredStart?: string;
+}): Array<{ start: string; end: string }> {
+  if (params.mode === "Night") {
+    return [{ start: NIGHT_START, end: NIGHT_END }];
+  }
+
+  const preferred = String(params.preferredStart ?? "").trim();
+  if (preferred) {
+    return [{ start: preferred, end: addHours(preferred, 4) }];
+  }
+
+  return buildDayAutoScheduleStartOptions().map((start) => ({
+    start,
+    end: addHours(start, 4),
+  }));
+}
+
+function formatAutoScheduleTimeWindow(
+  startWindows: Array<{ start: string; end: string }>
+) {
+  if (startWindows.length === 1) {
+    return `${startWindows[0]!.start}–${startWindows[0]!.end}`;
+  }
+
+  return "08:00–14:30 (any time)";
+}
+
 function buildAutoScheduleFailure(params: {
   instance: TimetableModuleInstanceRow;
   timetableModule: {
@@ -134,10 +172,7 @@ function diagnoseWeekdayPlacementFailures(params: {
   programmeSlotStreams: Map<string, Map<string, Set<string>>>;
   teachingDates: string[];
 }): string | null {
-  const label =
-    SCHEDULING_WEEKDAY_LABEL[
-      params.weekday as keyof typeof SCHEDULING_WEEKDAY_LABEL
-    ] ?? String(params.weekday);
+  const label = schedulingWeekdayLabel(params.weekday);
 
   if (params.naSet.has(`${params.teacherName}||${params.weekday}||${params.period}`)) {
     return `${label}: teacher Not Available (${params.period})`;
@@ -241,6 +276,7 @@ function diagnoseWeekdayPlacementFailures(params: {
 }
 
 function buildWeekdayFailureDetail(params: {
+  weekdays: Weekday[];
   start: string;
   end: string;
   period: Period;
@@ -264,7 +300,7 @@ function buildWeekdayFailureDetail(params: {
 }): string {
   const notes: string[] = [];
 
-  for (const weekday of SCHEDULING_WEEKDAYS) {
+  for (const weekday of params.weekdays) {
     const note = diagnoseWeekdayPlacementFailures({
       weekday,
       start: params.start,
@@ -519,7 +555,7 @@ export async function autoScheduleInstances(params: {
   programmeCode?: string;
   instances: TimetableModuleInstanceRow[];
   classrooms: TimetableClassroomRow[];
-  preferredStartByCode: Record<string, string>; // HH:mm
+  preferredStartByCode: Record<string, string>; // HH:mm, empty = any time
   /** When true, delete and replace existing sessions for instances in this run. */
   forceReschedule?: boolean;
 }) {
@@ -808,20 +844,16 @@ export async function autoScheduleInstances(params: {
 
     const size = Number(instance.instance_expected_size ?? 0);
     const mode = resolveInstanceMode(instance, timetableModule);
-
-    let start = NIGHT_START;
-    let end = NIGHT_END;
-    if (mode === "Night") {
-      start = NIGHT_START;
-      end = NIGHT_END;
-    } else {
-      const preferred =
-        params.preferredStartByCode[instance.module_instance_code] ?? "";
-      start = preferred || "09:00";
-      end = addHours(start, 4);
-    }
-
-    const period = getPeriodForStartTime(start);
+    const startWindows = resolveAutoScheduleStartWindows({
+      mode,
+      preferredStart: params.preferredStartByCode[instance.module_instance_code],
+    });
+    const weekdaysToTry = resolveAutoScheduleWeekdays(mode);
+    const failureTimeWindow = formatAutoScheduleTimeWindow(startWindows);
+    const diagnosticWindow = startWindows[0] ?? {
+      start: NIGHT_START,
+      end: NIGHT_END,
+    };
 
     const effectiveModuleCode = effectiveModuleCodeForInstance(instance);
     const programmeCode = String(timetableModule.programme_code ?? "").trim();
@@ -858,8 +890,8 @@ export async function autoScheduleInstances(params: {
         buildAutoScheduleFailure({
           instance,
           timetableModule,
-          start,
-          end,
+          start: diagnosticWindow.start,
+          end: diagnosticWindow.end,
           reason: requiresComputer
             ? `No computer room fits ${size} students (capacities incl. +10: ${capacityHint}).`
             : `No room fits ${size} students.`,
@@ -880,6 +912,8 @@ export async function autoScheduleInstances(params: {
 
     type PlacementCandidate = {
       weekday: Weekday;
+      start: string;
+      end: string;
       slotKey: string;
       room: TimetableClassroomRow;
       score: number;
@@ -887,71 +921,77 @@ export async function autoScheduleInstances(params: {
 
     const candidates: PlacementCandidate[] = [];
 
-    for (const weekday of SCHEDULING_WEEKDAYS) {
-      if (naSet.has(`${teacherName}||${weekday}||${period}`)) {
-        continue;
-      }
+    for (const { start, end } of startWindows) {
+      const period = getPeriodForStartTime(start);
 
-      const slotKey = buildTimeslotKey({ weekday, start, end });
-      if (takenTeacherSlots.has(teacherSlotKey(teacherName, slotKey))) {
-        continue;
-      }
-
-      const dates = await buildTeachingDatesForWeekday({
-        academicYear: params.academicYear,
-        term: params.term,
-        weekday,
-      });
-
-      for (const room of rooms) {
-        if (takenRoomSlots.has(roomSlotKey(room.room_code, slotKey))) {
+      for (const weekday of weekdaysToTry) {
+        if (naSet.has(`${teacherName}||${weekday}||${period}`)) {
           continue;
         }
 
-        let conflict = false;
-        for (const date of dates) {
-          const existing = existingByDate.get(date) ?? [];
-          const overlapped = existing.some((s) => {
-            if (s.status === "cancel") return false;
-            const sStart = String(s.start_time).slice(0, 5);
-            const sEnd = String(s.end_time).slice(0, 5);
-            if (!overlaps({ start, end }, { start: sStart, end: sEnd })) {
-              return false;
-            }
-            if (s.room_code === room.room_code) return true;
-            if (String(s.teacher_name ?? "").trim() === teacherName) return true;
-            return false;
-          });
-          if (overlapped) {
-            conflict = true;
-            break;
-          }
+        const slotKey = buildTimeslotKey({ weekday, start, end });
+        if (takenTeacherSlots.has(teacherSlotKey(teacherName, slotKey))) {
+          continue;
         }
 
-        if (conflict) continue;
-
-        const score = scoreAutoScheduleSlot({
-          slotKey,
-          streamKey,
-          moduleYear,
-          alignKey,
-          programmeCode,
-          schedulingIdentities,
-          streamYearTimeslotState,
-          streamSlotByModule,
-          streamYearOccupiedSlots,
-          streamAllOccupiedSlots,
-          programmeSlotStreams,
-        });
-
-        if (score === null) continue;
-
-        candidates.push({
+        const dates = await buildTeachingDatesForWeekday({
+          academicYear: params.academicYear,
+          term: params.term,
           weekday,
-          slotKey,
-          room,
-          score,
         });
+
+        for (const room of rooms) {
+          if (takenRoomSlots.has(roomSlotKey(room.room_code, slotKey))) {
+            continue;
+          }
+
+          let conflict = false;
+          for (const date of dates) {
+            const existing = existingByDate.get(date) ?? [];
+            const overlapped = existing.some((s) => {
+              if (s.status === "cancel") return false;
+              const sStart = String(s.start_time).slice(0, 5);
+              const sEnd = String(s.end_time).slice(0, 5);
+              if (!overlaps({ start, end }, { start: sStart, end: sEnd })) {
+                return false;
+              }
+              if (s.room_code === room.room_code) return true;
+              if (String(s.teacher_name ?? "").trim() === teacherName) return true;
+              return false;
+            });
+            if (overlapped) {
+              conflict = true;
+              break;
+            }
+          }
+
+          if (conflict) continue;
+
+          const score = scoreAutoScheduleSlot({
+            slotKey,
+            streamKey,
+            moduleYear,
+            alignKey,
+            programmeCode,
+            schedulingIdentities,
+            streamYearTimeslotState,
+            streamSlotByModule,
+            streamYearOccupiedSlots,
+            streamAllOccupiedSlots,
+            programmeSlotStreams,
+          });
+
+          if (score === null) continue;
+
+          candidates.push({
+            weekday,
+            start,
+            end,
+            slotKey,
+            room,
+            score,
+          });
+        }
       }
     }
 
@@ -981,8 +1021,8 @@ export async function autoScheduleInstances(params: {
       scheduled.push({
         instance,
         weekday: best.weekday,
-        start,
-        end,
+        start: best.start,
+        end: best.end,
         roomCode: best.room.room_code,
         teacherName,
         moduleSize: size,
@@ -995,7 +1035,7 @@ export async function autoScheduleInstances(params: {
     if (!placed) {
       const teachingDatesByWeekday = new Map<Weekday, string[]>();
 
-      for (const weekday of SCHEDULING_WEEKDAYS) {
+      for (const weekday of weekdaysToTry) {
         teachingDatesByWeekday.set(
           weekday,
           await buildTeachingDatesForWeekday({
@@ -1007,9 +1047,10 @@ export async function autoScheduleInstances(params: {
       }
 
       const weekdayDetail = buildWeekdayFailureDetail({
-        start,
-        end,
-        period,
+        weekdays: weekdaysToTry,
+        start: diagnosticWindow.start,
+        end: diagnosticWindow.end,
+        period: getPeriodForStartTime(diagnosticWindow.start),
         teacherName,
         programmeCode,
         streamKey,
@@ -1038,9 +1079,9 @@ export async function autoScheduleInstances(params: {
         buildAutoScheduleFailure({
           instance,
           timetableModule,
-          start,
-          end,
-          reason: `No feasible Mon–Fri slot.${modeHint}`,
+          start: diagnosticWindow.start,
+          end: diagnosticWindow.end,
+          reason: `No feasible slot (${failureTimeWindow}).${modeHint}`,
           weekdayDetail,
         })
       );

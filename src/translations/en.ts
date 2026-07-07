@@ -29,6 +29,8 @@ export const en = {
     "Manage student study plans, modules, and terms; export plans or quota reports.",
   guidePlMakeTimetable:
     "Sync student numbers, combine and split modules, set module basics and teachers, manage classrooms, and build the weekly timetable.",
+  guidePlWeeklyDailyTimetable:
+    "View and edit the weekly timetable, generate daily L/T sessions; filter by programme with light-red highlights.",
   guidePlDailyTimetable:
     "View and edit daily L/T sessions for your programme (status, makeup, remarks).",
   courseSearch: "Course Search",
@@ -128,7 +130,7 @@ export const en = {
     "Review and adjust the saved weekly timetable across all programmes, then generate L/T daily session labels.",
   weeklyTimetableStep: "1. Weekly timetable",
   weeklyTimetableStepHint:
-    "All programmes for the selected term. Save changes before generating the daily timetable below.",
+    "Select a programme first. Switch between all courses or this programme only, save, then generate the daily timetable below.",
   dailyTimetableStep: "2. Daily timetable",
   dailyTimetableStepHint:
     "Assigns L1–L9 / T1–T3 (most HD), L1–L12 only (HD401/HD402/HD405), or teaching+tutorial labels from contact hours, using study-week dates only.",
