@@ -313,13 +313,14 @@ export function ScheduleStep(props: {
         instances: timetableInstances.filter((row) => row.module_term === moduleTerm),
         classrooms,
         preferredStartByCode,
+        forceReschedule: false,
       });
 
       setAutoFailures(result.failures);
       setAutoResult(
         result.skippedAlreadyScheduledCount > 0
           ? `Scheduled: ${result.scheduledCount}; skipped (already scheduled): ${result.skippedAlreadyScheduledCount}; failed: ${result.failedCount}.`
-          : `Scheduled: ${result.scheduledCount}（已覆盖本学期既有排课）; failed: ${result.failedCount}.`
+          : `Scheduled: ${result.scheduledCount}; failed: ${result.failedCount}.`
       );
       setWeeklyRefreshToken((value) => value + 1);
     } catch (error) {
@@ -342,9 +343,10 @@ export function ScheduleStep(props: {
 
         <div className="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
           流程：在頁面頂部「Teacher Availability」設定老師 Not Available → 設置 Day/Sat
-          開始時間 → 點「自動排課」→ 系統寫入 timetable_sessions；亦可展開 Weekly Timetable
-          手動以 + / − 編輯後按 Save Timetable 儲存。預設顯示全部課程已儲存時段；可切換「只看本
-          Programme」。衝突：同一時段內相同老師 + programme + stream + 年級不可重複。
+          開始時間 → 點「自動排課」→ 系統寫入 timetable_sessions（已排課科目會跳過；班房優先
+          SSP，SSP 無合適空位時才用 CSW）；亦可展開 Weekly Timetable 手動以 + / − 編輯後按
+          Save Timetable 儲存。預設顯示全部課程已儲存時段；可切換「只看本 Programme」。衝突：同一
+          時段內相同老師 + programme + stream + 年級不可重複。
         </div>
       </div>
 

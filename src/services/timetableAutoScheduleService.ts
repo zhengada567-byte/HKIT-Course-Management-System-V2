@@ -315,6 +315,23 @@ function getPeriodForStartTime(startTime: string): Period {
   return "AM";
 }
 
+function normalizeClassroomLocation(room: TimetableClassroomRow) {
+  const location = String(room.location ?? "").trim().toUpperCase();
+  if (location) return location;
+
+  const code = String(room.room_code ?? "").trim().toUpperCase();
+  const dashIndex = code.indexOf("-");
+  return dashIndex > 0 ? code.slice(0, dashIndex) : code;
+}
+
+/** Prefer SSP classrooms; use CSW only when SSP has no suitable free room. */
+function classroomLocationPriority(room: TimetableClassroomRow) {
+  const location = normalizeClassroomLocation(room);
+  if (location === "SSP") return 0;
+  if (location === "CSW") return 1;
+  return 2;
+}
+
 function chooseRoomOrder(params: {
   size: number;
   requiresComputer: boolean;
@@ -332,6 +349,9 @@ function chooseRoomOrder(params: {
   const preferSmall = params.size <= 39;
 
   return rooms.sort((a, b) => {
+    const locationDiff = classroomLocationPriority(a) - classroomLocationPriority(b);
+    if (locationDiff !== 0) return locationDiff;
+
     if (preferSmall) {
       const aSmall = a.room_size === 29 ? 0 : 1;
       const bSmall = b.room_size === 29 ? 0 : 1;
@@ -500,10 +520,10 @@ export async function autoScheduleInstances(params: {
   instances: TimetableModuleInstanceRow[];
   classrooms: TimetableClassroomRow[];
   preferredStartByCode: Record<string, string>; // HH:mm
-  /** When true (default), replace existing sessions for instances in this run. */
+  /** When true, delete and replace existing sessions for instances in this run. */
   forceReschedule?: boolean;
 }) {
-  const forceReschedule = params.forceReschedule !== false;
+  const forceReschedule = params.forceReschedule === true;
   const instancesByCode = new Map<string, TimetableModuleInstanceRow>();
   for (const instance of params.instances) {
     const code = String(instance.module_instance_code ?? "").trim();
