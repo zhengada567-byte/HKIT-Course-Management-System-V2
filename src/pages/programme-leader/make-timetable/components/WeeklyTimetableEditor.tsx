@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Minus, Pencil, Plus } from "lucide-react";
 
+import { getProgrammeFamilyKey } from "../../../../lib/crossProgrammeCombine";
 import { dedupeJoinedModuleName } from "../../../../lib/moduleDisplay";
-import type { SchedulingCombineMember } from "../../../../lib/timetableSchedulingRules";
+import {
+  resolveSchedulingIdentities,
+  type SchedulingCombineMember,
+  type StreamYearSchedulingIdentity,
+} from "../../../../lib/timetableSchedulingRules";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../contexts/AuthContext";
 import { listTimetableModuleInstances,
@@ -58,18 +63,85 @@ type ViewScope = "all" | "programme";
 const WEEKLY_DAY_COLUMN_CLASS =
   "w-40 min-w-[10rem] shrink-0 border-l border-slate-200 px-2 py-2 align-top";
 const WEEKLY_DAY_ROW_MIN_WIDTH = "min-w-[60rem]";
+const SELECTED_PROGRAMME_HIGHLIGHT_CELL = "border-red-300 bg-red-50";
+const SELECTED_PROGRAMME_HIGHLIGHT_ROW = "bg-red-50";
 
-function isSelectedProgrammeHighlight(
-  moduleProgrammeCode: string | undefined,
-  selectedProgrammeCode: string | undefined,
-  viewScope: ViewScope
+function programmeMatchesSelectedFamily(
+  moduleProgrammeCode: string | null | undefined,
+  selectedFamily: string
 ) {
+  const family = getProgrammeFamilyKey(moduleProgrammeCode);
+  return Boolean(family) && family === selectedFamily;
+}
+
+function isSelectedProgrammeHighlight(params: {
+  programmeCode?: string | null;
+  schedulingIdentities?: StreamYearSchedulingIdentity[];
+  combineMembers?: SchedulingCombineMember[];
+  selectedProgrammeCode?: string;
+  viewScope: ViewScope;
+}) {
+  const {
+    programmeCode,
+    schedulingIdentities,
+    combineMembers,
+    selectedProgrammeCode,
+    viewScope,
+  } = params;
+
   if (viewScope !== "all" || !selectedProgrammeCode) return false;
 
-  return (
-    String(moduleProgrammeCode ?? "").trim().toUpperCase() ===
-    String(selectedProgrammeCode).trim().toUpperCase()
-  );
+  const selectedFamily = getProgrammeFamilyKey(selectedProgrammeCode);
+  if (!selectedFamily) return false;
+
+  if (schedulingIdentities?.length) {
+    if (
+      schedulingIdentities.some((identity) =>
+        programmeMatchesSelectedFamily(identity.programmeCode, selectedFamily)
+      )
+    ) {
+      return true;
+    }
+  }
+
+  if (combineMembers?.length) {
+    return combineMembers.some((member) =>
+      programmeMatchesSelectedFamily(member.programme_code, selectedFamily)
+    );
+  }
+
+  return programmeMatchesSelectedFamily(programmeCode, selectedFamily);
+}
+
+function resolveModuleSchedulingIdentities(params: {
+  programmeCode?: string | null;
+  streamCode?: string | null;
+  moduleYear?: string | null;
+  combineMembers?: SchedulingCombineMember[];
+}): StreamYearSchedulingIdentity[] {
+  return resolveSchedulingIdentities({
+    programmeCode: String(params.programmeCode ?? ""),
+    streamCode: params.streamCode,
+    moduleYear: params.moduleYear,
+    combineMembers: params.combineMembers,
+  });
+}
+
+function resolveWeeklyItemSchedulingIdentities(params: {
+  item: WeeklyGridItem;
+  meta?: TimetableModuleRow | null;
+  combineMembers?: SchedulingCombineMember[];
+}): StreamYearSchedulingIdentity[] {
+  if (params.item.schedulingIdentities?.length) {
+    return params.item.schedulingIdentities;
+  }
+
+  return resolveModuleSchedulingIdentities({
+    programmeCode: params.meta?.programme_code ?? params.item.programmeCode,
+    streamCode: params.meta?.stream_code ?? params.item.streamCode,
+    moduleYear: params.meta?.module_year ?? params.item.moduleYear,
+    combineMembers: params.combineMembers,
+  });
 }
 
 function sortWeeklyGridItems(items: WeeklyGridItem[]) {
@@ -944,11 +1016,29 @@ export function WeeklyTimetableEditor(props: {
                                 );
                                 const studentNumberLabel =
                                   formatInstanceStudentNumber(itemInstance);
-                                const highlightProgramme = isSelectedProgrammeHighlight(
-                                  item.programmeCode,
-                                  programmeCode,
-                                  viewScope
-                                );
+                                const itemMeta =
+                                  moduleMetaByCode[item.moduleInstanceCode] ??
+                                  moduleMetaByCode[
+                                    item.moduleInstanceCode.toUpperCase()
+                                  ];
+                                const combineGroupId = String(
+                                  itemMeta?.combine_group_id ?? ""
+                                ).trim();
+                                const combineMembers = combineGroupId
+                                  ? combineMembersByGroupId.get(combineGroupId)
+                                  : undefined;
+                                const highlightProgramme = isSelectedProgrammeHighlight({
+                                  programmeCode: item.programmeCode,
+                                  schedulingIdentities:
+                                    resolveWeeklyItemSchedulingIdentities({
+                                      item,
+                                      meta: itemMeta,
+                                      combineMembers,
+                                    }),
+                                  combineMembers,
+                                  selectedProgrammeCode: programmeCode,
+                                  viewScope,
+                                });
 
                                 return (
                                 <div
@@ -956,7 +1046,7 @@ export function WeeklyTimetableEditor(props: {
                                   className={cn(
                                     "rounded border px-2 py-1.5",
                                     highlightProgramme
-                                      ? "border-amber-300 bg-amber-50"
+                                      ? SELECTED_PROGRAMME_HIGHLIGHT_CELL
                                       : "border-slate-200 bg-slate-50"
                                   )}
                                 >
@@ -1113,17 +1203,32 @@ export function WeeklyTimetableEditor(props: {
                       const meta =
                         moduleMetaByCode[row.module_instance_code] ??
                         moduleMetaByCode[row.module_instance_code.toUpperCase()];
-                      const highlightProgramme = isSelectedProgrammeHighlight(
-                        meta?.programme_code,
-                        programmeCode,
-                        viewScope
-                      );
+                      const combineGroupId = String(
+                        meta?.combine_group_id ?? ""
+                      ).trim();
+                      const combineMembers = combineGroupId
+                        ? combineMembersByGroupId.get(combineGroupId)
+                        : undefined;
+                      const highlightProgramme = isSelectedProgrammeHighlight({
+                        programmeCode: meta?.programme_code,
+                        schedulingIdentities: meta
+                          ? resolveModuleSchedulingIdentities({
+                              programmeCode: meta.programme_code,
+                              streamCode: meta.stream_code,
+                              moduleYear: meta.module_year,
+                              combineMembers,
+                            })
+                          : undefined,
+                        combineMembers,
+                        selectedProgrammeCode: programmeCode,
+                        viewScope,
+                      });
                       return (
                         <tr
                           key={row.id}
                           className={cn(
                             "border-t",
-                            highlightProgramme && "bg-amber-50"
+                            highlightProgramme && SELECTED_PROGRAMME_HIGHLIGHT_ROW
                           )}
                         >
                           <td className="px-3 py-2 font-mono font-medium">
