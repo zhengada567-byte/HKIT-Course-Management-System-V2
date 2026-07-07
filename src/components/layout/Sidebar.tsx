@@ -17,7 +17,6 @@ import {
   Search,
   TableProperties,
   Upload,
-  UserPen,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -93,12 +92,6 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       label: t.courseSearch,
       icon: Search,
       roles: ["admin", "programme_leader", "staff"],
-    },
-    {
-      to: "/programme-leader/module-teachers",
-      label: t.moduleTeacherAssignment,
-      icon: UserPen,
-      roles: ["programme_leader", "admin"],
     },
     {
       to: "/academic-calendar",

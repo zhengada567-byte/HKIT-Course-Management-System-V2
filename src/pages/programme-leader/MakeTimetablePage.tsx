@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { DataTable } from "../../components/tables/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -93,6 +94,7 @@ import { StudentNumberStep } from "./make-timetable/components/StudentNumberStep
 import { ScheduleStep } from "./make-timetable/components/ScheduleStep";
 import { TeacherAvailabilityModal } from "./make-timetable/components/TeacherAvailabilityModal";
 import { ClassroomManagementModal } from "./make-timetable/components/ClassroomManagementModal";
+import { ModuleBasicSettingsModal } from "./make-timetable/components/ModuleBasicSettingsModal";
 import { TeacherConfirmStep } from "./make-timetable/components/TeacherConfirmStep";
 import { CrossProgrammeCombineDrawer } from "./make-timetable/components/CrossProgrammeCombineDrawer";
 import { isHDProgramme } from "./make-study-plan/helpers";
@@ -239,7 +241,9 @@ export function MakeTimetablePage() {
   const [offeringBusy, setOfferingBusy] = useState(false);
   const [teacherAvailabilityOpen, setTeacherAvailabilityOpen] = useState(false);
   const [classroomManagementOpen, setClassroomManagementOpen] = useState(false);
+  const [moduleBasicSettingsOpen, setModuleBasicSettingsOpen] = useState(false);
   const [classroomRefreshToken, setClassroomRefreshToken] = useState(0);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [message, setMessage] = useState("");
   const programmeCodes = useMemo(
     () => [...new Set(programmes.map((p) => p.programme_code))],
@@ -379,6 +383,14 @@ export function MakeTimetablePage() {
   useEffect(() => {
     void init();
   }, []);
+
+  useEffect(() => {
+    if (searchParams.get("moduleBasicSettings") !== "1") return;
+    setModuleBasicSettingsOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete("moduleBasicSettings");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     void refreshCrossProgrammeGroups();
@@ -2176,6 +2188,13 @@ export function MakeTimetablePage() {
           <button
             type="button"
             className="btn btn-secondary"
+            onClick={() => setModuleBasicSettingsOpen(true)}
+          >
+            {t.moduleBasicSettings}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
             onClick={() => setClassroomManagementOpen(true)}
           >
             {t.classroomManagement}
@@ -2409,6 +2428,14 @@ export function MakeTimetablePage() {
         open={classroomManagementOpen}
         onClose={() => setClassroomManagementOpen(false)}
         onChanged={() => setClassroomRefreshToken((token) => token + 1)}
+      />
+
+      <ModuleBasicSettingsModal
+        academicYear={academicYear}
+        programmeCode={programmeCode}
+        moduleTerm={moduleTerm}
+        open={moduleBasicSettingsOpen}
+        onClose={() => setModuleBasicSettingsOpen(false)}
       />
 
       <CrossProgrammeCombineDrawer

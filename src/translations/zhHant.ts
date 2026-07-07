@@ -24,7 +24,7 @@ export const zhHant = {
   guidePlStudyPlan:
     "管理學生學習計劃、修讀科目與學期，並匯出計劃或檢視 Quota 報表。",
   guidePlMakeTimetable:
-    "依學生人數進行合班、分班、教師可用時間及自動排課，製作周時間表。",
+    "同步學生人數、合班分班、科目基本設定、課室管理、教師可用時間，並製作周時間表。",
   guidePlDailyTimetable:
     "檢視及編輯本課程每日 L/T 課節（狀態、補課、備註等）。",
   courseSearch: "課程搜尋",
@@ -38,6 +38,9 @@ export const zhHant = {
   passwordManagement: "密碼管理",
   makeTimetable: "製作時間表",
   moduleTeacherAssignment: "科目教師設定",
+  moduleBasicSettings: "科目基本設定",
+  moduleBasicSettingsDescription:
+    "設定各科目的建議教師、任教狀態，以及本年度是否開課。",
   moduleTeacherAssignmentDescription:
     "選擇課程後載入各科目的建議教師，可從下拉選單重新選擇並儲存。按「新增教師」會寫入資料庫教師名冊，儲存後即可在下拉選單選用。",
   loadModuleTeachers: "載入科目",

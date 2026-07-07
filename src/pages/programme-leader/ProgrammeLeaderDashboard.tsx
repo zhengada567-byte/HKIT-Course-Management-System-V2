@@ -7,7 +7,6 @@ import {
   GraduationCap,
   Search,
   Upload,
-  UserPen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -45,12 +44,6 @@ export function ProgrammeLeaderDashboard() {
       label: t.courseSearch,
       description: t.guidePlCourseSearch,
       icon: Search,
-    },
-    {
-      to: "/programme-leader/module-teachers",
-      label: t.moduleTeacherAssignment,
-      description: t.guidePlModuleTeachers,
-      icon: UserPen,
     },
     {
       to: "/academic-calendar",

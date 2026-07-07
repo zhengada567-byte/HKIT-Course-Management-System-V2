@@ -28,7 +28,7 @@ export const en = {
   guidePlStudyPlan:
     "Manage student study plans, modules, and terms; export plans or quota reports.",
   guidePlMakeTimetable:
-    "Combine/split classes, set teacher availability, and auto-schedule weekly timetables.",
+    "Sync student numbers, combine and split modules, set module basics and teachers, manage classrooms, and build the weekly timetable.",
   guidePlDailyTimetable:
     "View and edit daily L/T sessions for your programme (status, makeup, remarks).",
   courseSearch: "Course Search",
@@ -42,6 +42,9 @@ export const en = {
   passwordManagement: "Password Management",
   makeTimetable: "Make Timetable",
   moduleTeacherAssignment: "Module Teacher Assignment",
+  moduleBasicSettings: "Module Basic Settings",
+  moduleBasicSettingsDescription:
+    "Set proposed teachers, teaching status, and whether each module is offered this year.",
   moduleTeacherAssignmentDescription:
     "Select a programme to load proposed (default) teachers per module. Change teachers from the dropdown and save. New teachers are saved to the database and appear in the dropdown immediately.",
   loadModuleTeachers: "Load Modules",
