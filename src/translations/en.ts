@@ -171,6 +171,24 @@ export const en = {
   studyPlanEnrollmentHint:
     "Select academic year and term (Feb / Jun / Sep), then run after that term's sessions and rooms are saved. Day capacity uses scheduled classroom room_size only.",
   studyPlanEnrollmentRun: "Run batch enrollment",
+  studyPlanEnrollmentBatchTitle: "General batch enrollment",
+  studyPlanEnrollmentWarnings: "Warnings",
+  hdCoreEnrollmentTitle: "Enrollment rules",
+  hdCoreEnrollmentDescription:
+    "Configure allowed timetable class(es) per programme and module in the selected term. Only modules split into at least two classes are shown. Programmes are derived from the offering list. New rules default to all classes selected.",
+  hdCoreEnrollmentSaveRules: "Save rules",
+  hdCoreEnrollmentApply: "Apply rules (overwrite)",
+  hdCoreEnrollmentApplyConfirm:
+    "Re-enroll all students for this term using the saved rules?\n\nExisting Enrolled Class values on modules with rules will be overwritten.",
+  hdCoreEnrollmentNoInstances:
+    "No timetable classes found for this core module in the selected term.",
+  hdCoreEnrollmentSaved: "HD core enrollment rules saved.",
+  hdCoreEnrollmentApplied: "HD core rules applied",
+  hdCoreEnrollmentLoadFailed: "Failed to load HD core enrollment rules.",
+  hdCoreEnrollmentSaveFailed: "Failed to save HD core enrollment rules.",
+  hdCoreEnrollmentApplyFailed: "Failed to apply HD core enrollment rules.",
+  hdCoreEnrollmentActualFt: "Actual (FT)",
+  hdCoreEnrollmentActualPt: "Actual (PT)",
   processing: "Processing...",
   enrolledClass: "Enrolled Class",
   buildDailyTimetable: "Generate daily timetable",

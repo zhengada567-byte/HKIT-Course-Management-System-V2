@@ -163,6 +163,23 @@ export const zhHant = {
   studyPlanEnrollmentHint:
     "請選擇學年及學期（Feb / Jun / Sep），並在該學期時間表 session 及教室已儲存後執行。Day 班容量只與已排課教室 room_size 比較。",
   studyPlanEnrollmentRun: "執行批量分班",
+  studyPlanEnrollmentBatchTitle: "一般批量分班",
+  studyPlanEnrollmentWarnings: "警告",
+  hdCoreEnrollmentTitle: "分班规则",
+  hdCoreEnrollmentDescription:
+    "为所选学期内已分班（至少两个班别）的科目与课程设定可读班别。课程来自 offering list。未储存过的组合默认全选所有班别。套用规则时会覆盖已设有规则的科目的入讀班別。",
+  hdCoreEnrollmentSaveRules: "储存规则",
+  hdCoreEnrollmentApply: "套用规则（覆盖）",
+  hdCoreEnrollmentApplyConfirm:
+    "按已储存规则为本学期重新分班？\n\n所有已设有规则的科目，其现有入讀班別将被覆盖。",
+  hdCoreEnrollmentNoInstances: "所选学期找不到此 core 科目的时间表班别。",
+  hdCoreEnrollmentSaved: "HD Core 入读规则已储存。",
+  hdCoreEnrollmentApplied: "已套用 HD Core 规则",
+  hdCoreEnrollmentLoadFailed: "载入 HD Core 入读规则失败。",
+  hdCoreEnrollmentSaveFailed: "储存 HD Core 入读规则失败。",
+  hdCoreEnrollmentApplyFailed: "套用 HD Core 入读规则失败。",
+  hdCoreEnrollmentActualFt: "實際(全日)",
+  hdCoreEnrollmentActualPt: "實際(兼讀)",
   processing: "處理中...",
   enrolledClass: "入讀班別",
   buildDailyTimetable: "產生每日時間表",

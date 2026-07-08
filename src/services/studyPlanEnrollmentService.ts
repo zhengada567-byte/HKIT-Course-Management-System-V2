@@ -142,7 +142,7 @@ function incrementCount(map: Map<string, number>, code: string) {
   map.set(code, (map.get(code) ?? 0) + 1);
 }
 
-async function loadEnrollmentRows(params: {
+export async function loadStudyPlanEnrollmentRows(params: {
   academicYear: string;
   offeredTerm: ModuleTerm;
 }): Promise<StudyPlanEnrollmentRow[]> {
@@ -294,7 +294,7 @@ async function loadCombineGroupMembersByGroupId(params: {
   return result;
 }
 
-async function loadTimetableEnrollmentContext(params: {
+export async function loadTimetableEnrollmentContext(params: {
   academicYear: string;
   offeredTerm?: ModuleTerm;
 }) {
@@ -483,7 +483,7 @@ async function loadTimetableEnrollmentContext(params: {
   };
 }
 
-function resolveModuleInstances(
+export function resolveModuleInstances(
   moduleCode: string,
   instancesByModuleCode: Map<string, EnrollmentInstanceOption[]>,
   offeredTerm: ModuleTerm
@@ -498,15 +498,15 @@ function resolveModuleInstances(
   return [];
 }
 
-function isSplitModule(instances: EnrollmentInstanceOption[]) {
+export function isSplitModule(instances: EnrollmentInstanceOption[]) {
   if (instances.length <= 1) {
-    return instances[0]?.splitGroupSize > 1;
+    return (instances[0]?.splitGroupSize ?? 0) > 1;
   }
 
   return true;
 }
 
-function allocateGroup(params: {
+export function allocateEnrollmentGroup(params: {
   rows: StudyPlanEnrollmentRow[];
   instances: EnrollmentInstanceOption[];
   warnings: string[];
@@ -640,7 +640,7 @@ export async function batchEnrollStudyPlanStudents(
   params: BatchEnrollStudyPlanStudentsParams
 ): Promise<BatchEnrollStudyPlanStudentsResult> {
   const onlyEmpty = params.onlyEmpty !== false;
-  const rows = await loadEnrollmentRows(params);
+  const rows = await loadStudyPlanEnrollmentRows(params);
   const context = await loadTimetableEnrollmentContext(params);
 
   const warnings: string[] = [];
@@ -676,7 +676,7 @@ export async function batchEnrollStudyPlanStudents(
       params.offeredTerm
     );
 
-    const assignments = allocateGroup({
+    const assignments = allocateEnrollmentGroup({
       rows: groupRows,
       instances,
       warnings,

@@ -4,6 +4,7 @@ import { PageHeader } from "../../components/ui/PageHeader";
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import { batchEnrollStudyPlanStudents } from "../../services/studyPlanEnrollmentService";
+import { HdCoreEnrollmentRulesPanel } from "./components/HdCoreEnrollmentRulesPanel";
 import type { ModuleTerm } from "../../types/common";
 
 const OFFERED_TERMS: ModuleTerm[] = ["Feb", "Jun", "Sep"];
@@ -91,6 +92,20 @@ export function StudyPlanEnrollmentPage() {
             ))}
           </select>
         </div>
+      </div>
+
+      <HdCoreEnrollmentRulesPanel
+        academicYear={selectedYear}
+        offeredTerm={offeredTerm}
+      />
+
+      <div className="rounded-md border bg-card p-4 space-y-4 max-w-2xl">
+        <div>
+          <h2 className="text-base font-semibold">{t.studyPlanEnrollmentBatchTitle}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t.studyPlanEnrollmentHint}
+          </p>
+        </div>
 
         <label className="flex items-center gap-2 text-sm">
           <input
@@ -100,10 +115,6 @@ export function StudyPlanEnrollmentPage() {
           />
           {t.studyPlanEnrollmentOnlyEmpty}
         </label>
-
-        <p className="text-sm text-muted-foreground">
-          {t.studyPlanEnrollmentHint}
-        </p>
 
         <button
           type="button"
