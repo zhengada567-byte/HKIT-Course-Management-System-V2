@@ -5,8 +5,13 @@ import {
   offeredTermToStudyTerm,
 } from "../lib/utils";
 import type { ModuleTerm } from "../types/common";
-import { offeredTermFromStudyTerm, isHDProgrammeType } from "../pages/programme-leader/make-study-plan/helpers";
+import {
+  offeredTermFromStudyTerm,
+  isDegreeProgrammeType,
+  isHDProgrammeType,
+} from "../pages/programme-leader/make-study-plan/helpers";
 import { listProgrammes } from "./programmeService";
+import { parseArticulatedDegreeCodes } from "./studyPlanService";
 import {
   allocateEnrollmentGroup,
   isSplitModule,
@@ -76,6 +81,54 @@ export async function listHdProgrammeCodes(): Promise<string[]> {
   return [...codes].sort();
 }
 
+function buildArticulatedDegreeCodesByHdProgramme(
+  programmes: Awaited<ReturnType<typeof listProgrammes>>
+) {
+  const validDegreeCodes = new Set(
+    programmes
+      .filter((row) => isDegreeProgrammeType(row.programme_type))
+      .map((row) => normalizeText(row.programme_code).toUpperCase())
+      .filter(Boolean)
+  );
+
+  const map = new Map<string, Set<string>>();
+
+  for (const row of programmes) {
+    if (!isHDProgrammeType(row.programme_type)) continue;
+
+    const hdCode = normalizeText(row.programme_code).toUpperCase();
+    if (!hdCode) continue;
+
+    for (const degreeCode of parseArticulatedDegreeCodes(row.articulation)) {
+      if (!validDegreeCodes.has(degreeCode)) continue;
+
+      const set = map.get(hdCode) ?? new Set<string>();
+      set.add(degreeCode);
+      map.set(hdCode, set);
+    }
+  }
+
+  return map;
+}
+
+function expandProgrammeCodesWithArticulation(
+  programmeCodes: Set<string>,
+  articulatedByHd: Map<string, Set<string>>
+) {
+  const expanded = new Set(programmeCodes);
+
+  for (const programmeCode of programmeCodes) {
+    const degreeCodes = articulatedByHd.get(programmeCode);
+    if (!degreeCodes) continue;
+
+    for (const degreeCode of degreeCodes) {
+      expanded.add(degreeCode);
+    }
+  }
+
+  return expanded;
+}
+
 export async function listOfferedModulesForEnrollment(params: {
   academicYear: string;
   offeredTerm: ModuleTerm;
@@ -92,6 +145,9 @@ export async function listOfferedModulesForEnrollment(params: {
     .order("programme_code");
 
   if (error) throw error;
+
+  const programmes = await listProgrammes();
+  const articulatedByHd = buildArticulatedDegreeCodesByHdProgramme(programmes);
 
   const byModule = new Map<
     string,
@@ -119,6 +175,13 @@ export async function listOfferedModulesForEnrollment(params: {
 
     existing.programmeCodes.add(programmeCode);
     byModule.set(moduleCode, existing);
+  }
+
+  for (const module of byModule.values()) {
+    module.programmeCodes = expandProgrammeCodesWithArticulation(
+      module.programmeCodes,
+      articulatedByHd
+    );
   }
 
   const context = await loadTimetableEnrollmentContext(params);
@@ -163,8 +226,6 @@ export async function loadHdCoreEnrollmentStudentCounts(params: {
     canonicalYear,
     params.offeredTerm
   );
-  const hdProgrammeCodes = new Set(await listHdProgrammeCodes());
-  const coreCodeSet = new Set<string>(HD_CORE_MODULE_CODES);
 
   const { data, error } = await supabase
     .from("timetable_student_numbers")
@@ -182,7 +243,7 @@ export async function loadHdCoreEnrollmentStudentCounts(params: {
     const moduleCode = normalizeText(row.module_code).toUpperCase();
     const programmeCode = normalizeText(row.programme_code).toUpperCase();
 
-    if (!coreCodeSet.has(moduleCode) || !hdProgrammeCodes.has(programmeCode)) {
+    if (!moduleCode || !programmeCode) {
       continue;
     }
 
@@ -212,8 +273,6 @@ export async function loadHdCoreEnrollmentActualCounts(params: {
   offeredTerm: ModuleTerm;
 }): Promise<HdCoreActualCountsByKey> {
   const canonicalYear = normalizeAcademicYear(params.academicYear);
-  const hdProgrammeCodes = new Set(await listHdProgrammeCodes());
-  const coreCodeSet = new Set<string>(HD_CORE_MODULE_CODES);
 
   const { data, error } = await supabase
     .from("study_plan_actual_student_numbers")
@@ -229,11 +288,11 @@ export async function loadHdCoreEnrollmentActualCounts(params: {
     const programmeCode = normalizeText(row.programme_code).toUpperCase();
     const studyTerm = normalizeText(row.study_term);
 
-    if (!studyTerm || offeredTermFromStudyTerm(studyTerm) !== params.offeredTerm) {
+    if (!moduleCode || !programmeCode) {
       continue;
     }
 
-    if (!coreCodeSet.has(moduleCode) || !hdProgrammeCodes.has(programmeCode)) {
+    if (!studyTerm || offeredTermFromStudyTerm(studyTerm) !== params.offeredTerm) {
       continue;
     }
 

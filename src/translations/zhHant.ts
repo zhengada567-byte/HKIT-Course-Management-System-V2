@@ -167,7 +167,7 @@ export const zhHant = {
   studyPlanEnrollmentWarnings: "警告",
   hdCoreEnrollmentTitle: "分班规则",
   hdCoreEnrollmentDescription:
-    "为所选学期内已分班（至少两个班别）的科目与课程设定可读班别。课程来自 offering list。未储存过的组合默认全选所有班别。套用规则时会覆盖已设有规则的科目的入讀班別。",
+    "为所选学期内已分班（至少两个班别）的科目与课程设定可读班别。课程来自 offering list；若 HD 课程可升读 Degree，会一并显示对应 Degree 课程（bridging 学生适用）。未储存过的组合默认全选所有班别。套用规则时会覆盖已设有规则的科目的入讀班別。",
   hdCoreEnrollmentSaveRules: "储存规则",
   hdCoreEnrollmentApply: "套用规则（覆盖）",
   hdCoreEnrollmentApplyConfirm:

@@ -175,7 +175,7 @@ export const en = {
   studyPlanEnrollmentWarnings: "Warnings",
   hdCoreEnrollmentTitle: "Enrollment rules",
   hdCoreEnrollmentDescription:
-    "Configure allowed timetable class(es) per programme and module in the selected term. Only modules split into at least two classes are shown. Programmes are derived from the offering list. New rules default to all classes selected.",
+    "Configure allowed timetable class(es) per programme and module in the selected term. Only modules split into at least two classes are shown. HD programmes come from the offering list; related Degree programmes are included when they articulate from those HD programmes. New rules default to all classes selected.",
   hdCoreEnrollmentSaveRules: "Save rules",
   hdCoreEnrollmentApply: "Apply rules (overwrite)",
   hdCoreEnrollmentApplyConfirm:
