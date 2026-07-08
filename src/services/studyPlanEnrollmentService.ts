@@ -1,6 +1,10 @@
 import { supabase } from "../lib/supabase";
 import { fetchAllPaginatedRows } from "../lib/supabasePagination";
 import {
+  catalogModuleLookupKeys,
+  timetableModuleLookupKeys,
+} from "../lib/studyPlanModuleCodeAliases";
+import {
   getAcademicYearVariants,
   normalizeAcademicYear,
 } from "../lib/utils";
@@ -403,8 +407,21 @@ async function loadTimetableEnrollmentContext(params: {
     const seen = new Set(existing.map((row) => row.moduleInstanceCode));
 
     if (!seen.has(instanceCode)) {
-      existing.push(option);
+      existing.push({ ...option, moduleCode });
       instancesByModuleCode.set(moduleCode, existing);
+    }
+  };
+
+  const registerInstanceForModuleCode = (
+    timetableModuleCode: string,
+    option: Omit<EnrollmentInstanceOption, "moduleCode">
+  ) => {
+    const lookupKeys = params.offeredTerm
+      ? timetableModuleLookupKeys(timetableModuleCode, params.offeredTerm)
+      : [normalizeText(timetableModuleCode).toUpperCase()].filter(Boolean);
+
+    for (const moduleCode of lookupKeys) {
+      registerInstance({ moduleCode, ...option });
     }
   };
 
@@ -429,13 +446,13 @@ async function loadTimetableEnrollmentContext(params: {
       for (const member of members) {
         const baseCode = normalizeText(member.module_code).toUpperCase();
         if (!baseCode) continue;
-        registerInstance({ moduleCode: baseCode, ...option });
+        registerInstanceForModuleCode(baseCode, option);
       }
       continue;
     }
 
     if (!moduleCode) continue;
-    registerInstance({ moduleCode, ...option });
+    registerInstanceForModuleCode(moduleCode, option);
   }
 
   for (const row of timetableModules) {
@@ -450,8 +467,7 @@ async function loadTimetableEnrollmentContext(params: {
       continue;
     }
 
-    registerInstance({
-      moduleCode,
+    registerInstanceForModuleCode(moduleCode, {
       moduleInstanceCode: instanceCode,
       instanceMode: normalizeInstanceMode(row.mode),
       splitGroupSize: Number(row.split_group_size ?? 1),
@@ -469,12 +485,14 @@ async function loadTimetableEnrollmentContext(params: {
 
 function resolveModuleInstances(
   moduleCode: string,
-  instancesByModuleCode: Map<string, EnrollmentInstanceOption[]>
+  instancesByModuleCode: Map<string, EnrollmentInstanceOption[]>,
+  offeredTerm: ModuleTerm
 ) {
-  const direct = instancesByModuleCode.get(moduleCode) ?? [];
-
-  if (direct.length > 0) {
-    return direct;
+  for (const lookupCode of catalogModuleLookupKeys(moduleCode, offeredTerm)) {
+    const found = instancesByModuleCode.get(lookupCode) ?? [];
+    if (found.length > 0) {
+      return found;
+    }
   }
 
   return [];
@@ -654,7 +672,8 @@ export async function batchEnrollStudyPlanStudents(
 
     const instances = resolveModuleInstances(
       sample.module_code,
-      context.instancesByModuleCode
+      context.instancesByModuleCode,
+      params.offeredTerm
     );
 
     const assignments = allocateGroup({

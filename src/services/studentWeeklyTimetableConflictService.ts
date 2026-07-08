@@ -1,6 +1,10 @@
 import { fetchAllPaginatedRows } from "../lib/supabasePagination";
 import { supabase } from "../lib/supabase";
 import { schedulingWeekdayLabel } from "../lib/timetableSchedulingRules";
+import {
+  catalogModuleLookupKeys,
+  timetableModuleLookupKeys,
+} from "../lib/studyPlanModuleCodeAliases";
 import { normalizeAcademicYear } from "../lib/utils";
 import {
   offeredTermFromStudyTerm,
@@ -143,6 +147,31 @@ function pushUnique(map: Map<string, string[]>, key: string, value: string) {
   }
 }
 
+function registerInstanceCandidates(
+  map: Map<string, string[]>,
+  moduleCode: string,
+  instanceCode: string,
+  offeredTerm: TimetableScheduleTerm
+) {
+  for (const key of timetableModuleLookupKeys(moduleCode, offeredTerm)) {
+    pushUnique(map, key, instanceCode);
+  }
+}
+
+function resolveCandidateInstanceCodes(
+  map: Map<string, string[]>,
+  studyPlanModuleCode: string,
+  offeredTerm: TimetableScheduleTerm
+) {
+  const merged = new Set<string>();
+  for (const key of catalogModuleLookupKeys(studyPlanModuleCode, offeredTerm)) {
+    for (const code of map.get(key) ?? []) {
+      merged.add(code);
+    }
+  }
+  return [...merged];
+}
+
 export async function detectStudentWeeklyTimetableConflicts(params: {
   academicYear: string;
   term: TimetableScheduleTerm;
@@ -226,12 +255,22 @@ export async function detectStudentWeeklyTimetableConflicts(params: {
     if (combineGroupId) {
       const members = combineMembersByGroupId.get(combineGroupId) ?? [];
       for (const member of members) {
-        pushUnique(instanceCodesByBaseModuleCode, member.module_code, instanceCode);
+        registerInstanceCandidates(
+          instanceCodesByBaseModuleCode,
+          member.module_code,
+          instanceCode,
+          params.term
+        );
       }
       continue;
     }
 
-    pushUnique(instanceCodesByBaseModuleCode, row.module_code, instanceCode);
+    registerInstanceCandidates(
+      instanceCodesByBaseModuleCode,
+      row.module_code,
+      instanceCode,
+      params.term
+    );
   }
 
   const instanceCodesForTerm = new Set(
@@ -280,18 +319,26 @@ export async function detectStudentWeeklyTimetableConflicts(params: {
       const enrolledCode =
         enrolledCodeRaw ||
         (() => {
-          const candidates = instanceCodesByBaseModuleCode.get(moduleCode) ?? [];
+          const candidates = resolveCandidateInstanceCodes(
+            instanceCodesByBaseModuleCode,
+            moduleCode,
+            params.term
+          );
           if (candidates.length === 1) return candidates[0]!;
-          // Some combined/legacy rows have sessions saved but no instance row.
-          // If module_code itself is used as module_instance_code in sessions, infer it.
-          if (candidates.length === 0 && weeklyPatternsByInstanceAll.has(moduleCode)) {
-            return moduleCode;
+          for (const lookupCode of catalogModuleLookupKeys(moduleCode, params.term)) {
+            if (weeklyPatternsByInstanceAll.has(lookupCode)) {
+              return lookupCode;
+            }
           }
           return "";
         })();
 
       if (!enrolledCode) {
-        const candidates = instanceCodesByBaseModuleCode.get(moduleCode) ?? [];
+        const candidates = resolveCandidateInstanceCodes(
+          instanceCodesByBaseModuleCode,
+          moduleCode,
+          params.term
+        );
         warnings.push({
           studentId: student.studentId,
           studentName: student.studentName,
