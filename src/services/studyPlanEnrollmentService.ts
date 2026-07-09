@@ -112,6 +112,53 @@ function buildAllocationGroupKey(params: {
   ].join("|");
 }
 
+function enrollmentRuleKey(moduleCode: string, programmeCode: string) {
+  return `${normalizeText(moduleCode).toUpperCase()}|${normalizeText(programmeCode).toUpperCase()}`;
+}
+
+async function loadEnrollmentRulesByKey(params: {
+  academicYear: string;
+  offeredTerm: ModuleTerm;
+}) {
+  const canonicalYear = normalizeAcademicYear(params.academicYear);
+
+  const { data, error } = await supabase
+    .from("study_plan_enrollment_rules")
+    .select("module_code, programme_code, allowed_instance_codes")
+    .eq("academic_year", canonicalYear)
+    .eq("module_term", params.offeredTerm);
+
+  if (error) throw error;
+
+  const rulesByKey = new Map<string, Set<string>>();
+
+  for (const row of data ?? []) {
+    const key = enrollmentRuleKey(
+      normalizeText(row.module_code),
+      normalizeText(row.programme_code)
+    );
+    rulesByKey.set(
+      key,
+      new Set(
+        (row.allowed_instance_codes ?? [])
+          .map((code: string) => normalizeText(code).toUpperCase())
+          .filter(Boolean)
+      )
+    );
+  }
+
+  return rulesByKey;
+}
+
+function filterInstancesByAllowedCodes(
+  instances: EnrollmentInstanceOption[],
+  allowedCodes: Set<string>
+) {
+  return instances.filter((row) =>
+    allowedCodes.has(normalizeText(row.moduleInstanceCode).toUpperCase())
+  );
+}
+
 function pickBalancedInstance(
   instanceCodes: string[],
   counts: Map<string, number>,
@@ -511,7 +558,13 @@ export function allocateEnrollmentGroup(params: {
   instances: EnrollmentInstanceOption[];
   warnings: string[];
   groupLabel: string;
+  /** When true (default), FT→Day/Sat and PT→Night/Sat only; no cross-mode fallback. */
+  strictMode?: boolean;
+  /** When true, prefer classes with remaining room capacity before balancing counts. */
+  balanceByRoomSize?: boolean;
 }) {
+  const strictMode = params.strictMode !== false;
+  const balanceByRoomSize = params.balanceByRoomSize === true;
   const assignments = new Map<string, string>();
   const instances = params.instances;
 
@@ -552,16 +605,39 @@ export function allocateEnrollmentGroup(params: {
 
   const assignedCounts = new Map<string, number>();
 
-  const pickDayInstanceWithCapacity = (seed: string) => {
-    const available = dayInstances
-      .filter((item) => item.roomSize !== null && item.roomSize !== undefined)
-      .filter((item) => {
-        const assigned = assignedCounts.get(item.moduleInstanceCode) ?? 0;
-        return assigned < Number(item.roomSize ?? 0);
-      })
-      .map((item) => item.moduleInstanceCode);
+  const pickFromInstances = (
+    candidateInstances: EnrollmentInstanceOption[],
+    seed: string
+  ) => {
+    if (candidateInstances.length === 0) {
+      return null;
+    }
 
-    return pickBalancedInstance(available, assignedCounts, seed);
+    if (balanceByRoomSize) {
+      const withCapacity = candidateInstances
+        .filter(
+          (item) => item.roomSize !== null && item.roomSize !== undefined
+        )
+        .filter((item) => {
+          const assigned = assignedCounts.get(item.moduleInstanceCode) ?? 0;
+          return assigned < Number(item.roomSize ?? 0);
+        })
+        .map((item) => item.moduleInstanceCode);
+
+      if (withCapacity.length > 0) {
+        return pickBalancedInstance(withCapacity, assignedCounts, seed);
+      }
+    }
+
+    return pickBalancedInstance(
+      candidateInstances.map((item) => item.moduleInstanceCode),
+      assignedCounts,
+      seed
+    );
+  };
+
+  const pickDayInstanceWithCapacity = (seed: string) => {
+    return pickFromInstances(dayInstances, seed);
   };
 
   for (const row of ftRows) {
@@ -573,7 +649,17 @@ export function allocateEnrollmentGroup(params: {
       continue;
     }
 
-    if (ptInstances.length > 0) {
+    if (saturdayInstances.length > 0) {
+      const satCode = pickFromInstances(saturdayInstances, row.student_id);
+
+      if (satCode) {
+        assignments.set(row.id, satCode);
+        incrementCount(assignedCounts, satCode);
+        continue;
+      }
+    }
+
+    if (!strictMode && ptInstances.length > 0) {
       const code = pickBalancedInstance(
         ptInstances.map((item) => item.moduleInstanceCode),
         assignedCounts,
@@ -588,7 +674,9 @@ export function allocateEnrollmentGroup(params: {
     }
 
     params.warnings.push(
-      `${params.groupLabel}: FT student ${row.student_id} / ${row.module_code} could not be assigned (no Day/Night/Sat instance with capacity).`
+      strictMode
+        ? `${params.groupLabel}: FT student ${row.student_id} / ${row.module_code} could not be assigned (no Day or Saturday class in allowed list).`
+        : `${params.groupLabel}: FT student ${row.student_id} / ${row.module_code} could not be assigned (no Day/Night/Sat instance with capacity).`
     );
   }
 
@@ -600,11 +688,7 @@ export function allocateEnrollmentGroup(params: {
       continue;
     }
 
-    const code = pickBalancedInstance(
-      ptInstances.map((item) => item.moduleInstanceCode),
-      assignedCounts,
-      row.student_id
-    );
+    const code = pickFromInstances(ptInstances, row.student_id);
 
     if (!code) {
       params.warnings.push(
@@ -640,8 +724,11 @@ export async function batchEnrollStudyPlanStudents(
   params: BatchEnrollStudyPlanStudentsParams
 ): Promise<BatchEnrollStudyPlanStudentsResult> {
   const onlyEmpty = params.onlyEmpty !== false;
-  const rows = await loadStudyPlanEnrollmentRows(params);
-  const context = await loadTimetableEnrollmentContext(params);
+  const [rows, context, rulesByKey] = await Promise.all([
+    loadStudyPlanEnrollmentRows(params),
+    loadTimetableEnrollmentContext(params),
+    loadEnrollmentRulesByKey(params),
+  ]);
 
   const warnings: string[] = [];
   const updates = new Map<string, string>();
@@ -669,18 +756,57 @@ export async function batchEnrollStudyPlanStudents(
 
   for (const [, groupRows] of groups) {
     const sample = groupRows[0]!;
-
-    const instances = resolveModuleInstances(
+    const groupLabel = `${sample.programme_code} / ${sample.module_code} / ${sample.study_term}`;
+    const allInstances = resolveModuleInstances(
       sample.module_code,
       context.instancesByModuleCode,
       params.offeredTerm
     );
 
+    if (allInstances.length === 0) {
+      for (const row of groupRows) {
+        warnings.push(
+          `${groupLabel}: no timetable instances found for ${row.student_id} / ${row.module_code}.`
+        );
+      }
+      continue;
+    }
+
+    const savedRule = rulesByKey.get(
+      enrollmentRuleKey(sample.module_code, sample.programme_code)
+    );
+
+    let instances = allInstances;
+
+    if (savedRule !== undefined) {
+      if (savedRule.size === 0) {
+        for (const row of groupRows) {
+          warnings.push(
+            `${groupLabel}: saved rule has no allowed classes for ${row.student_id} / ${row.module_code}.`
+          );
+        }
+        continue;
+      }
+
+      instances = filterInstancesByAllowedCodes(allInstances, savedRule);
+
+      if (instances.length === 0) {
+        for (const row of groupRows) {
+          warnings.push(
+            `${groupLabel}: allowed class list does not match any timetable class for ${row.student_id} / ${row.module_code}.`
+          );
+        }
+        continue;
+      }
+    }
+
     const assignments = allocateEnrollmentGroup({
       rows: groupRows,
       instances,
       warnings,
-      groupLabel: `${sample.programme_code} / ${sample.module_code} / ${sample.study_term}`,
+      groupLabel,
+      strictMode: true,
+      balanceByRoomSize: savedRule === undefined,
     });
 
     for (const [rowId, code] of assignments) {

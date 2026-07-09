@@ -165,7 +165,7 @@ export const en = {
   allProgrammes: "All programmes",
   studyPlanEnrollmentTitle: "Student Class Enrollment",
   studyPlanEnrollmentDescription:
-    "After the weekly/daily timetable is saved, batch-assign study plan students by academic year and term. Existing manual enrollments are kept by default.",
+    "Configure allowed classes for split modules, save rules, then batch-enroll all study plan students for the selected term. Programmes without saved rules are auto-balanced by classroom size. FT→Day/Saturday; PT→Night/Saturday.",
   studyPlanEnrollmentOnlyEmpty:
     "Only assign rows with empty Enrolled Class",
   studyPlanEnrollmentHint:
@@ -175,18 +175,23 @@ export const en = {
   studyPlanEnrollmentWarnings: "Warnings",
   hdCoreEnrollmentTitle: "Enrollment rules",
   hdCoreEnrollmentDescription:
-    "Configure allowed timetable class(es) per programme and module in the selected term. Only modules split into at least two classes are shown. HD programmes come from the offering list; related Degree programmes are included when they articulate from those HD programmes. New rules default to all classes selected.",
+    "Configure allowed classes per programme for split modules. Tick classes for each programme, or use All/None in each class column header. Programmes with no saved rule are auto-balanced by classroom size during batch enrollment.",
   hdCoreEnrollmentSaveRules: "Save rules",
-  hdCoreEnrollmentApply: "Apply rules (overwrite)",
-  hdCoreEnrollmentApplyConfirm:
-    "Re-enroll all students for this term using the saved rules?\n\nExisting Enrolled Class values on modules with rules will be overwritten.",
+  hdCoreEnrollmentBatchEnroll: "Batch enrollment",
+  hdCoreEnrollmentSelectAll: "All",
+  hdCoreEnrollmentClearAll: "None",
+  hdCoreEnrollmentBatchConfirmOnlyEmpty:
+    "Batch-enroll students with empty Enrolled Class for this term?\n\nProgrammes with saved rules use your ticked classes. Other programmes are auto-balanced by classroom size. FT→Day/Saturday; PT→Night/Saturday.",
+  hdCoreEnrollmentBatchConfirmOverwrite:
+    "Batch-enroll and overwrite existing Enrolled Class values?\n\nProgrammes with saved rules use your ticked classes. Other programmes are auto-balanced by classroom size. FT→Day/Saturday; PT→Night/Saturday.",
   hdCoreEnrollmentNoInstances:
     "No timetable classes found for this core module in the selected term.",
   hdCoreEnrollmentSaved: "HD core enrollment rules saved.",
-  hdCoreEnrollmentApplied: "HD core rules applied",
-  hdCoreEnrollmentLoadFailed: "Failed to load HD core enrollment rules.",
-  hdCoreEnrollmentSaveFailed: "Failed to save HD core enrollment rules.",
-  hdCoreEnrollmentApplyFailed: "Failed to apply HD core enrollment rules.",
+  hdCoreEnrollmentBatchDone: "Batch enrollment done",
+  hdCoreEnrollmentSkipped: "Skipped (already enrolled)",
+  hdCoreEnrollmentLoadFailed: "Failed to load enrollment rules.",
+  hdCoreEnrollmentSaveFailed: "Failed to save enrollment rules.",
+  hdCoreEnrollmentBatchFailed: "Batch enrollment failed.",
   hdCoreEnrollmentActualFt: "Actual (FT)",
   hdCoreEnrollmentActualPt: "Actual (PT)",
   processing: "Processing...",

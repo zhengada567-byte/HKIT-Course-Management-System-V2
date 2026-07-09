@@ -13,12 +13,10 @@ import {
 import { listProgrammes } from "./programmeService";
 import { parseArticulatedDegreeCodes } from "./studyPlanService";
 import {
-  allocateEnrollmentGroup,
+  batchEnrollStudyPlanStudents,
   isSplitModule,
-  loadStudyPlanEnrollmentRows,
   loadTimetableEnrollmentContext,
   resolveModuleInstances,
-  type EnrollmentInstanceOption,
 } from "./studyPlanEnrollmentService";
 
 /** Study-plan modules with programme-specific allowed timetable instances. */
@@ -56,6 +54,7 @@ export type CoreEnrollmentRule = {
 
 export type ApplyHdCoreEnrollmentResult = {
   assignedCount: number;
+  skippedCount: number;
   warningCount: number;
   warnings: string[];
 };
@@ -203,20 +202,6 @@ export async function listOfferedModulesForEnrollment(params: {
     .sort((a, b) => a.moduleCode.localeCompare(b.moduleCode));
 }
 
-function buildAllocationGroupKey(params: {
-  academicYear: string;
-  programmeCode: string;
-  moduleCode: string;
-  studyTerm: string;
-}) {
-  return [
-    normalizeAcademicYear(params.academicYear),
-    params.programmeCode,
-    params.moduleCode,
-    params.studyTerm,
-  ].join("|");
-}
-
 export async function loadHdCoreEnrollmentStudentCounts(params: {
   academicYear: string;
   offeredTerm: ModuleTerm;
@@ -310,13 +295,18 @@ export async function loadHdCoreEnrollmentActualCounts(params: {
   return counts;
 }
 
-export async function listModuleInstanceCodes(params: {
+export type ModuleInstanceForEnrollment = {
+  moduleInstanceCode: string;
+  instanceMode: "Day" | "Night" | "Saturday" | null;
+};
+
+export async function listModuleInstancesForEnrollment(params: {
   academicYear: string;
   offeredTerm: ModuleTerm;
   moduleCodes: string[];
-}): Promise<Record<string, string[]>> {
+}): Promise<Record<string, ModuleInstanceForEnrollment[]>> {
   const context = await loadTimetableEnrollmentContext(params);
-  const result: Record<string, string[]> = {};
+  const result: Record<string, ModuleInstanceForEnrollment[]> = {};
 
   for (const moduleCode of params.moduleCodes) {
     const options = resolveModuleInstances(
@@ -324,13 +314,23 @@ export async function listModuleInstanceCodes(params: {
       context.instancesByModuleCode,
       params.offeredTerm
     );
-    result[moduleCode] = [
-      ...new Set(
-        options
-          .map((row) => normalizeText(row.moduleInstanceCode))
-          .filter(Boolean)
-      ),
-    ].sort();
+    const seen = new Set<string>();
+    const instances: ModuleInstanceForEnrollment[] = [];
+
+    for (const row of options) {
+      const code = normalizeText(row.moduleInstanceCode);
+      if (!code || seen.has(code)) continue;
+
+      seen.add(code);
+      instances.push({
+        moduleInstanceCode: code,
+        instanceMode: row.instanceMode,
+      });
+    }
+
+    result[moduleCode] = instances.sort((a, b) =>
+      a.moduleInstanceCode.localeCompare(b.moduleInstanceCode)
+    );
   }
 
   return result;
@@ -408,122 +408,11 @@ export async function saveEnrollmentRules(params: {
   if (insertError) throw insertError;
 }
 
-function filterInstancesByAllowedCodes(
-  instances: EnrollmentInstanceOption[],
-  allowedCodes: Set<string>
-) {
-  return instances.filter((row) =>
-    allowedCodes.has(normalizeText(row.moduleInstanceCode).toUpperCase())
-  );
-}
-
 export async function applyHdCoreEnrollmentRules(params: {
   academicYear: string;
   offeredTerm: ModuleTerm;
+  /** When true (default), skip rows that already have an enrolled class. */
+  onlyEmpty?: boolean;
 }): Promise<ApplyHdCoreEnrollmentResult> {
-  const rules = await loadEnrollmentRules(params);
-  const rulesByKey = new Map(
-    rules.map((rule) => [
-      ruleKey(rule.moduleCode, rule.programmeCode),
-      new Set(
-        rule.allowedInstanceCodes.map((code) => normalizeText(code).toUpperCase())
-      ),
-    ])
-  );
-
-  const moduleCodeSet = new Set(
-    rules.map((rule) => normalizeText(rule.moduleCode).toUpperCase()).filter(Boolean)
-  );
-  const programmeCodeSet = new Set(
-    rules.map((rule) => normalizeText(rule.programmeCode).toUpperCase()).filter(Boolean)
-  );
-
-  const rows = (await loadStudyPlanEnrollmentRows(params)).filter((row) => {
-    const moduleCode = normalizeText(row.module_code).toUpperCase();
-    const programmeCode = normalizeText(row.programme_code).toUpperCase();
-    return moduleCodeSet.has(moduleCode) && programmeCodeSet.has(programmeCode);
-  });
-
-  const context = await loadTimetableEnrollmentContext(params);
-  const warnings: string[] = [];
-  const updates = new Map<string, string>();
-
-  const groups = new Map<string, typeof rows>();
-
-  for (const row of rows) {
-    const key = buildAllocationGroupKey({
-      academicYear: params.academicYear,
-      programmeCode: row.programme_code,
-      moduleCode: row.module_code,
-      studyTerm: row.study_term,
-    });
-    const list = groups.get(key) ?? [];
-    list.push(row);
-    groups.set(key, list);
-  }
-
-  for (const [, groupRows] of groups) {
-    const sample = groupRows[0]!;
-    const groupLabel = `${sample.programme_code} / ${sample.module_code} / ${sample.study_term}`;
-    const allowedCodes = rulesByKey.get(
-      ruleKey(sample.module_code, sample.programme_code)
-    );
-
-    if (!allowedCodes || allowedCodes.size === 0) {
-      for (const row of groupRows) {
-        warnings.push(
-          `${groupLabel}: no HD core enrollment rule for ${row.student_id} / ${row.module_code}.`
-        );
-      }
-      continue;
-    }
-
-    const allInstances = resolveModuleInstances(
-      sample.module_code,
-      context.instancesByModuleCode,
-      params.offeredTerm
-    );
-    const instances = filterInstancesByAllowedCodes(allInstances, allowedCodes);
-
-    if (instances.length === 0) {
-      for (const row of groupRows) {
-        warnings.push(
-          `${groupLabel}: allowed instance list does not match any timetable class for ${row.student_id} / ${row.module_code}.`
-        );
-      }
-      continue;
-    }
-
-    const assignments = allocateEnrollmentGroup({
-      rows: groupRows,
-      instances,
-      warnings,
-      groupLabel,
-    });
-
-    for (const [rowId, code] of assignments) {
-      updates.set(rowId, code);
-    }
-  }
-
-  let assignedCount = 0;
-
-  for (const [rowId, code] of updates) {
-    const { error } = await supabase
-      .from("study_plan_modules")
-      .update({
-        enrolled_module_instance_code: code,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", rowId);
-
-    if (error) throw error;
-    assignedCount += 1;
-  }
-
-  return {
-    assignedCount,
-    warningCount: warnings.length,
-    warnings,
-  };
+  return batchEnrollStudyPlanStudents(params);
 }

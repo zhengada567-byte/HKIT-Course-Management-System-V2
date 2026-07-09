@@ -1,13 +1,12 @@
 // src/components/layout/Sidebar.tsx
 
 import { useMemo, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import {
   BookOpenCheck,
   CalendarCog,
   CalendarDays,
   CalendarRange,
-  ClipboardCheck,
   FileSpreadsheet,
   Gauge,
   GraduationCap,
@@ -56,7 +55,6 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const { role } = useAuth();
   const { t } = useLanguage();
   const { locks } = useFeatureUpdateLocks();
-  const navigate = useNavigate();
   const { collapsed } = useSidebarLayout();
 
   /**
@@ -108,12 +106,6 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       disabledReason: checkingTeacherLoading
         ? "正在檢查教師工作量狀態..."
         : "教師工作量尚未產生。",
-    },
-    {
-      to: "/admin/assignment-confirmation-monitor",
-      label: "教學分配進度",
-      icon: ClipboardCheck,
-      roles: ["admin"],
     },
     {
       to: "/admin/academic-year",
@@ -210,13 +202,8 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
               key={item.to}
               type="button"
               title={item.disabledReason}
-              onClick={() => {
-                if (role === "admin") {
-                  navigate("/admin/assignment-confirmation-monitor");
-                  onMobileClose();
-                }
-              }}
-              className="flex w-full cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-400 transition hover:bg-slate-50"
+              disabled
+              className="flex w-full cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-400"
             >
               <Icon className="h-4 w-4" />
               <span>{resolveNavLabel(item, role)}</span>

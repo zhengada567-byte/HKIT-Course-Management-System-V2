@@ -158,7 +158,7 @@ export const zhHant = {
   allProgrammes: "全部課程",
   studyPlanEnrollmentTitle: "學生分班",
   studyPlanEnrollmentDescription:
-    "在每周每日時間表排課完成後，按學年及學期批量把學習計劃學生分配到 module instance。預設不覆蓋已有人手設定的入班。",
+    "為已分班的科目設定規則並儲存，再對本學期所有學習計劃學生執行批量分班。未儲存規則的 programme 按課室大小自動平均分。全日→Day/Saturday；兼讀→Night/Saturday。",
   studyPlanEnrollmentOnlyEmpty: "只處理 Enrolled Class 為空的科目",
   studyPlanEnrollmentHint:
     "請選擇學年及學期（Feb / Jun / Sep），並在該學期時間表 session 及教室已儲存後執行。Day 班容量只與已排課教室 room_size 比較。",
@@ -167,17 +167,22 @@ export const zhHant = {
   studyPlanEnrollmentWarnings: "警告",
   hdCoreEnrollmentTitle: "分班规则",
   hdCoreEnrollmentDescription:
-    "为所选学期内已分班（至少两个班别）的科目与课程设定可读班别。课程来自 offering list；若 HD 课程可升读 Degree，会一并显示对应 Degree 课程（bridging 学生适用）。未储存过的组合默认全选所有班别。套用规则时会覆盖已设有规则的科目的入讀班別。",
+    "为已分班的科目设定每个 programme 允许的班别。可逐行勾选，或在班别列标题使用「全选/取消全选」。未储存任何班别规则的 programme，批量分班时按课室大小自动平均分。",
   hdCoreEnrollmentSaveRules: "储存规则",
-  hdCoreEnrollmentApply: "套用规则（覆盖）",
-  hdCoreEnrollmentApplyConfirm:
-    "按已储存规则为本学期重新分班？\n\n所有已设有规则的科目，其现有入讀班別将被覆盖。",
+  hdCoreEnrollmentBatchEnroll: "批量分班",
+  hdCoreEnrollmentSelectAll: "全选",
+  hdCoreEnrollmentClearAll: "取消全选",
+  hdCoreEnrollmentBatchConfirmOnlyEmpty:
+    "对本学期入讀班別为空的学生执行批量分班？\n\n有储存规则的 programme 按你勾选的班别；未勾选的 programme 按课室大小自动平均分。全日→Day/Saturday；兼读→Night/Saturday。",
+  hdCoreEnrollmentBatchConfirmOverwrite:
+    "批量分班并覆盖现有入讀班別？\n\n有储存规则的 programme 按你勾选的班别；未勾选的 programme 按课室大小自动平均分。全日→Day/Saturday；兼读→Night/Saturday。",
   hdCoreEnrollmentNoInstances: "所选学期找不到此 core 科目的时间表班别。",
   hdCoreEnrollmentSaved: "HD Core 入读规则已储存。",
-  hdCoreEnrollmentApplied: "已套用 HD Core 规则",
-  hdCoreEnrollmentLoadFailed: "载入 HD Core 入读规则失败。",
-  hdCoreEnrollmentSaveFailed: "储存 HD Core 入读规则失败。",
-  hdCoreEnrollmentApplyFailed: "套用 HD Core 入读规则失败。",
+  hdCoreEnrollmentBatchDone: "批量分班完成",
+  hdCoreEnrollmentSkipped: "已跳过（已有入讀班別）",
+  hdCoreEnrollmentLoadFailed: "载入分班规则失败。",
+  hdCoreEnrollmentSaveFailed: "储存分班规则失败。",
+  hdCoreEnrollmentBatchFailed: "批量分班失败。",
   hdCoreEnrollmentActualFt: "實際(全日)",
   hdCoreEnrollmentActualPt: "實際(兼讀)",
   processing: "處理中...",

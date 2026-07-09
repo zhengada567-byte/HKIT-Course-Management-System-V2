@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useLanguage } from "../../../contexts/LanguageContext";
 import {
-  applyHdCoreEnrollmentRules,
-  listModuleInstanceCodes,
+  listModuleInstancesForEnrollment,
   listOfferedModulesForEnrollment,
   loadEnrollmentRules,
   loadHdCoreEnrollmentActualCounts,
   loadHdCoreEnrollmentStudentCounts,
   saveEnrollmentRules,
+  type ModuleInstanceForEnrollment,
 } from "../../../services/studyPlanCoreEnrollmentService";
+import { batchEnrollStudyPlanStudents } from "../../../services/studyPlanEnrollmentService";
 import type { ModuleTerm } from "../../../types/common";
 
 type HdCoreEnrollmentRulesPanelProps = {
@@ -35,14 +36,15 @@ export function HdCoreEnrollmentRulesPanel({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [onlyEmpty, setOnlyEmpty] = useState(true);
   const [message, setMessage] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [programmeCodesByModule, setProgrammeCodesByModule] = useState<
     Record<string, string[]>
   >({});
   const [moduleLabels, setModuleLabels] = useState<Record<string, string>>({});
-  const [instanceCodesByModule, setInstanceCodesByModule] = useState<
-    Record<string, string[]>
+  const [instanceOptionsByModule, setInstanceOptionsByModule] = useState<
+    Record<string, ModuleInstanceForEnrollment[]>
   >({});
   const [allowedByKey, setAllowedByKey] = useState<Record<string, string[]>>(
     {}
@@ -120,7 +122,7 @@ export function HdCoreEnrollmentRulesPanel({
         }
 
         const [instancesByModule, rules, studentCounts, actualCounts] = await Promise.all([
-          listModuleInstanceCodes({
+          listModuleInstancesForEnrollment({
             academicYear,
             offeredTerm,
             moduleCodes,
@@ -141,29 +143,15 @@ export function HdCoreEnrollmentRulesPanel({
 
         if (cancelled) return;
 
-        const savedRuleKeys = new Set(
-          rules.map((rule) => ruleStateKey(rule.moduleCode, rule.programmeCode))
-        );
-
         const nextAllowed: Record<string, string[]> = {};
         for (const rule of rules) {
           nextAllowed[ruleStateKey(rule.moduleCode, rule.programmeCode)] =
             rule.allowedInstanceCodes;
         }
 
-        for (const moduleCode of moduleCodes) {
-          const instances = instancesByModule[moduleCode] ?? [];
-          for (const programmeCode of programmesByModule[moduleCode] ?? []) {
-            const key = ruleStateKey(moduleCode, programmeCode);
-            if (!savedRuleKeys.has(key)) {
-              nextAllowed[key] = [...instances];
-            }
-          }
-        }
-
         setProgrammeCodesByModule(programmesByModule);
         setModuleLabels(labels);
-        setInstanceCodesByModule(instancesByModule);
+        setInstanceOptionsByModule(instancesByModule);
         setAllowedByKey(nextAllowed);
         setStudentCountByKey(studentCounts);
         setActualCountByKey(actualCounts);
@@ -211,14 +199,102 @@ export function HdCoreEnrollmentRulesPanel({
     setAllowedByKey(next);
   }
 
-  function getGroupInstances(group: CoreModuleGroup) {
-    return [
-      ...new Set(
-        group.moduleCodes.flatMap(
-          (moduleCode) => instanceCodesByModule[moduleCode] ?? []
-        )
-      ),
-    ].sort();
+  function getGroupInstances(group: CoreModuleGroup): ModuleInstanceForEnrollment[] {
+    const byCode = new Map<string, ModuleInstanceForEnrollment>();
+
+    for (const moduleCode of group.moduleCodes) {
+      for (const instance of instanceOptionsByModule[moduleCode] ?? []) {
+        if (!byCode.has(instance.moduleInstanceCode)) {
+          byCode.set(instance.moduleInstanceCode, instance);
+        }
+      }
+    }
+
+    return [...byCode.values()].sort((a, b) =>
+      a.moduleInstanceCode.localeCompare(b.moduleInstanceCode)
+    );
+  }
+
+  function formatInstanceHeader(instance: ModuleInstanceForEnrollment) {
+    return instance.instanceMode
+      ? `${instance.moduleInstanceCode} (${instance.instanceMode})`
+      : instance.moduleInstanceCode;
+  }
+
+  function isClassSelectedForProgramme(
+    group: CoreModuleGroup,
+    programmeCode: string,
+    instanceCode: string
+  ) {
+    const applicableModuleCodes = getApplicableModuleCodesForProgramme({
+      group,
+      programmeCode,
+    });
+    const ruleModuleCode =
+      applicableModuleCodes[0] ?? group.moduleCodes[0] ?? "";
+
+    return (allowedByKey[ruleStateKey(ruleModuleCode, programmeCode)] ?? []).includes(
+      instanceCode
+    );
+  }
+
+  function isClassSelectedForAllProgrammes(
+    group: CoreModuleGroup,
+    instanceCode: string
+  ) {
+    const programmeCodes = getGroupProgrammeCodes(group);
+    if (programmeCodes.length === 0) return false;
+
+    return programmeCodes.every((programmeCode) =>
+      isClassSelectedForProgramme(group, programmeCode, instanceCode)
+    );
+  }
+
+  function isClassSelectedForNoProgrammes(
+    group: CoreModuleGroup,
+    instanceCode: string
+  ) {
+    const programmeCodes = getGroupProgrammeCodes(group);
+    if (programmeCodes.length === 0) return true;
+
+    return programmeCodes.every(
+      (programmeCode) =>
+        !isClassSelectedForProgramme(group, programmeCode, instanceCode)
+    );
+  }
+
+  function setClassForAllProgrammes(
+    group: CoreModuleGroup,
+    instanceCode: string,
+    checked: boolean
+  ) {
+    const nextAllowed = { ...allowedByKey };
+
+    for (const programmeCode of getGroupProgrammeCodes(group)) {
+      const applicableModuleCodes = getApplicableModuleCodesForProgramme({
+        group,
+        programmeCode,
+      });
+      const moduleCodes =
+        applicableModuleCodes.length > 0
+          ? applicableModuleCodes
+          : group.moduleCodes;
+
+      for (const moduleCode of moduleCodes) {
+        const key = ruleStateKey(moduleCode, programmeCode);
+        const current = new Set(nextAllowed[key] ?? []);
+
+        if (checked) {
+          current.add(instanceCode);
+        } else {
+          current.delete(instanceCode);
+        }
+
+        nextAllowed[key] = [...current].sort();
+      }
+    }
+
+    setAllowedByKey(nextAllowed);
   }
 
   function getGroupProgrammeCodes(group: CoreModuleGroup) {
@@ -270,14 +346,16 @@ export function HdCoreEnrollmentRulesPanel({
     try {
       const rules = coreModuleGroups.flatMap((group) =>
         group.moduleCodes.flatMap((moduleCode) =>
-          (programmeCodesByModule[moduleCode] ?? []).map((programmeCode) => ({
-            academicYear,
-            moduleTerm: offeredTerm,
-            moduleCode,
-            programmeCode,
-            allowedInstanceCodes:
-              allowedByKey[ruleStateKey(moduleCode, programmeCode)] ?? [],
-          }))
+          (programmeCodesByModule[moduleCode] ?? [])
+            .map((programmeCode) => ({
+              academicYear,
+              moduleTerm: offeredTerm,
+              moduleCode,
+              programmeCode,
+              allowedInstanceCodes:
+                allowedByKey[ruleStateKey(moduleCode, programmeCode)] ?? [],
+            }))
+            .filter((rule) => rule.allowedInstanceCodes.length > 0)
         )
       );
 
@@ -297,8 +375,11 @@ export function HdCoreEnrollmentRulesPanel({
     }
   }
 
-  async function handleApplyRules() {
-    const ok = window.confirm(t.hdCoreEnrollmentApplyConfirm);
+  async function handleBatchEnroll() {
+    const confirmMessage = onlyEmpty
+      ? t.hdCoreEnrollmentBatchConfirmOnlyEmpty
+      : t.hdCoreEnrollmentBatchConfirmOverwrite;
+    const ok = window.confirm(confirmMessage);
     if (!ok) return;
 
     setApplying(true);
@@ -306,13 +387,18 @@ export function HdCoreEnrollmentRulesPanel({
     setWarnings([]);
 
     try {
-      const result = await applyHdCoreEnrollmentRules({
+      const result = await batchEnrollStudyPlanStudents({
         academicYear,
         offeredTerm,
+        onlyEmpty,
       });
 
       setMessage(
-        `${t.hdCoreEnrollmentApplied}: ${result.assignedCount} · ${t.studyPlanEnrollmentWarnings}: ${result.warningCount}`
+        [
+          `${t.hdCoreEnrollmentBatchDone}: ${result.assignedCount}`,
+          `${t.hdCoreEnrollmentSkipped}: ${result.skippedCount}`,
+          `${t.studyPlanEnrollmentWarnings}: ${result.warningCount}`,
+        ].join(" · ")
       );
       setWarnings(result.warnings.slice(0, 100));
       const studentCounts = await loadHdCoreEnrollmentStudentCounts({
@@ -327,7 +413,7 @@ export function HdCoreEnrollmentRulesPanel({
       setActualCountByKey(actualCounts);
     } catch (error) {
       setMessage(
-        error instanceof Error ? error.message : t.hdCoreEnrollmentApplyFailed
+        error instanceof Error ? error.message : t.hdCoreEnrollmentBatchFailed
       );
     } finally {
       setApplying(false);
@@ -354,6 +440,7 @@ export function HdCoreEnrollmentRulesPanel({
       <div className="space-y-6">
         {coreModuleGroups.map((group) => {
           const instances = getGroupInstances(group);
+          const programmeCodes = getGroupProgrammeCodes(group);
 
           return (
             <div key={group.id} className="space-y-3">
@@ -380,18 +467,62 @@ export function HdCoreEnrollmentRulesPanel({
                         <th className="px-3 py-2 text-right font-medium whitespace-nowrap">
                           {t.hdCoreEnrollmentActualPt}
                         </th>
-                        {instances.map((instanceCode) => (
+                        {instances.map((instance) => (
                           <th
-                            key={instanceCode}
-                            className="px-3 py-2 text-left font-medium font-mono text-xs"
+                            key={instance.moduleInstanceCode}
+                            className="px-3 py-2 text-left font-medium align-top"
                           >
-                            {instanceCode}
+                            <div className="font-mono text-xs">
+                              {formatInstanceHeader(instance)}
+                            </div>
+                            <div className="mt-1 flex flex-col gap-1 text-[11px] font-normal text-slate-600">
+                              <label className="inline-flex items-center gap-1">
+                                <input
+                                  type="checkbox"
+                                  checked={isClassSelectedForAllProgrammes(
+                                    group,
+                                    instance.moduleInstanceCode
+                                  )}
+                                  onChange={(event) => {
+                                    if (event.target.checked) {
+                                      setClassForAllProgrammes(
+                                        group,
+                                        instance.moduleInstanceCode,
+                                        true
+                                      );
+                                    }
+                                  }}
+                                  aria-label={`${instance.moduleInstanceCode} ${t.hdCoreEnrollmentSelectAll}`}
+                                />
+                                <span>{t.hdCoreEnrollmentSelectAll}</span>
+                              </label>
+                              <label className="inline-flex items-center gap-1">
+                                <input
+                                  type="checkbox"
+                                  checked={isClassSelectedForNoProgrammes(
+                                    group,
+                                    instance.moduleInstanceCode
+                                  )}
+                                  onChange={(event) => {
+                                    if (event.target.checked) {
+                                      setClassForAllProgrammes(
+                                        group,
+                                        instance.moduleInstanceCode,
+                                        false
+                                      );
+                                    }
+                                  }}
+                                  aria-label={`${instance.moduleInstanceCode} ${t.hdCoreEnrollmentClearAll}`}
+                                />
+                                <span>{t.hdCoreEnrollmentClearAll}</span>
+                              </label>
+                            </div>
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {getGroupProgrammeCodes(group).map((programmeCode) => {
+                      {programmeCodes.map((programmeCode) => {
                         const applicableModuleCodes = getApplicableModuleCodesForProgramme({
                           group,
                           programmeCode,
@@ -416,22 +547,22 @@ export function HdCoreEnrollmentRulesPanel({
                             <td className="px-3 py-2 text-right tabular-nums text-slate-700">
                               {actual.pt}
                             </td>
-                            {instances.map((instanceCode) => (
-                              <td key={instanceCode} className="px-3 py-2">
+                            {instances.map((instance) => (
+                              <td key={instance.moduleInstanceCode} className="px-3 py-2">
                                 <input
                                   type="checkbox"
-                                  checked={selected.has(instanceCode)}
+                                  checked={selected.has(instance.moduleInstanceCode)}
                                   onChange={(event) =>
                                     toggleAllowed({
                                       moduleCodes: applicableModuleCodes.length > 0
                                         ? applicableModuleCodes
                                         : group.moduleCodes,
                                       programmeCode,
-                                      instanceCode,
+                                      instanceCode: instance.moduleInstanceCode,
                                       checked: event.target.checked,
                                     })
                                   }
-                                  aria-label={`${programmeCode} ${instanceCode}`}
+                                  aria-label={`${programmeCode} ${instance.moduleInstanceCode}`}
                                 />
                               </td>
                             ))}
@@ -447,7 +578,7 @@ export function HdCoreEnrollmentRulesPanel({
         })}
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-4">
         <button
           type="button"
           className="btn btn-secondary"
@@ -457,13 +588,23 @@ export function HdCoreEnrollmentRulesPanel({
           {saving ? t.processing : t.hdCoreEnrollmentSaveRules}
         </button>
 
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={onlyEmpty}
+            onChange={(event) => setOnlyEmpty(event.target.checked)}
+            disabled={saving || applying}
+          />
+          {t.studyPlanEnrollmentOnlyEmpty}
+        </label>
+
         <button
           type="button"
           className="btn btn-primary"
           disabled={saving || applying || !academicYear.trim()}
-          onClick={() => void handleApplyRules()}
+          onClick={() => void handleBatchEnroll()}
         >
-          {applying ? t.processing : t.hdCoreEnrollmentApply}
+          {applying ? t.processing : t.hdCoreEnrollmentBatchEnroll}
         </button>
       </div>
 
