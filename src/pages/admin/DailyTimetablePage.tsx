@@ -19,7 +19,9 @@ import { StudentWeeklyConflictPanel } from "./components/StudentWeeklyConflictPa
 import { WeeklyTimetableEditor } from "../programme-leader/make-timetable/components/WeeklyTimetableEditor";
 import {
   buildDailyTimetable,
+  mergeDailyTimetableModuleResult,
   persistDailyTimetableLabels,
+  regenerateDailyTimetableForModule,
   type DailyTimetableBuildResult,
   type DailyTimetableEntry,
   type DailyTimetableModulePlan,
@@ -29,13 +31,15 @@ import {
   type TimetableModuleInstanceRow,
 } from "../../services/timetableModuleInstanceService";
 import { listProgrammes } from "../../services/programmeService";
+import { listTimetableModules } from "../../services/timetableService";
 import {
+  listScheduledTimetableModuleIds,
   listTimetableClassrooms,
   pruneTimetableSessionsOutsideStudyWeeks,
   type TimetableClassroomRow,
   type TimetableScheduleTerm,
 } from "../../services/timetableScheduleService";
-import type { ProgrammeRow } from "../../types";
+import type { ProgrammeRow, TimetableModuleRow } from "../../types";
 
 type ViewMode = "module" | "date";
 
@@ -60,6 +64,12 @@ export function DailyTimetablePage() {
   const [selectedModuleId, setSelectedModuleId] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [dailyLoading, setDailyLoading] = useState(false);
+  const [moduleGenerateLoading, setModuleGenerateLoading] = useState(false);
+  const [generateModuleId, setGenerateModuleId] = useState("");
+  const [schedulableModules, setSchedulableModules] = useState<TimetableModuleRow[]>(
+    []
+  );
+  const [schedulableModulesLoading, setSchedulableModulesLoading] = useState(false);
   const [pruning, setPruning] = useState(false);
   const [result, setResult] = useState<DailyTimetableBuildResult | null>(null);
   const [message, setMessage] = useState("");
@@ -109,7 +119,44 @@ export function DailyTimetablePage() {
     setResult(null);
     setSelectedModuleId("");
     setSelectedDate("");
+    setGenerateModuleId("");
   }, [term]);
+
+  async function loadSchedulableModules() {
+    setSchedulableModulesLoading(true);
+
+    try {
+      const [modules, scheduledIds] = await Promise.all([
+        listTimetableModules({
+          academicYear,
+          moduleTerm: term,
+        }),
+        listScheduledTimetableModuleIds({ academicYear }),
+      ]);
+
+      const rows = modules
+        .filter((row) => row.module_term === term && scheduledIds.has(row.id))
+        .sort((a, b) =>
+          String(a.module_instance_code ?? "").localeCompare(
+            String(b.module_instance_code ?? "")
+          )
+        );
+
+      setSchedulableModules(rows);
+    } catch (error) {
+      setSchedulableModules([]);
+      setMessage(
+        error instanceof Error ? error.message : "Failed to load modules."
+      );
+    } finally {
+      setSchedulableModulesLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    void loadSchedulableModules();
+  }, [academicYear, term, isAdmin, weeklyRefreshToken]);
 
   const programmeCodes = useMemo(
     () =>
@@ -120,6 +167,41 @@ export function DailyTimetablePage() {
       ].sort(),
     [programmes]
   );
+
+  const schedulableModulesForProgramme = useMemo(() => {
+    if (!programmeCode) {
+      return schedulableModules;
+    }
+
+    if (isMixedProgrammeCode(programmeCode)) {
+      const knownProgrammeCodes = new Set(
+        programmeCodes.map((code) => code.toUpperCase())
+      );
+
+      return schedulableModules.filter((row) => {
+        const code = String(row.programme_code ?? "").trim().toUpperCase();
+
+        if (!code || isMixedProgrammeCode(code)) {
+          return true;
+        }
+
+        return !knownProgrammeCodes.has(code);
+      });
+    }
+
+    return schedulableModules.filter((row) => row.programme_code === programmeCode);
+  }, [programmeCode, programmeCodes, schedulableModules]);
+
+  useEffect(() => {
+    if (
+      generateModuleId &&
+      schedulableModulesForProgramme.some((row) => row.id === generateModuleId)
+    ) {
+      return;
+    }
+
+    setGenerateModuleId(schedulableModulesForProgramme[0]?.id ?? "");
+  }, [generateModuleId, schedulableModulesForProgramme]);
 
   useEffect(() => {
     if (programmeCode) return;
@@ -242,6 +324,63 @@ export function DailyTimetablePage() {
       );
     } finally {
       setPruning(false);
+    }
+  }
+
+  async function handleGenerateModuleDaily() {
+    if (!generateModuleId) {
+      setMessage(t.dailyTimetableModuleSelectRequired);
+      return;
+    }
+
+    const selectedModule = schedulableModulesForProgramme.find(
+      (row) => row.id === generateModuleId
+    );
+    const moduleLabel = selectedModule?.module_instance_code ?? generateModuleId;
+
+    const ok = window.confirm(
+      t.dailyTimetableModuleGenerateConfirm.replace("{module}", moduleLabel)
+    );
+
+    if (!ok) return;
+
+    setModuleGenerateLoading(true);
+    setMessage("");
+
+    try {
+      const { updatedCount, result: moduleResult } =
+        await regenerateDailyTimetableForModule({
+          academicYear,
+          term,
+          timetableModuleId: generateModuleId,
+        });
+
+      if (moduleResult.modules.length === 0) {
+        setMessage(
+          t.dailyTimetableModuleNoWeeklySessions.replace("{module}", moduleLabel)
+        );
+        return;
+      }
+
+      setResult((current) => mergeDailyTimetableModuleResult(current, moduleResult));
+      setSelectedModuleId(generateModuleId);
+      setSelectedDate(
+        moduleResult.modules[0]?.entries[0]?.sessionDate ??
+          Array.from(moduleResult.entriesByDate.keys()).sort()[0] ??
+          ""
+      );
+
+      setMessage(
+        t.dailyTimetableModuleGenerated
+          .replace("{module}", moduleLabel)
+          .replace("{count}", String(updatedCount))
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Failed to generate daily timetable."
+      );
+    } finally {
+      setModuleGenerateLoading(false);
     }
   }
 
@@ -476,6 +615,60 @@ export function DailyTimetablePage() {
             >
               {pruning ? t.loading : t.removeNonStudyWeekSessions}
             </button>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 space-y-4">
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">
+                {t.dailyTimetableModuleStep}
+              </h3>
+              <p className="mt-1 text-sm text-slate-600">
+                {t.dailyTimetableModuleStepHint}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[280px]">
+                <label className="form-label">{t.selectModule}</label>
+                <select
+                  className="form-select"
+                  value={generateModuleId}
+                  disabled={
+                    schedulableModulesLoading || schedulableModulesForProgramme.length === 0
+                  }
+                  onChange={(event) => setGenerateModuleId(event.target.value)}
+                >
+                  <option value="">—</option>
+                  {schedulableModulesForProgramme.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {row.module_instance_code} ({row.programme_code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-primary inline-flex items-center gap-2"
+                disabled={
+                  moduleGenerateLoading ||
+                  schedulableModulesLoading ||
+                  !generateModuleId
+                }
+                onClick={() => void handleGenerateModuleDaily()}
+              >
+                {moduleGenerateLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                {moduleGenerateLoading ? t.loading : t.buildDailyTimetableForModule}
+              </button>
+            </div>
+
+            {!schedulableModulesLoading && schedulableModulesForProgramme.length === 0 && (
+              <p className="text-sm text-slate-500">{t.dailyTimetableModuleEmpty}</p>
+            )}
           </div>
 
           {result && (

@@ -207,6 +207,19 @@ export const en = {
   processing: "Processing...",
   enrolledClass: "Enrolled Class",
   buildDailyTimetable: "Generate daily timetable",
+  buildDailyTimetableForModule: "Generate daily for this module",
+  dailyTimetableModuleStep: "4. Daily timetable by module",
+  dailyTimetableModuleStepHint:
+    "After changing one module in the weekly timetable, select it here to regenerate L/T labels for that module only. Other modules are not changed.",
+  dailyTimetableModuleEmpty:
+    "No modules with saved weekly sessions for this term and programme filter.",
+  dailyTimetableModuleSelectRequired: "Select a module first.",
+  dailyTimetableModuleGenerateConfirm:
+    "Regenerate daily L/T labels for {module} from its weekly timetable?\n\nManual cancel/make-up edits on this module may be overwritten.",
+  dailyTimetableModuleNoWeeklySessions:
+    "{module} has no study-week sessions — save weekly timetable first.",
+  dailyTimetableModuleGenerated:
+    "Generated daily labels for {module} ({count} session row(s) updated).",
   exportWeeklyDailyTimetableExcel: "Export weekly & daily Excel",
   exportWeeklyDailyTimetableHint:
     "Weekly sheet: one row per module timeslot (weekday, time, room). Daily sheet: every L/T session per module (no backup or cancelled).",

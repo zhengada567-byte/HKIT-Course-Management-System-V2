@@ -607,6 +607,7 @@ export async function buildDailyTimetable(params: {
   academicYear: string;
   term: TimetableScheduleTerm;
   programmeCode?: string;
+  timetableModuleId?: string;
 }): Promise<DailyTimetableBuildResult> {
   const academicYear = normalizeAcademicYear(params.academicYear);
   const { excluded, termSummary, termWeeks } = await loadTermCalendarContext({
@@ -666,8 +667,11 @@ export async function buildDailyTimetable(params: {
     tutorialContactHours: number;
   }> = [];
 
+  const targetModuleId = String(params.timetableModuleId ?? "").trim();
+
   for (const module of timetableModules) {
     if (module.module_term !== params.term) continue;
+    if (targetModuleId && module.id !== targetModuleId) continue;
 
     const moduleSessions = sessionsByModuleId.get(module.id) ?? [];
     const hours = resolveCatalogHoursForModule(catalogHours, module);
@@ -920,6 +924,94 @@ export async function persistDailyTimetableLabels(
   }
 
   return { updatedCount: totalUpdated, moduleCount: result.modules.length };
+}
+
+export async function regenerateDailyTimetableForModule(params: {
+  academicYear: string;
+  term: TimetableScheduleTerm;
+  timetableModuleId: string;
+}): Promise<{
+  updatedCount: number;
+  result: DailyTimetableBuildResult;
+}> {
+  const timetableModuleId = String(params.timetableModuleId ?? "").trim();
+
+  if (!timetableModuleId) {
+    throw new Error("Module is required.");
+  }
+
+  const { termWeeks, excluded, termSummary } = await loadTermCalendarContext({
+    academicYear: params.academicYear,
+    term: params.term,
+  });
+
+  const { updatedCount } = await applyDailyLabelsToTimetableModule(
+    timetableModuleId,
+    termWeeks,
+    termSummary,
+    excluded
+  );
+
+  const result = await buildDailyTimetable({
+    academicYear: params.academicYear,
+    term: params.term,
+    timetableModuleId,
+  });
+
+  return { updatedCount, result };
+}
+
+export function mergeDailyTimetableModuleResult(
+  current: DailyTimetableBuildResult | null,
+  incoming: DailyTimetableBuildResult
+): DailyTimetableBuildResult {
+  const incomingPlan = incoming.modules[0];
+
+  if (!incomingPlan) {
+    return current ?? incoming;
+  }
+
+  if (!current) {
+    return incoming;
+  }
+
+  const modules = [
+    ...current.modules.filter(
+      (row) => row.timetableModuleId !== incomingPlan.timetableModuleId
+    ),
+    incomingPlan,
+  ].sort((a, b) => a.moduleInstanceCode.localeCompare(b.moduleInstanceCode));
+
+  const entriesByDate = new Map<string, DailyTimetableEntry[]>();
+
+  for (const plan of modules) {
+    for (const entry of plan.entries) {
+      const bucket = entriesByDate.get(entry.sessionDate) ?? [];
+      bucket.push(entry);
+      entriesByDate.set(entry.sessionDate, bucket);
+    }
+  }
+
+  for (const [, bucket] of entriesByDate) {
+    bucket.sort((a, b) => {
+      const timeCompare = a.startTime.localeCompare(b.startTime);
+      if (timeCompare !== 0) return timeCompare;
+      return a.moduleInstanceCode.localeCompare(b.moduleInstanceCode);
+    });
+  }
+
+  const warningPrefix = `${incomingPlan.moduleInstanceCode}:`;
+  const warnings = [
+    ...current.warnings.filter((warning) => !warning.startsWith(warningPrefix)),
+    ...incoming.warnings,
+  ];
+
+  return {
+    ...current,
+    modules,
+    entriesByDate,
+    warnings,
+  };
 }
 
 function sessionRowToDailyEntry(

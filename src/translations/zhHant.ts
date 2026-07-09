@@ -197,6 +197,18 @@ export const zhHant = {
   processing: "處理中...",
   enrolledClass: "入讀班別",
   buildDailyTimetable: "產生每日時間表",
+  buildDailyTimetableForModule: "產生此科每日課表",
+  dailyTimetableModuleStep: "4. 按科目產生每日課表",
+  dailyTimetableModuleStepHint:
+    "在週課表只改某一科後，在此選擇該科，只重產此科的 L/T 標籤；其他科目不受影響。",
+  dailyTimetableModuleEmpty: "此學期與課程篩選下，沒有已儲存週課表的科目。",
+  dailyTimetableModuleSelectRequired: "請先選擇科目。",
+  dailyTimetableModuleGenerateConfirm:
+    "依週課表重產 {module} 的每日 L/T 標籤？\n\n此科已有的取消／補課手動設定可能被覆蓋。",
+  dailyTimetableModuleNoWeeklySessions:
+    "{module} 沒有學習週課節，請先在週課表儲存排程。",
+  dailyTimetableModuleGenerated:
+    "已為 {module} 產生每日標籤（更新 {count} 筆課節）。",
   exportWeeklyDailyTimetableExcel: "匯出每周及每日 Excel",
   exportWeeklyDailyTimetableHint:
     "每周工作表：每個科目一行（星期、時段、課室）。每日工作表：各科目每個 L/T 課節（不含後備與已取消）。",
