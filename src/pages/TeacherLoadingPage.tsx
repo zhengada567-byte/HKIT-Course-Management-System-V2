@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { DataTable } from "../components/tables/DataTable";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -13,22 +13,22 @@ import {
 import type { TeachingStatus } from "../types";
 
 export function TeacherLoadingPage() {
-  const { academicYear, previousAcademicYear } = useAcademicYear();
+  const { academicYear } = useAcademicYear();
   const { t } = useLanguage();
 
-  const [teachingStatus, setTeachingStatus] =
-    useState<TeachingStatus>("FT");
+  const [employmentType, setEmploymentType] = useState<TeachingStatus>("FT");
   const [rows, setRows] = useState<TeacherLoadingSummaryRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
 
   async function loadRows() {
     setLoading(true);
+    setSearched(true);
 
     try {
       const data = await getTeacherLoadingSummary({
         academicYear,
-        previousAcademicYear,
-        teachingStatus,
+        employmentType,
       });
 
       setRows(data);
@@ -37,15 +37,41 @@ export function TeacherLoadingPage() {
     }
   }
 
-  useEffect(() => {
-    void loadRows();
-  }, [academicYear, previousAcademicYear, teachingStatus]);
+  const termColumns = (term: "sep" | "feb" | "jun") => {
+    const termLabel =
+      term === "sep"
+        ? t.teacherLoadingTermSep
+        : term === "feb"
+          ? t.teacherLoadingTermFeb
+          : t.teacherLoadingTermJun;
+
+    return [
+      {
+        key: `${term}Modules`,
+        header: `${termLabel} ${t.teacherLoadingModules}`,
+        render: (row: TeacherLoadingSummaryRow) =>
+          row[`${term}_actual_loading`],
+      },
+      {
+        key: `${term}Hd`,
+        header: `${termLabel} ${t.teacherLoadingHdModules}`,
+        render: (row: TeacherLoadingSummaryRow) =>
+          row[`${term}_hd_module_count`],
+      },
+      {
+        key: `${term}Degree`,
+        header: `${termLabel} ${t.teacherLoadingDegreeModules}`,
+        render: (row: TeacherLoadingSummaryRow) =>
+          row[`${term}_degree_module_count`],
+      },
+    ];
+  };
 
   return (
     <div className="page-container">
       <PageHeader
         title={t.teacherLoading}
-        description="Actual loading uses teaching status. FT view shows approved loading; PT view does not."
+        description={t.teacherLoadingDescription}
       />
 
       <div className="card mb-4">
@@ -58,14 +84,12 @@ export function TeacherLoadingPage() {
           </div>
 
           <div>
-            <label className="form-label">
-              {t.teachingStatusForThisModule}
-            </label>
+            <label className="form-label">{t.teacherEmploymentStatus}</label>
             <select
               className="form-select"
-              value={teachingStatus}
+              value={employmentType}
               onChange={(event) =>
-                setTeachingStatus(event.target.value as TeachingStatus)
+                setEmploymentType(event.target.value as TeachingStatus)
               }
             >
               <option value="FT">FT</option>
@@ -83,6 +107,8 @@ export function TeacherLoadingPage() {
 
       {loading ? (
         <LoadingState />
+      ) : !searched ? (
+        <EmptyState message={t.teacherLoadingSearchHint} />
       ) : rows.length === 0 ? (
         <EmptyState />
       ) : (
@@ -100,79 +126,22 @@ export function TeacherLoadingPage() {
               header: t.teacherEmploymentStatus,
               render: (row) => row.teacher_employment_type ?? "-",
             },
+            ...termColumns("sep"),
+            ...termColumns("feb"),
+            ...termColumns("jun"),
             {
-              key: "sepActual",
-              header: "Sep Actual",
-              render: (row) => row.sep_actual_loading,
-            },
-            ...(teachingStatus === "FT"
-              ? [
-                  {
-                    key: "sepApproved",
-                    header: "Sep Approved",
-                    render: (row: TeacherLoadingSummaryRow) =>
-                      row.sep_approved_loading ?? 0,
-                  },
-                ]
-              : []),
-            {
-              key: "febActual",
-              header: "Feb Actual",
-              render: (row) => row.feb_actual_loading,
-            },
-            ...(teachingStatus === "FT"
-              ? [
-                  {
-                    key: "febApproved",
-                    header: "Feb Approved",
-                    render: (row: TeacherLoadingSummaryRow) =>
-                      row.feb_approved_loading ?? 0,
-                  },
-                ]
-              : []),
-            {
-              key: "junActual",
-              header: "Jun Actual",
-              render: (row) => row.jun_actual_loading,
-            },
-            ...(teachingStatus === "FT"
-              ? [
-                  {
-                    key: "junApproved",
-                    header: "Jun Approved",
-                    render: (row: TeacherLoadingSummaryRow) =>
-                      row.jun_approved_loading ?? 0,
-                  },
-                ]
-              : []),
-            {
-              key: "annualActual",
-              header: t.annualActualLoading,
+              key: "annualModules",
+              header: `${t.annualActualLoading} (${t.teacherLoadingModules})`,
               render: (row) => row.annual_actual_loading,
             },
-            ...(teachingStatus === "FT"
-              ? [
-                  {
-                    key: "annualApproved",
-                    header: t.annualApprovedLoading,
-                    render: (row: TeacherLoadingSummaryRow) =>
-                      row.annual_approved_loading ?? 0,
-                  },
-                ]
-              : []),
             {
-              key: "previous",
-              header: t.previousYearActualLoading,
-              render: (row) => row.previous_year_annual_actual_loading,
-            },
-            {
-              key: "hd",
-              header: "HD",
+              key: "annualHd",
+              header: `${t.annualActualLoading} (${t.teacherLoadingHdModules})`,
               render: (row) => row.hd_module_count,
             },
             {
-              key: "degree",
-              header: "Degree",
+              key: "annualDegree",
+              header: `${t.annualActualLoading} (${t.teacherLoadingDegreeModules})`,
               render: (row) => row.degree_module_count,
             },
           ]}

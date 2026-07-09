@@ -1,3 +1,5 @@
+import { teacherDisplayNameFromRow } from "./utils";
+
 /** Wednesday (JS getDay: Mon=1 .. Sat=6 in scheduler). */
 export const FT_STAFF_MEETING_WEEKDAY = 3;
 
@@ -92,13 +94,21 @@ export function isTeacherExcludedFromScheduleDropdown(name: string): boolean {
 }
 
 export function buildFtTeacherNameSet(
-  teachers: Array<{ teacher_name: string; employment_type?: string | null }>
+  teachers: Array<{
+    teacher_name: string;
+    employment_type?: string | null;
+    title?: string | null;
+    family_name?: string | null;
+    other_name?: string | null;
+  }>
 ): Set<string> {
   const set = new Set<string>();
   for (const teacher of teachers) {
     if (!isFtEmploymentType(teacher.employment_type)) continue;
-    const name = String(teacher.teacher_name ?? "").trim();
-    if (name) set.add(name);
+    const displayName = teacherDisplayNameFromRow(teacher);
+    if (displayName) set.add(displayName);
+    const storedName = String(teacher.teacher_name ?? "").trim();
+    if (storedName) set.add(storedName);
   }
   return set;
 }

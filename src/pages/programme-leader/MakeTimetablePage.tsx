@@ -60,9 +60,13 @@ import {
   offeredTermToStudyTerm,
   isTBC,
   teacherDisplayNameFromRow,
+  teacherDisplayNamesMatch,
   timetableProgrammeStreamFromSelection,
 } from "../../lib/utils";
-import { listTeachers } from "../../services/teacherService";
+import {
+  getTeacherCatalogDisplayName,
+  listTeachers,
+} from "../../services/teacherService";
 import {
   ensureTimetablePlanningModules,
   listAllPlanningModulesWithStudentNumbers,
@@ -1842,7 +1846,11 @@ export function MakeTimetablePage() {
         useTBC: params.teacherId === "TBC",
         teachingStatus: params.teachingStatus,
         mode: params.mode,
-        programmeType: null,
+        programmeType:
+          programmes.find(
+            (programme) =>
+              programme.programme_code === params.timetableModule.programme_code
+          )?.programme_type ?? selectedProgrammeType,
       });
 
       await saveAssignmentDraft({
@@ -1928,7 +1936,11 @@ export function MakeTimetablePage() {
           useTBC: false,
           teachingStatus: row.teachingStatus,
           mode,
-          programmeType: null,
+          programmeType:
+            programmes.find(
+              (programme) =>
+                programme.programme_code === timetableModule.programme_code
+            )?.programme_type ?? selectedProgrammeType,
         });
 
         await saveAssignmentDraft({
@@ -3853,10 +3865,18 @@ function AssignmentStep({
                   defaultValue={
                     !existing?.teacher_name || existing.teacher_name === "TBC"
                       ? "TBC"
-                      : teachers.find(
-                          (teacher) =>
-                            teacher.teacher_name === existing.teacher_name
-                        )?.id ?? "TBC"
+                      : teachers.find((teacher) => {
+                          const displayName =
+                            getTeacherCatalogDisplayName(teacher);
+                          return (
+                            displayName === existing.teacher_name ||
+                            teacher.teacher_name === existing.teacher_name ||
+                            teacherDisplayNamesMatch(
+                              displayName,
+                              existing.teacher_name
+                            )
+                          );
+                        })?.id ?? "TBC"
                   }
                   id={`teacher-${row.id}`}
                   title="Teacher"
@@ -3864,7 +3884,7 @@ function AssignmentStep({
                   <option value="TBC">TBC</option>
                   {teachers.map((teacher) => (
                     <option key={teacher.id} value={teacher.id}>
-                      {teacher.teacher_name}
+                      {getTeacherCatalogDisplayName(teacher)}
                     </option>
                   ))}
                 </select>

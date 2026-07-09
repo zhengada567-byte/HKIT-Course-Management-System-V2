@@ -35,6 +35,16 @@ export const en = {
     "View and edit daily L/T sessions for your programme (status, makeup, remarks).",
   courseSearch: "Course Search",
   teacherLoading: "Teacher Loading",
+  teacherLoadingDescription:
+    "Shows non-TBC teachers' actual loading by term with HD and Degree counts. Filter uses catalogue employment (FT/PT), not per-module teaching status. Sep/Feb uses the timetable when scheduled; otherwise assignments.",
+  teacherLoadingSearchHint:
+    "Select teacher employment type and click Search to view results.",
+  teacherLoadingModules: "Modules",
+  teacherLoadingHdModules: "HD Modules",
+  teacherLoadingDegreeModules: "Degree Modules",
+  teacherLoadingTermSep: "Sep",
+  teacherLoadingTermFeb: "Feb",
+  teacherLoadingTermJun: "Jun",
   uploadExcel: "Upload Excel",
   academicYear: "Academic Year",
   programmeManagement: "Programme Management",

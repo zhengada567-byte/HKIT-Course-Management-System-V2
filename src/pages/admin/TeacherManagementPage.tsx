@@ -151,7 +151,7 @@ export function TeacherManagementPage() {
     <div className="page-container">
       <PageHeader
         title={t.teacherManagement}
-        description="Teacher name is generated from title + family name + other name. TBC is not stored here."
+        description="Teacher name is generated as Title + Given name + Family name (e.g. Dr Alphaeus Tam). TBC is not stored here."
       />
 
       {message && (

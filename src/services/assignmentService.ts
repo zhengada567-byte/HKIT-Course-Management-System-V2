@@ -9,6 +9,12 @@ import type {
   TeachingStatus,
   TimetableModuleRow,
 } from "../types";
+import {
+  listTeachers,
+  resolveTeacherEmploymentForYear,
+  resolveTeacherEmploymentFromCatalog,
+  canonicalizeTeacherNameForLoading,
+} from "./teacherService";
 
 export interface AssignmentDraft {
   timetable_module_id: string;
@@ -86,6 +92,18 @@ export async function saveAssignmentDraft(params: {
     throw new Error("Teaching status is required.");
   }
 
+  const teachers = await listTeachers(params.draft.academic_year);
+  const canonicalTeacherName = canonicalizeTeacherNameForLoading(
+    params.draft.teacher_name,
+    teachers
+  );
+
+  const teacherEmploymentType = await resolveTeacherEmploymentForYear({
+    academicYear: params.draft.academic_year,
+    teacherName: canonicalTeacherName,
+    explicitEmployment: params.draft.teacher_employment_type,
+  });
+
   const { error: moduleError } = await supabase
     .from("timetable_modules")
     .update({
@@ -103,11 +121,11 @@ export async function saveAssignmentDraft(params: {
   const payload = {
     timetable_module_id: params.timetableModule.id,
     academic_year: params.draft.academic_year,
-    teacher_name: params.draft.teacher_name,
+    teacher_name: canonicalTeacherName,
     teacher_title: params.draft.teacher_title ?? null,
     teacher_family_name: params.draft.teacher_family_name ?? null,
     teacher_other_name: params.draft.teacher_other_name ?? null,
-    teacher_employment_type: params.draft.teacher_employment_type ?? null,
+    teacher_employment_type: teacherEmploymentType,
     teaching_status: params.draft.teaching_status,
     programme_type: params.draft.programme_type ?? null,
     combined_code: params.draft.combined_code ?? null,
@@ -357,6 +375,31 @@ async function confirmAssignmentsForTimetableModules(params: {
 
   const now = new Date().toISOString();
   const assignmentIds = params.latestAssignments.map((assignment) => assignment.id);
+  const academicYear = params.timetableModules[0]?.academic_year ?? "";
+  const teachers = academicYear ? await listTeachers(academicYear) : [];
+
+  for (const assignment of params.latestAssignments) {
+    const teacherEmploymentType = resolveTeacherEmploymentFromCatalog(
+      assignment.teacher_name,
+      teachers
+    );
+
+    if (
+      teacherEmploymentType &&
+      teacherEmploymentType !== assignment.teacher_employment_type
+    ) {
+      const { error: employmentError } = await supabase
+        .from("teaching_assignments")
+        .update({
+          teacher_employment_type: teacherEmploymentType,
+        })
+        .eq("id", assignment.id);
+
+      if (employmentError) {
+        throw employmentError;
+      }
+    }
+  }
 
   const { error: resetError } = await supabase
     .from("teaching_assignments")
@@ -581,6 +624,7 @@ export function buildAssignmentDraftFromTeacher(params: {
     employment_type?: EmploymentType | null;
   } | null;
   useTBC?: boolean;
+  /** Per-module delivery status (e.g. night class may be PT). Not the teacher's FT/PT employment. */
   teachingStatus: TeachingStatus;
   mode: TeachingMode;
   programmeType?: string | null;

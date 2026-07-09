@@ -8,7 +8,16 @@ import type {
 } from "../types";
 import { resolveBaseModuleCodeForProgramme } from "../lib/combinedModuleCode";
 import { dedupeJoinedModuleName } from "../lib/moduleDisplay";
-import { getAcademicYearVariants, isTBC, normalizeStream } from "../lib/utils";
+import {
+  getAcademicYearVariants,
+  isTBC,
+  normalizeStream,
+  teacherDisplayNamesMatch,
+} from "../lib/utils";
+import {
+  canonicalizeTeacherNameForAcademicYear,
+  listTeachers,
+} from "./teacherService";
 import {
   assertAdminCanMutateCrossProgrammeGroup,
 } from "../lib/crossProgrammeCombine";
@@ -46,6 +55,18 @@ export interface TimetableModuleInstanceRow {
 
 function normalizeText(value: unknown) {
   return String(value ?? "").trim();
+}
+
+async function canonicalizeInstanceTeacherName(params: {
+  academicYear: string;
+  teacherName: string | null | undefined;
+  teachers?: Awaited<ReturnType<typeof listTeachers>>;
+}): Promise<string | null> {
+  return canonicalizeTeacherNameForAcademicYear({
+    academicYear: params.academicYear,
+    teacherName: params.teacherName,
+    teachers: params.teachers,
+  });
 }
 
 function resolveInstanceTeacherName(params: {
@@ -181,6 +202,38 @@ export async function upsertTimetableModuleInstances(
 ) {
   if (rows.length === 0) return;
 
+  const { data: instanceMeta, error: instanceMetaError } = await supabase
+    .from("timetable_module_instances")
+    .select("id, academic_year")
+    .in(
+      "id",
+      rows.map((row) => row.id)
+    );
+
+  if (instanceMetaError) throw instanceMetaError;
+
+  const academicYearById = new Map(
+    (instanceMeta ?? []).map((row) => [
+      String(row.id),
+      String(row.academic_year ?? "").trim(),
+    ])
+  );
+  const academicYears = [
+    ...new Set(
+      [...academicYearById.values()].filter(Boolean)
+    ),
+  ];
+  const teachersByYear = new Map<
+    string,
+    Awaited<ReturnType<typeof listTeachers>>
+  >();
+
+  await Promise.all(
+    academicYears.map(async (academicYear) => {
+      teachersByYear.set(academicYear, await listTeachers(academicYear));
+    })
+  );
+
   if (options?.actorRole && options.actorRole !== "admin") {
     const { data: instanceRows, error: instanceError } = await supabase
       .from("timetable_module_instances")
@@ -222,7 +275,16 @@ export async function upsertTimetableModuleInstances(
     }
 
     if (row.instance_teacher_name !== undefined) {
-      patch.instance_teacher_name = row.instance_teacher_name;
+      const academicYear = academicYearById.get(row.id) ?? "";
+      const teachers = academicYear
+        ? teachersByYear.get(academicYear)
+        : undefined;
+      patch.instance_teacher_name =
+        (await canonicalizeInstanceTeacherName({
+          academicYear,
+          teacherName: row.instance_teacher_name,
+          teachers,
+        })) ?? row.instance_teacher_name;
     }
 
     if (row.instance_mode !== undefined) {
@@ -287,6 +349,7 @@ export async function ensureInstancesForAllSources(params: {
   } = params;
 
   const streamKey = normalizeStream(selectedStreamCode ?? "");
+  const catalogTeachers = await listTeachers(academicYear);
 
   const assignmentByTimetableId = new Map<string, TeachingAssignmentRow>();
   for (const a of assignments) assignmentByTimetableId.set(a.timetable_module_id, a);
@@ -338,7 +401,11 @@ export async function ensureInstancesForAllSources(params: {
     if (!instanceCode) continue;
     if (existingInstanceCodes.has(instanceCode)) continue;
 
-    const teacher = assignmentByTimetableId.get(tm.id)?.teacher_name ?? null;
+    const teacher = await canonicalizeInstanceTeacherName({
+      academicYear,
+      teacherName: assignmentByTimetableId.get(tm.id)?.teacher_name ?? null,
+      teachers: catalogTeachers,
+    });
     const sourceType: TimetableInstanceSourceType = tm.combine_group_id
       ? "combine_group"
       : "planning_module";
@@ -380,8 +447,13 @@ export async function ensureInstancesForAllSources(params: {
 
     const existingModulesForGroup = timetableByCombineGroup.get(group.id) ?? [];
     const firstTimetable = existingModulesForGroup[0];
-    const teacher =
-      firstTimetable ? assignmentByTimetableId.get(firstTimetable.id)?.teacher_name : null;
+    const teacher = await canonicalizeInstanceTeacherName({
+      academicYear,
+      teacherName: firstTimetable
+        ? assignmentByTimetableId.get(firstTimetable.id)?.teacher_name
+        : null,
+      teachers: catalogTeachers,
+    });
 
     payload.push({
       academic_year: academicYear,
@@ -413,6 +485,11 @@ export async function ensureInstancesForAllSources(params: {
     const sn = studentNumberMap.get(key);
     const expected = sn?.expected_student_number ?? 0;
     const actual = sn?.actual_student_number ?? null;
+    const teacher = await canonicalizeInstanceTeacherName({
+      academicYear,
+      teacherName: (pm as { default_teacher_name?: string | null }).default_teacher_name ?? null,
+      teachers: catalogTeachers,
+    });
 
     payload.push({
       academic_year: academicYear,
@@ -425,7 +502,7 @@ export async function ensureInstancesForAllSources(params: {
       module_name: pm.module_name,
       instance_expected_size: expected,
       instance_actual_size: actual,
-      instance_teacher_name: (pm as any).default_teacher_name ?? null,
+      instance_teacher_name: teacher,
       split_group_size: 1,
       instance_index: 1,
       created_by: params.createdBy,
@@ -455,6 +532,8 @@ export async function ensureInstancesForTimetableModules(params: {
   programmeCode?: string;
 }) {
   if (params.timetableModules.length === 0) return { createdCount: 0 };
+
+  const catalogTeachers = await listTeachers(params.academicYear);
 
   const assignmentByTimetableId = new Map<string, TeachingAssignmentRow>();
   for (const a of params.assignments) {
@@ -584,10 +663,14 @@ export async function ensureInstancesForTimetableModules(params: {
     const existing = existingByCode.get(instanceCode);
     const existingMode = normalizeText(existing?.instance_mode);
     const fallbackMode = normalizeText(tm.mode);
-    const resolvedTeacher = resolveInstanceTeacherNameForUpsert({
-      existing: existing?.instance_teacher_name,
-      fromAssignment: teacherFromAssignment,
-      fromModuleDefault: defaultTeacher,
+    const resolvedTeacher = await canonicalizeInstanceTeacherName({
+      academicYear: params.academicYear,
+      teacherName: resolveInstanceTeacherNameForUpsert({
+        existing: existing?.instance_teacher_name,
+        fromAssignment: teacherFromAssignment,
+        fromModuleDefault: defaultTeacher,
+      }),
+      teachers: catalogTeachers,
     });
 
     const payloadRow: Record<string, unknown> = {
