@@ -16,6 +16,7 @@ import { listTimetableModuleInstances,
 import { loadPlanningModulesByCombineGroupIds } from "../../../../services/splitClassService";
 import {
   buildDraftWeeklyPlacement,
+  buildWeeklySlotKey,
   buildWeeklyTimetableGridFromSessions,
   cloneWeeklyGridState,
   collectWeeklyPlacements,
@@ -609,7 +610,7 @@ export function WeeklyTimetableEditor(props: {
       if (!current) return current;
 
       const next = cloneWeeklyGridState(current);
-      const sk = `${params.start}-${params.end}`;
+      const sk = buildWeeklySlotKey(params.start);
       const items = next.itemsBySlotAndWeekday[sk]?.[params.weekday] ?? [];
 
       next.itemsBySlotAndWeekday[sk] = {
@@ -661,7 +662,7 @@ export function WeeklyTimetableEditor(props: {
       return;
     }
 
-    const sk = `${start}-${end}`;
+    const sk = buildWeeklySlotKey(start);
     const existing = weeklyGrid.itemsBySlotAndWeekday[sk]?.[weekday] ?? [];
     const others = existing.filter(
       (row) =>
@@ -704,7 +705,7 @@ export function WeeklyTimetableEditor(props: {
     end: string;
   }) {
     setAddError(null);
-    const sk = `${params.start}-${params.end}`;
+    const sk = buildWeeklySlotKey(params.start);
     const items = weeklyGrid?.itemsBySlotAndWeekday[sk]?.[params.weekday] ?? [];
     const remaining = getRemainingClassroomsForWeeklyCell({ items, classrooms });
 
@@ -728,7 +729,7 @@ export function WeeklyTimetableEditor(props: {
       return;
     }
 
-    setCellBusyKey(`${addDialog.weekday}|${addDialog.start}|${addDialog.end}|add`);
+    setCellBusyKey(`${addDialog.weekday}|${addDialog.start}|add`);
     setAddError(null);
 
     try {
@@ -741,7 +742,7 @@ export function WeeklyTimetableEditor(props: {
         throw new Error(`No timetable module found for "${code}".`);
       }
 
-      const sk = `${addDialog.start}-${addDialog.end}`;
+      const sk = buildWeeklySlotKey(addDialog.start);
       const existing =
         weeklyGrid.itemsBySlotAndWeekday[sk]?.[addDialog.weekday] ?? [];
 
@@ -854,7 +855,7 @@ export function WeeklyTimetableEditor(props: {
     }
 
     for (const slot of weeklyGrid.slots) {
-      const sk = `${slot.start}-${slot.end}`;
+      const sk = buildWeeklySlotKey(slot.start);
 
       for (const day of weekdays) {
         const items = weeklyGrid.itemsBySlotAndWeekday[sk]?.[day.id] ?? [];
@@ -876,7 +877,7 @@ export function WeeklyTimetableEditor(props: {
       return classrooms;
     }
 
-    const sk = `${addDialog.start}-${addDialog.end}`;
+    const sk = buildWeeklySlotKey(addDialog.start);
     const items = weeklyGrid.itemsBySlotAndWeekday[sk]?.[addDialog.weekday] ?? [];
     const remaining = getRemainingClassroomsForWeeklyCell({ items, classrooms });
 
@@ -1041,7 +1042,7 @@ export function WeeklyTimetableEditor(props: {
               </thead>
               <tbody>
                 {weeklyGrid.slots.map((slot) => {
-                  const sk = `${slot.start}-${slot.end}`;
+                  const sk = buildWeeklySlotKey(slot.start);
                   return (
                     <tr key={sk}>
                       <td className="border border-slate-200 px-2 py-2 align-top font-medium">
@@ -1057,7 +1058,9 @@ export function WeeklyTimetableEditor(props: {
                           remainingClassroomsBySlotAndDay.get(`${sk}|${day.id}`) ??
                           availabilitySummaryClassrooms;
                         const cellKey = `${sk}|${day.id}`;
-                        const isBusy = cellBusyKey?.startsWith(`${day.id}|${slot.start}|${slot.end}`);
+                        const isBusy = cellBusyKey?.startsWith(
+                          `${day.id}|${slot.start}`
+                        );
 
                         return (
                           <div

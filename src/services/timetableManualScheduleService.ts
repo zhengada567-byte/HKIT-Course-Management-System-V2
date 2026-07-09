@@ -21,6 +21,53 @@ import {
 } from "./timetableScheduleService";
 import { listTimetableModulesByInstanceCodes } from "./timetableService";
 
+const WEEKLY_NIGHT_SLOT_START = "18:30";
+const WEEKLY_BLOCK_HOURS = 4;
+
+/** Weekly rows are identified by session start time; end time is display-only. */
+export function normalizeWeeklySlotStart(
+  startTime: string,
+  mode?: string | null
+): string {
+  const start = String(startTime ?? "").trim().slice(0, 5);
+
+  if (!start) {
+    return "09:00";
+  }
+
+  if (
+    String(mode ?? "").trim() === "Night" ||
+    start >= WEEKLY_NIGHT_SLOT_START
+  ) {
+    return WEEKLY_NIGHT_SLOT_START;
+  }
+
+  return start;
+}
+
+export function buildWeeklySlotKey(startTime: string, mode?: string | null): string {
+  return normalizeWeeklySlotStart(startTime, mode);
+}
+
+export function weeklySlotDisplayEnd(startTime: string, mode?: string | null): string {
+  return addHoursToTime(
+    normalizeWeeklySlotStart(startTime, mode),
+    WEEKLY_BLOCK_HOURS
+  );
+}
+
+export function weeklySlotRow(
+  startTime: string,
+  mode?: string | null
+): { start: string; end: string } {
+  const start = normalizeWeeklySlotStart(startTime, mode);
+
+  return {
+    start,
+    end: addHoursToTime(start, WEEKLY_BLOCK_HOURS),
+  };
+}
+
 export type WeeklyPlacementOccupant = {
   moduleInstanceCode: string;
   moduleCode: string;
@@ -198,25 +245,32 @@ export async function addModuleToWeeklySlot(params: {
     Omit<TimetableSessionRow, "id" | "created_at" | "updated_at"> & {
       created_by?: string | null;
     }
-  > = dates.map((sessionDate) => ({
-    academic_year: params.academicYear,
-    timetable_module_id: timetableModule.id,
-    module_instance_code: instanceCode,
-    module_code: occupant.moduleCode,
-    module_name: occupant.moduleName,
-    session_date: sessionDate,
-    start_time: normalizeSessionTime(params.startTime),
-    end_time: normalizeSessionTime(params.endTime),
-    room_code: roomCode,
-    status: "normal",
-    session_number: null,
-    session_label: null,
-    session_kind: null,
-    remark: null,
-    teacher_name: occupant.teacherName || null,
-    module_size: params.instance.instance_expected_size ?? null,
-    created_by: params.createdBy ?? null,
-  }));
+  > = dates.map((sessionDate) => {
+    const start = normalizeSessionTime(params.startTime);
+    const end = normalizeSessionTime(
+      params.endTime || weeklySlotDisplayEnd(start)
+    );
+
+    return {
+      academic_year: params.academicYear,
+      timetable_module_id: timetableModule.id,
+      module_instance_code: instanceCode,
+      module_code: occupant.moduleCode,
+      module_name: occupant.moduleName,
+      session_date: sessionDate,
+      start_time: start,
+      end_time: end,
+      room_code: roomCode,
+      status: "normal",
+      session_number: null,
+      session_label: null,
+      session_kind: null,
+      remark: null,
+      teacher_name: occupant.teacherName || null,
+      module_size: params.instance.instance_expected_size ?? null,
+      created_by: params.createdBy ?? null,
+    };
+  });
 
   await insertWeeklyPlacementSessions({
     academicYear: params.academicYear,
@@ -243,38 +297,35 @@ export function mergeWeeklySlotRows(params: {
   startTimeOptions: string[];
 }) {
   const map = new Map<string, { start: string; end: string }>();
-  const add = (start: string, end: string) => {
-    const key = `${start}-${end}`;
-    map.set(key, { start, end });
+  const addStart = (startTime: string, mode?: string | null) => {
+    const row = weeklySlotRow(startTime, mode);
+    map.set(row.start, row);
   };
 
   for (const slot of params.sessionSlots) {
-    add(slot.start, slot.end);
+    addStart(slot.start);
   }
 
   for (const instance of params.instances) {
     const mode = String(instance.instance_mode ?? "").trim();
     if (mode === "Night") {
-      add("18:30", addHoursToTime("18:30", 4));
+      addStart(WEEKLY_NIGHT_SLOT_START, "Night");
       continue;
     }
 
     const preferred =
       params.preferredStartByCode[instance.module_instance_code] || "09:00";
-    add(preferred, addHoursToTime(preferred, 4));
+    addStart(preferred);
   }
 
   if (map.size === 0) {
     for (const start of params.startTimeOptions) {
-      add(start, addHoursToTime(start, 4));
+      addStart(start);
     }
-    add("18:30", addHoursToTime("18:30", 4));
+    addStart(WEEKLY_NIGHT_SLOT_START, "Night");
   }
 
-  return Array.from(map.values()).sort((a, b) => {
-    if (a.start !== b.start) return a.start.localeCompare(b.start);
-    return a.end.localeCompare(b.end);
-  });
+  return Array.from(map.values()).sort((a, b) => a.start.localeCompare(b.start));
 }
 
 /** Build the same weekly grid structure shown in WeeklyTimetableEditor. */
@@ -292,6 +343,12 @@ export function buildWeeklyTimetableGridFromSessions(params: {
     WeeklyGridItem & { weekday: number; start: string; end: string }
   >();
   const sessionSlots: Array<{ start: string; end: string }> = [];
+  const instanceByCode = new Map(
+    params.timetableInstances.map((instance) => [
+      String(instance.module_instance_code ?? "").trim(),
+      instance,
+    ])
+  );
 
   for (const session of params.sessions) {
     if (session.status === "cancel") continue;
@@ -310,21 +367,25 @@ export function buildWeeklyTimetableGridFromSessions(params: {
     if (jsDay === 0) continue;
 
     const weekday = jsDay;
-    const start = String(session.start_time ?? "").slice(0, 5);
-    const end = String(session.end_time ?? "").slice(0, 5);
+    const rawStart = String(session.start_time ?? "").slice(0, 5);
     const roomCode = String(session.room_code ?? "").trim();
+    const instance = instanceByCode.get(instanceCode);
+    const mode = instance?.instance_mode ?? timetableModule.mode;
 
-    if (!start || !end || !roomCode) continue;
+    if (!rawStart || !roomCode) continue;
 
-    sessionSlots.push({ start, end });
+    const start = normalizeWeeklySlotStart(rawStart, mode);
+    const slotKey = buildWeeklySlotKey(start, mode);
 
-    const key = [weekday, start, end, roomCode, instanceCode].join("|");
+    sessionSlots.push({ start, end: weeklySlotDisplayEnd(start, mode) });
+
+    const key = [weekday, start, roomCode, instanceCode].join("|");
     if (collapsed.has(key)) continue;
 
     collapsed.set(key, {
       weekday,
       start,
-      end,
+      end: weeklySlotDisplayEnd(start, mode),
       ...buildWeeklyPlacementOccupant({
         instance: {
           module_instance_code: instanceCode,
@@ -343,14 +404,13 @@ export function buildWeeklyTimetableGridFromSessions(params: {
     });
   }
 
-  const slotKey = (start: string, end: string) => `${start}-${end}`;
   const itemsBySlotAndWeekday: WeeklyGridState["itemsBySlotAndWeekday"] = {};
 
   for (const item of collapsed.values()) {
-    const sk = slotKey(item.start, item.end);
-    itemsBySlotAndWeekday[sk] ||= {};
-    itemsBySlotAndWeekday[sk][item.weekday] ||= [];
-    itemsBySlotAndWeekday[sk][item.weekday]!.push({
+    const slotKey = buildWeeklySlotKey(item.start);
+    itemsBySlotAndWeekday[slotKey] ||= {};
+    itemsBySlotAndWeekday[slotKey][item.weekday] ||= [];
+    itemsBySlotAndWeekday[slotKey][item.weekday]!.push({
       moduleInstanceCode: item.moduleInstanceCode,
       moduleCode: item.moduleCode,
       moduleName: item.moduleName,
@@ -375,7 +435,7 @@ export function buildWeeklyTimetableGridFromSessions(params: {
   }
 
   const uniqueSessionSlots = Array.from(
-    new Map(sessionSlots.map((slot) => [`${slot.start}-${slot.end}`, slot])).values()
+    new Map(sessionSlots.map((slot) => [slot.start, slot])).values()
   );
 
   const slots = mergeWeeklySlotRows({
@@ -467,7 +527,6 @@ export function weeklyPlacementIdentity(placement: WeeklyPlacementRecord) {
   return [
     placement.weekday,
     placement.start,
-    placement.end,
     placement.roomCode,
     placement.moduleInstanceCode.toUpperCase(),
   ].join("|");
@@ -479,7 +538,7 @@ export function collectWeeklyPlacements(
   const results: WeeklyPlacementRecord[] = [];
 
   for (const slot of grid.slots) {
-    const slotKey = `${slot.start}-${slot.end}`;
+    const slotKey = buildWeeklySlotKey(slot.start);
     const byDay = grid.itemsBySlotAndWeekday[slotKey] ?? {};
 
     for (const [dayText, items] of Object.entries(byDay)) {
@@ -588,7 +647,7 @@ export async function persistWeeklyTimetableDraft(params: {
       );
     }
 
-    const slotKey = `${placement.start}-${placement.end}`;
+    const slotKey = buildWeeklySlotKey(placement.start);
     const cellOccupants =
       params.draftGrid.itemsBySlotAndWeekday[slotKey]?.[placement.weekday] ?? [];
 

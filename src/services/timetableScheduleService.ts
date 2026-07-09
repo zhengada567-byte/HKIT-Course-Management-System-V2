@@ -741,7 +741,6 @@ export async function deleteWeeklyPlacementSessions(params: {
   if (dates.length === 0) return;
 
   const startNorm = normalizeSessionTime(params.startTime);
-  const endNorm = normalizeSessionTime(params.endTime);
 
   for (const batch of chunkValues(dates, 50)) {
     const { error } = await supabase
@@ -751,7 +750,6 @@ export async function deleteWeeklyPlacementSessions(params: {
       .eq("module_instance_code", code)
       .eq("room_code", roomCode)
       .eq("start_time", startNorm)
-      .eq("end_time", endNorm)
       .in("session_date", batch);
 
     if (error) throw error;

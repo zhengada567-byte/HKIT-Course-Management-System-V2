@@ -876,31 +876,16 @@ export async function applyDailyLabelsToTimetableModule(
     existingLabelsById: existingLabels,
   });
 
-  const sessionById = new Map(studyWeekSessions.map((row) => [row.id, row]));
-
   const now = new Date().toISOString();
   let updatedCount = 0;
 
   for (const assignment of assignments) {
-    const sourceSession = sessionById.get(assignment.id);
-    const slotIndex =
-      assignment.session_number != null ? assignment.session_number - 1 : -1;
-    const slot = slotIndex >= 0 ? labelSequence[slotIndex] : undefined;
-    const durationHours = slot?.durationHours ?? 4;
-
     const patch: Record<string, unknown> = {
       session_label: assignment.session_label,
       session_kind: assignment.session_kind,
       session_number: assignment.session_number,
       updated_at: now,
     };
-
-    if (sourceSession && assignment.session_label) {
-      patch.end_time = addHoursToSessionTime(
-        normalizeSessionTime(sourceSession.start_time),
-        durationHours
-      );
-    }
 
     const { error } = await supabase
       .from("timetable_sessions")
