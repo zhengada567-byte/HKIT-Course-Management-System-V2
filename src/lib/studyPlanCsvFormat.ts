@@ -72,6 +72,12 @@ export function buildStudyPlanCsvHeaderRow(modulePairCount: number): string[] {
   ];
 }
 
+export function studyPlanRowsToCsv(rows: string[][]): string {
+  return rows
+    .map((row) => row.map(escapeStudyPlanCsvCell).join(","))
+    .join("\n");
+}
+
 export function buildStudyPlanCsvContent(params: {
   students: Array<{
     student: StudyPlanStudent;
@@ -95,9 +101,7 @@ export function buildStudyPlanCsvContent(params: {
     return row;
   });
 
-  return [headerRow, ...dataRows]
-    .map((row) => row.map(escapeStudyPlanCsvCell).join(","))
-    .join("\n");
+  return studyPlanRowsToCsv([headerRow, ...dataRows]);
 }
 
 export function parseArticulationFromUpload(value: string): boolean {

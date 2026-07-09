@@ -54,9 +54,8 @@ import { normalizeModuleType } from "./moduleService";
 
 import {
   getBaseModuleCode,
-  inferPlanStageFromModuleCode,
-  isHdStyleModuleCode,
 } from "../lib/studyPlanModuleCode";
+import { isModuleCodeInDegreeCatalog } from "../lib/studyPlanDegreeCatalog";
 
 /**
  * Keep stream value exactly as database stores it.
@@ -911,18 +910,17 @@ function toModuleRow(
 ) {
   const isBridging = module.planStage === "bridging";
 
+  const bridgingProgrammeCode = String(module.programmeCode ?? "").trim();
   const programmeCode = isBridging
-    ? String(module.programmeCode ?? "").trim()
+    ? bridgingProgrammeCode || String(student.programmeCode ?? "").trim()
     : String(module.programmeCode || student.programmeCode).trim();
 
   const programmeStream = isBridging
-    ? normalizeStream(module.programmeStream)
+    ? normalizeStream(module.programmeStream || student.programmeStream)
     : normalizeStream(module.programmeStream || student.programmeStream);
 
-  if (isBridging && !programmeCode) {
-    throw new Error(
-      `Bridging module ${module.moduleCode} is missing HD programme code.`
-    );
+  if (!programmeCode) {
+    throw new Error(`Module ${module.moduleCode} is missing programme code.`);
   }
 
   const moduleTerm = module.moduleTerm || module.moduleTermPattern || null;
@@ -1429,17 +1427,14 @@ async function lookupHdModuleMetadataByCode(
 }
 
 /**
- * Reconcile Degree study plan rows that were saved as programme modules
- * under the Degree programme code (legacy / HD-style upload).
+ * Reconcile Degree study-plan module stages from the degree programme catalogue.
  *
- * - Match module codes against articulation HD bridging catalog
- * - Fall back to code structure when catalog lookup misses:
- *   HD-style (2 letters + 3 digits) -> bridging, length > 5 -> programme
- * - Restore planStage, HD programme identity, and module metadata
- * - Drop duplicate programme rows for the same bridging module code
- * - Auto-generate missing Degree programme modules for edit view
+ * - Module in degree catalogue -> programme
+ * - Otherwise -> bridging (even when not listed in HD bridging options)
+ * - Enrich bridging rows from articulation / modules metadata when available
+ * - Auto-generate missing degree programme modules when only bridging exists
  */
-async function reconcileDegreeStudyPlanModules(
+export async function reconcileDegreeStudyPlanModules(
   student: StudyPlanStudent,
   modules: StudyPlanModule[]
 ): Promise<StudyPlanModule[]> {
@@ -1449,99 +1444,115 @@ async function reconcileDegreeStudyPlanModules(
     return modules;
   }
 
-  const bridgingCatalog = await loadBridgingModuleOptionsForDegree({
-    degreeProgrammeCode: studentWithType.programmeCode,
-    degreeProgrammeStream: studentWithType.programmeStream,
-  });
+  const [degreeCatalog, bridgingCatalog] = await Promise.all([
+    loadProgrammeModules(
+      studentWithType.programmeCode,
+      studentWithType.programmeStream
+    ),
+    loadBridgingModuleOptionsForDegree({
+      degreeProgrammeCode: studentWithType.programmeCode,
+      degreeProgrammeStream: studentWithType.programmeStream,
+    }),
+  ]);
 
   const bridgingByCode = buildBridgingCatalogByModuleCode(bridgingCatalog);
-  const bridgingCodes = new Set(bridgingByCode.keys());
   const hdMetadataCache = new Map<string, StudyPlanModule | null>();
 
-  let reconciled = await Promise.all(
+  let reconciled: StudyPlanModule[] = await Promise.all(
     modules.map(async (module) => {
       const moduleCode = getBaseModuleCode(module.moduleCode);
-      const catalogMatch = bridgingByCode.get(moduleCode);
+      const inDegreeCatalog = isModuleCodeInDegreeCatalog(
+        module.moduleCode,
+        degreeCatalog
+      );
 
-      if (catalogMatch) {
+      if (inDegreeCatalog) {
+        const catalogMatch = degreeCatalog.find((entry) =>
+          isModuleCodeInDegreeCatalog(module.moduleCode, [entry])
+        );
+
         return {
           ...module,
-          planStage: "bridging" as const,
-          programmeCode: catalogMatch.programmeCode,
-          programmeStream: normalizeStream(catalogMatch.programmeStream),
-          sourceModuleId: catalogMatch.sourceModuleId ?? module.sourceModuleId,
+          planStage: "programme" as const,
+          programmeCode:
+            catalogMatch?.programmeCode ?? studentWithType.programmeCode,
+          programmeStream: normalizeStream(
+            catalogMatch?.programmeStream ?? studentWithType.programmeStream
+          ),
+          sourceModuleId: catalogMatch?.sourceModuleId ?? module.sourceModuleId,
           moduleName:
-            catalogMatch.moduleName ?? module.moduleName ?? module.moduleCode,
-          moduleYear: catalogMatch.moduleYear ?? module.moduleYear,
-          moduleTerm: catalogMatch.moduleTerm ?? module.moduleTerm,
+            catalogMatch?.moduleName ?? module.moduleName ?? module.moduleCode,
+          moduleYear: catalogMatch?.moduleYear ?? module.moduleYear,
+          moduleTerm:
+            catalogMatch?.moduleTerm ??
+            catalogMatch?.moduleTermPattern ??
+            module.moduleTerm,
           moduleTermPattern:
-            catalogMatch.moduleTermPattern ??
-            catalogMatch.moduleTerm ??
+            catalogMatch?.moduleTermPattern ??
+            catalogMatch?.moduleTerm ??
             module.moduleTermPattern ??
             module.moduleTerm,
         };
       }
 
-      if (
-        module.planStage === "bridging" ||
-        isHdStyleModuleCode(moduleCode) ||
-        inferPlanStageFromModuleCode(moduleCode) === "bridging"
-      ) {
-        if (!hdMetadataCache.has(moduleCode)) {
-          hdMetadataCache.set(
-            moduleCode,
-            await lookupHdModuleMetadataByCode(moduleCode)
-          );
-        }
+      const bridgingMatch = bridgingByCode.get(moduleCode);
 
-        const hdMetadata = hdMetadataCache.get(moduleCode);
-
-        if (hdMetadata) {
-          return {
-            ...module,
-            planStage: "bridging" as const,
-            programmeCode: hdMetadata.programmeCode,
-            programmeStream: normalizeStream(hdMetadata.programmeStream),
-            sourceModuleId: hdMetadata.sourceModuleId ?? module.sourceModuleId,
-            moduleName:
-              hdMetadata.moduleName ?? module.moduleName ?? module.moduleCode,
-            moduleYear: hdMetadata.moduleYear ?? module.moduleYear,
-            moduleTerm: hdMetadata.moduleTerm ?? module.moduleTerm,
-            moduleTermPattern:
-              hdMetadata.moduleTermPattern ??
-              hdMetadata.moduleTerm ??
-              module.moduleTermPattern ??
-              module.moduleTerm,
-          };
-        }
-
+      if (bridgingMatch) {
         return {
           ...module,
           planStage: "bridging" as const,
+          programmeCode: bridgingMatch.programmeCode,
+          programmeStream: normalizeStream(bridgingMatch.programmeStream),
+          sourceModuleId: bridgingMatch.sourceModuleId ?? module.sourceModuleId,
+          moduleName:
+            bridgingMatch.moduleName ?? module.moduleName ?? module.moduleCode,
+          moduleYear: bridgingMatch.moduleYear ?? module.moduleYear,
+          moduleTerm: bridgingMatch.moduleTerm ?? module.moduleTerm,
+          moduleTermPattern:
+            bridgingMatch.moduleTermPattern ??
+            bridgingMatch.moduleTerm ??
+            module.moduleTermPattern ??
+            module.moduleTerm,
         };
       }
 
-      return module;
+      if (!hdMetadataCache.has(moduleCode)) {
+        hdMetadataCache.set(
+          moduleCode,
+          await lookupHdModuleMetadataByCode(moduleCode)
+        );
+      }
+
+      const hdMetadata = hdMetadataCache.get(moduleCode);
+
+      if (hdMetadata) {
+        return {
+          ...module,
+          planStage: "bridging" as const,
+          programmeCode: hdMetadata.programmeCode,
+          programmeStream: normalizeStream(hdMetadata.programmeStream),
+          sourceModuleId: hdMetadata.sourceModuleId ?? module.sourceModuleId,
+          moduleName:
+            hdMetadata.moduleName ?? module.moduleName ?? module.moduleCode,
+          moduleYear: hdMetadata.moduleYear ?? module.moduleYear,
+          moduleTerm: hdMetadata.moduleTerm ?? module.moduleTerm,
+          moduleTermPattern:
+            hdMetadata.moduleTermPattern ??
+            hdMetadata.moduleTerm ??
+            module.moduleTermPattern ??
+            module.moduleTerm,
+        };
+      }
+
+      return {
+        ...module,
+        planStage: "bridging" as const,
+        programmeCode: studentWithType.programmeCode,
+        programmeStream: normalizeStream(studentWithType.programmeStream),
+        moduleName: module.moduleName || module.moduleCode,
+      };
     })
   );
-
-  reconciled = reconciled.filter((module) => {
-    if (module.planStage !== "programme") {
-      return true;
-    }
-
-    return !bridgingCodes.has(
-      getBaseModuleCode(module.moduleCode)
-    );
-  });
-
-  reconciled = reconciled.filter((module) => {
-    if (module.planStage !== "programme") {
-      return true;
-    }
-
-    return !isHdStyleModuleCode(module.moduleCode);
-  });
 
   const hasProgrammeModules = reconciled.some(
     (module) => module.planStage === "programme"
@@ -1552,12 +1563,7 @@ async function reconcileDegreeStudyPlanModules(
       (module) => module.planStage === "bridging"
     );
 
-    const programmeTemplate = await loadProgrammeModules(
-      studentWithType.programmeCode,
-      studentWithType.programmeStream
-    );
-
-    if (programmeTemplate.length > 0) {
+    if (degreeCatalog.length > 0) {
       const startTerm = getDegreeStartTermAfterBridging(
         bridgingModules,
         studentWithType.intakeTerm
@@ -1565,7 +1571,7 @@ async function reconcileDegreeStudyPlanModules(
 
       const generatedProgrammeModules = generateStudyPlanForStudent({
         student: studentWithType,
-        modules: programmeTemplate.map((module) => ({
+        modules: degreeCatalog.map((module) => ({
           ...module,
           studentId: studentWithType.studentId,
           studentProfileId: studentWithType.id,
@@ -2154,6 +2160,47 @@ export function sortModulesForStudyPlan(
   return [...bridgingModules, ...programmeModules];
 }
 
+/** Study-plan catalogue order: module_year → module_term → module_code. */
+export function sortStudyPlanCatalogModules(
+  modules: StudyPlanModule[]
+): StudyPlanModule[] {
+  return [...modules].sort((a, b) => {
+    const yearDiff =
+      getModuleYearOrder(a.moduleYear) - getModuleYearOrder(b.moduleYear);
+
+    if (yearDiff !== 0) return yearDiff;
+
+    const termDiff =
+      getModuleTermOrder(a.moduleTerm ?? a.moduleTermPattern) -
+      getModuleTermOrder(b.moduleTerm ?? b.moduleTermPattern);
+
+    if (termDiff !== 0) return termDiff;
+
+    return String(a.moduleCode ?? "").localeCompare(String(b.moduleCode ?? ""));
+  });
+}
+
+/** Merge programme module catalogues (e.g. multiple streams) into one column order. */
+export function mergeStudyPlanCatalogModules(
+  moduleLists: StudyPlanModule[][]
+): StudyPlanModule[] {
+  const seen = new Set<string>();
+  const merged: StudyPlanModule[] = [];
+
+  for (const module of sortStudyPlanCatalogModules(moduleLists.flat())) {
+    const key = getBaseModuleCode(module.moduleCode);
+
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    merged.push(module);
+  }
+
+  return merged;
+}
+
 export async function loadStudyPlanExportBundles(
   filters: StudyPlanExportFilters = {}
 ): Promise<StudyPlanExportBundle[]> {
@@ -2200,17 +2247,28 @@ export async function loadStudyPlanExportBundles(
   // Batch by profile id — a single .in(...) with hundreds of UUIDs exceeds URL limits (400).
   const modulesByProfileId = await loadStudyPlanModulesByProfileIds(profileIds);
 
-  const metadataInputs = studentsWithType.flatMap((student) => {
-    if (!student.id) return [];
+  const reconciledByStudent = await Promise.all(
+    studentsWithType.map(async (student) => {
+      const savedModules = student.id
+        ? modulesByProfileId.get(student.id) ?? []
+        : [];
 
-    return (modulesByProfileId.get(student.id) ?? []).map((module) => ({
+      return {
+        student,
+        modules: await reconcileDegreeStudyPlanModules(student, savedModules),
+      };
+    })
+  );
+
+  const metadataInputs = reconciledByStudent.flatMap(({ student, modules }) =>
+    modules.map((module) => ({
       moduleCode: module.moduleCode,
       programmeCode: module.programmeCode || student.programmeCode,
       programmeStream: module.programmeStream || student.programmeStream,
       moduleTerm: module.moduleTerm,
       moduleTermPattern: module.moduleTermPattern,
-    }));
-  });
+    }))
+  );
 
   const moduleMetadataMap = await loadModuleMetadataForPlan(
     studentsWithType[0]?.programmeCode ?? "",
@@ -2218,12 +2276,8 @@ export async function loadStudyPlanExportBundles(
     metadataInputs
   );
 
-  return studentsWithType.map((student) => {
-    const savedModules = student.id
-      ? modulesByProfileId.get(student.id) ?? []
-      : [];
-
-    const enrichedModules = savedModules.map((module) =>
+  return reconciledByStudent.map(({ student, modules }) => {
+    const enrichedModules = modules.map((module) =>
       enrichStudyPlanModuleWithMetadata(
         {
           ...module,

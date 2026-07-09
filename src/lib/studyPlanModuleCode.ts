@@ -69,3 +69,29 @@ export function inferPlanStageFromModuleCode(
 
   return null;
 }
+
+const EXPORT_TERM_SUFFIX_PATTERN = /^([A-Z]{2,4}\d{3})(FEB|SEP|JUN)$/;
+
+/**
+ * Column identity for aligned study-plan export.
+ * e.g. BUS692Feb and BUS692 both map to BUS692.
+ */
+export function getStudyPlanExportColumnKey(value: unknown): string {
+  const base = getBaseModuleCode(value);
+  const match = base.match(EXPORT_TERM_SUFFIX_PATTERN);
+
+  if (match) {
+    return match[1];
+  }
+
+  return base;
+}
+
+export function studyPlanExportModuleCodesMatch(
+  left: unknown,
+  right: unknown
+): boolean {
+  return (
+    getStudyPlanExportColumnKey(left) === getStudyPlanExportColumnKey(right)
+  );
+}

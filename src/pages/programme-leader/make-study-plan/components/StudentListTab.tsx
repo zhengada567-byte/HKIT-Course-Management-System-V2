@@ -23,6 +23,11 @@ function normalizeStream(value: unknown): string {
   return text || "nil";
 }
 
+function displayStream(value: unknown): string {
+  const stream = normalizeStream(value);
+  return stream === "nil" ? "General" : stream;
+}
+
 type StudentSortKey =
   | "studentId"
   | "studentName"
@@ -192,15 +197,20 @@ export default function StudentListTab({
   }, [students, selectedProgrammeCode]);
 
   const filteredStudents = useMemo(() => {
-    if (!selectedProgrammeCode || !selectedProgrammeStream) {
+    if (!selectedProgrammeCode) {
       return [];
     }
 
     return students.filter((student) => {
-      return (
-        student.programmeCode === selectedProgrammeCode &&
-        normalizeStream(student.programmeStream) === selectedProgrammeStream
-      );
+      if (student.programmeCode !== selectedProgrammeCode) {
+        return false;
+      }
+
+      if (!selectedProgrammeStream) {
+        return true;
+      }
+
+      return normalizeStream(student.programmeStream) === selectedProgrammeStream;
     });
   }, [students, selectedProgrammeCode, selectedProgrammeStream]);
 
@@ -246,11 +256,9 @@ export default function StudentListTab({
   }
 
   async function handleExport() {
-    if (exportScope === "stream") {
-      if (!selectedProgrammeCode || !selectedProgrammeStream) {
-        alert("Please select programme code and stream first.");
-        return;
-      }
+    if (exportScope === "stream" && !selectedProgrammeCode) {
+      alert("Please select programme code first.");
+      return;
     }
 
     if (exportScope === "programme" && !selectedProgrammeCode) {
@@ -261,8 +269,13 @@ export default function StudentListTab({
     setExporting(true);
 
     try {
+      const effectiveScope =
+        exportScope === "stream" && !selectedProgrammeStream
+          ? "programme"
+          : exportScope;
+
       const result = await downloadStudyPlanCsv({
-        scope: exportScope,
+        scope: effectiveScope,
         programmeCode: selectedProgrammeCode || undefined,
         programmeStream: selectedProgrammeStream || undefined,
         programmeType:
@@ -286,8 +299,8 @@ export default function StudentListTab({
         <div>
           <h2 className="text-lg font-semibold">Student List</h2>
           <p className="text-sm text-muted-foreground">
-            Select a programme code and programme stream to view matching
-            student study plans.
+            Select a programme code to view students. Optionally filter by
+            programme stream.
           </p>
         </div>
 
@@ -343,12 +356,12 @@ export default function StudentListTab({
               <option value="">
                 {!selectedProgrammeCode
                   ? "Select programme first"
-                  : "Select stream"}
+                  : "All streams"}
               </option>
 
               {programmeStreams.map((stream) => (
                 <option key={stream} value={stream}>
-                  {stream}
+                  {displayStream(stream)}
                 </option>
               ))}
             </select>
@@ -358,11 +371,7 @@ export default function StudentListTab({
         <div className="mt-3 text-sm text-muted-foreground">
           {!selectedProgrammeCode && "Please select a programme code first."}
 
-          {selectedProgrammeCode &&
-            !selectedProgrammeStream &&
-            "Please select a programme stream."}
-
-          {selectedProgrammeCode && selectedProgrammeStream && (
+          {selectedProgrammeCode && (
             <>
               Showing{" "}
               <span className="font-medium text-foreground">
@@ -371,24 +380,34 @@ export default function StudentListTab({
               student(s) for{" "}
               <span className="font-medium text-foreground">
                 {selectedProgrammeCode}
-              </span>{" "}
-              /{" "}
-              <span className="font-medium text-foreground">
-                {selectedProgrammeStream}
               </span>
+              {selectedProgrammeStream ? (
+                <>
+                  {" "}
+                  /{" "}
+                  <span className="font-medium text-foreground">
+                    {displayStream(selectedProgrammeStream)}
+                  </span>
+                </>
+              ) : (
+                " (all streams)"
+              )}
               .
             </>
           )}
         </div>
       </div>
 
-      <details className="rounded-md border bg-white p-4">
-        <summary className="cursor-pointer text-sm font-semibold">
+      <details className="rounded-md border border-yellow-400 bg-yellow-100 p-4">
+        <summary className="cursor-pointer rounded bg-yellow-200 px-2 py-1 text-sm font-semibold text-yellow-950">
           Export Study Plan (CSV)
         </summary>
         <p className="mt-2 text-xs text-muted-foreground">
-          One row per student. Bridging module pairs come first, then degree
-          programme module pairs, sorted by study term order.
+          One row per student. HD programme modules align to the study-plan
+          catalogue order. Degree exports show bridging modules first (not
+          aligned), then aligned degree modules; unrecognized module codes appear
+          at the end. Multiple programmes export as one .xlsx file with a sheet
+          per programme.
         </p>
 
         <div className="mt-3 grid gap-3 md:grid-cols-3">
@@ -536,17 +555,8 @@ export default function StudentListTab({
               </tr>
             )}
 
-            {!loading && selectedProgrammeCode && !selectedProgrammeStream && (
-              <tr>
-                <td className="p-3 text-muted-foreground" colSpan={11}>
-                  Please select a programme stream to view students.
-                </td>
-              </tr>
-            )}
-
             {!loading &&
               selectedProgrammeCode &&
-              selectedProgrammeStream &&
               filteredStudents.length === 0 && (
                 <tr>
                   <td className="p-3 text-muted-foreground" colSpan={11}>
@@ -557,14 +567,13 @@ export default function StudentListTab({
 
             {!loading &&
               selectedProgrammeCode &&
-              selectedProgrammeStream &&
               sortedStudents.map((student) => (
                 <tr key={student.id ?? student.studentId} className="border-t">
                   <td className="whitespace-nowrap p-2">{student.studentId}</td>
                   <td className="whitespace-nowrap p-2">{student.studentName}</td>
                   <td className="whitespace-nowrap p-2">{student.programmeCode}</td>
                   <td className="whitespace-nowrap p-2">
-                    {normalizeStream(student.programmeStream)}
+                    {displayStream(student.programmeStream)}
                   </td>
                   <td className="whitespace-nowrap p-2">{student.intakeYear || "-"}</td>
                   <td className="whitespace-nowrap p-2">

@@ -48,18 +48,47 @@ interface Props {
 
 interface BridgingRow {
   moduleKey: string;
+  customModuleCode: string;
   studyTerm: string;
 }
+
+const MANUAL_BRIDGING_MODULE_KEY = "__manual__";
 
 function createEmptyBridgingRows(): BridgingRow[] {
   return Array.from({ length: 7 }, () => ({
     moduleKey: "",
+    customModuleCode: "",
     studyTerm: "",
   }));
 }
 
 function normalizeStreamForCompare(value?: string | null): string {
   return String(value ?? "nil").trim() || "nil";
+}
+
+function isGeneralProgrammeStream(value?: string | null): boolean {
+  return normalizeStreamForCompare(value) === "nil";
+}
+
+function resolveDefaultProgrammeStream(
+  programmeCode: string,
+  options: ProgrammeOption[]
+): string {
+  const streams = options.filter((item) => item.programmeCode === programmeCode);
+
+  if (streams.length === 0) {
+    return "";
+  }
+
+  if (streams.length === 1) {
+    return streams[0].programmeStream ?? "nil";
+  }
+
+  if (streams.every((item) => isGeneralProgrammeStream(item.programmeStream))) {
+    return streams[0].programmeStream ?? "nil";
+  }
+
+  return "";
 }
 
 /**
@@ -296,6 +325,26 @@ export default function StudentProfileEditor({
     void loadProgrammes();
   }, []);
 
+  useEffect(() => {
+    if (!student.programmeCode || String(student.programmeStream ?? "").trim()) {
+      return;
+    }
+
+    const defaultStream = resolveDefaultProgrammeStream(
+      student.programmeCode,
+      programmeOptions
+    );
+
+    if (!defaultStream) {
+      return;
+    }
+
+    setStudent((prev) => ({
+      ...prev,
+      programmeStream: defaultStream,
+    }));
+  }, [programmeOptions, student.programmeCode, student.programmeStream]);
+
   /**
    * Load allowed bridging module options when a Degree programme + stream is selected.
    */
@@ -342,7 +391,7 @@ export default function StudentProfileEditor({
    * from existing saved bridging modules.
    */
   useEffect(() => {
-    if (!isDegree || bridgingOptions.length === 0) return;
+    if (!isDegree) return;
 
     const existingBridgingModules = modules.filter(
       (module) => module.planStage === "bridging"
@@ -353,14 +402,29 @@ export default function StudentProfileEditor({
     const nextRows = createEmptyBridgingRows();
 
     existingBridgingModules.slice(0, 7).forEach((module, index) => {
+      const moduleKey = buildModuleOptionKey(module);
+      const matchedOption = bridgingOptions.find(
+        (option) => buildModuleOptionKey(option) === moduleKey
+      );
+
+      if (matchedOption) {
+        nextRows[index] = {
+          moduleKey,
+          customModuleCode: "",
+          studyTerm: module.studyTerm ?? "",
+        };
+        return;
+      }
+
       nextRows[index] = {
-        moduleKey: buildModuleOptionKey(module),
+        moduleKey: MANUAL_BRIDGING_MODULE_KEY,
+        customModuleCode: module.moduleCode,
         studyTerm: module.studyTerm ?? "",
       };
     });
 
     setBridgingRows(nextRows);
-  }, [isDegree, bridgingOptions.length, modules]);
+  }, [isDegree, bridgingOptions, modules]);
 
   async function handleLoadModules() {
     if (!student.programmeCode) {
@@ -528,25 +592,46 @@ export default function StudentProfileEditor({
     if (!isDegree) return;
 
     const selectedModules: StudyPlanModule[] = [];
+    const seenModuleCodes = new Set<string>();
 
     for (let index = 0; index < bridgingRows.length; index += 1) {
       const row = bridgingRows[index];
 
-      const moduleKey = row.moduleKey.trim();
+      const isManual = row.moduleKey === MANUAL_BRIDGING_MODULE_KEY;
       const studyTerm = row.studyTerm.trim().toUpperCase();
+      const manualModuleCode = row.customModuleCode.trim().toUpperCase();
+      const catalogModuleKey = row.moduleKey.trim();
 
-      if (!moduleKey && !studyTerm) {
+      if (isManual) {
+        if (!manualModuleCode && !studyTerm) {
+          continue;
+        }
+      } else if (!catalogModuleKey && !studyTerm) {
         continue;
       }
 
-      if (moduleKey && !studyTerm) {
-        alert(`Bridging module ${index + 1} has module code but no study term.`);
-        return;
-      }
+      let resolvedModuleCode = manualModuleCode;
 
-      if (!moduleKey && studyTerm) {
-        alert(`Bridging module ${index + 1} has study term but no module code.`);
-        return;
+      if (isManual) {
+        if (manualModuleCode && !studyTerm) {
+          alert(`Bridging module ${index + 1} has module code but no study term.`);
+          return;
+        }
+
+        if (!manualModuleCode && studyTerm) {
+          alert(`Bridging module ${index + 1} has study term but no module code.`);
+          return;
+        }
+      } else {
+        if (catalogModuleKey && !studyTerm) {
+          alert(`Bridging module ${index + 1} has module code but no study term.`);
+          return;
+        }
+
+        if (!catalogModuleKey && studyTerm) {
+          alert(`Bridging module ${index + 1} has study term but no module code.`);
+          return;
+        }
       }
 
       if (!/^T\d{4}[ABC]$/i.test(studyTerm)) {
@@ -556,17 +641,59 @@ export default function StudentProfileEditor({
         return;
       }
 
-      const matched = bridgingOptions.find(
-        (module) => buildModuleOptionKey(module) === moduleKey
-      );
+      let matched: StudyPlanModule | undefined;
 
-      if (!matched) {
-        alert(`Bridging module ${index + 1} is not a valid option.`);
+      if (isManual) {
+        if (!/^[A-Z0-9][A-Z0-9-]{1,19}$/i.test(manualModuleCode)) {
+          alert(
+            `Bridging module ${index + 1} has invalid module code "${manualModuleCode}".`
+          );
+          return;
+        }
+
+        resolvedModuleCode = manualModuleCode;
+      } else {
+        matched = bridgingOptions.find(
+          (module) => buildModuleOptionKey(module) === catalogModuleKey
+        );
+
+        if (!matched) {
+          alert(`Bridging module ${index + 1} is not a valid option.`);
+          return;
+        }
+
+        resolvedModuleCode = matched.moduleCode.trim().toUpperCase();
+      }
+
+      if (seenModuleCodes.has(resolvedModuleCode)) {
+        alert(
+          `Bridging module ${index + 1} duplicates module code "${resolvedModuleCode}".`
+        );
         return;
       }
 
+      seenModuleCodes.add(resolvedModuleCode);
+
+      if (isManual) {
+        selectedModules.push({
+          moduleCode: resolvedModuleCode,
+          moduleName: resolvedModuleCode,
+          programmeCode: student.programmeCode,
+          programmeStream: student.programmeStream,
+          studentId: student.studentId,
+          studentProfileId: student.id,
+          planStage: "bridging",
+          status: "planned",
+          studyTerm,
+          isExempted: false,
+          isFailed: false,
+          isLocked: false,
+        });
+        continue;
+      }
+
       selectedModules.push({
-        ...matched,
+        ...matched!,
 
         id: undefined,
         studentId: student.studentId,
@@ -962,11 +1089,15 @@ export default function StudentProfileEditor({
     const programmeType = programmeOptions.find(
       (item) => item.programmeCode === programmeCode
     )?.programmeType;
+    const defaultStream = resolveDefaultProgrammeStream(
+      programmeCode,
+      programmeOptions
+    );
 
     setStudent((prev) => ({
       ...prev,
       programmeCode,
-      programmeStream: "",
+      programmeStream: defaultStream,
       programmeType,
       intakeLevel:
         prev.intakeLevel && prev.intakeLevel !== ""
@@ -1210,8 +1341,8 @@ export default function StudentProfileEditor({
 
               <p className="text-xs text-blue-800">
                 Select up to 7 bridging modules before generating Degree
-                modules. Module options are loaded from the articulated HD
-                programme and stream.
+                modules. Choose from the articulated HD list, or enter a module
+                code manually when it is not listed.
               </p>
 
               <p className="mt-1 text-xs text-blue-800">
@@ -1233,11 +1364,8 @@ export default function StudentProfileEditor({
               student.programmeStream &&
               bridgingOptions.length === 0 && (
                 <div className="rounded border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-800">
-                  No bridging module options found. Please check whether any HD
-                  programme stream has{" "}
-                  <span className="font-mono">programmes.articulation</span>{" "}
-                  pointing to this Degree programme, and whether related HD
-                  modules exist.
+                  No bridging module options found from articulated HD
+                  programmes. You can still enter module codes manually below.
                 </div>
               )}
 
@@ -1247,49 +1375,79 @@ export default function StudentProfileEditor({
                   key={`bridging-${index}`}
                   className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_180px_80px] items-center"
                 >
-                  <select
-                    className="w-full rounded-md border px-3 py-2 text-sm bg-white"
-                    value={row.moduleKey}
-                    disabled={
-                      loadingBridgingOptions || bridgingOptions.length === 0
-                    }
-                    onChange={(event) => {
-                      const value = event.target.value;
+                  <div className="space-y-2">
+                    <select
+                      className="w-full rounded-md border px-3 py-2 text-sm bg-white"
+                      value={row.moduleKey}
+                      disabled={loadingBridgingOptions}
+                      onChange={(event) => {
+                        const value = event.target.value;
 
-                      setBridgingRows((prev) =>
-                        prev.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? {
-                                ...item,
-                                moduleKey: value,
-                              }
-                            : item
-                        )
-                      );
-                    }}
-                  >
-                    <option value="">
-                      Bridging module {index + 1} - Select module
-                    </option>
+                        setBridgingRows((prev) =>
+                          prev.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? {
+                                  ...item,
+                                  moduleKey: value,
+                                  customModuleCode:
+                                    value === MANUAL_BRIDGING_MODULE_KEY
+                                      ? item.customModuleCode
+                                      : "",
+                                }
+                              : item
+                          )
+                        );
+                      }}
+                    >
+                      <option value="">
+                        Bridging module {index + 1} - Select module
+                      </option>
 
-                    {bridgingOptions.map((module) => {
-                      const key = buildModuleOptionKey(module);
+                      {bridgingOptions.map((module) => {
+                        const key = buildModuleOptionKey(module);
 
-                      return (
-                        <option key={key} value={key}>
-                          {module.moduleCode} - {module.moduleName}
-                          {module.moduleTerm ? ` (${module.moduleTerm})` : ""}
-                          {module.programmeCode
-                            ? ` [${module.programmeCode}${
-                                module.programmeStream
-                                  ? ` / ${module.programmeStream}`
-                                  : ""
-                              }]`
-                            : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
+                        return (
+                          <option key={key} value={key}>
+                            {module.moduleCode} - {module.moduleName}
+                            {module.moduleTerm ? ` (${module.moduleTerm})` : ""}
+                            {module.programmeCode
+                              ? ` [${module.programmeCode}${
+                                  module.programmeStream
+                                    ? ` / ${module.programmeStream}`
+                                    : ""
+                                }]`
+                              : ""}
+                          </option>
+                        );
+                      })}
+
+                      <option value={MANUAL_BRIDGING_MODULE_KEY}>
+                        Enter module code manually
+                      </option>
+                    </select>
+
+                    {row.moduleKey === MANUAL_BRIDGING_MODULE_KEY && (
+                      <input
+                        className="w-full rounded-md border px-3 py-2 text-sm bg-white"
+                        value={row.customModuleCode}
+                        placeholder="e.g. AF401"
+                        onChange={(event) => {
+                          const value = event.target.value.toUpperCase();
+
+                          setBridgingRows((prev) =>
+                            prev.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? {
+                                    ...item,
+                                    customModuleCode: value,
+                                  }
+                                : item
+                            )
+                          );
+                        }}
+                      />
+                    )}
+                  </div>
 
                   <input
                     className="w-full rounded-md border px-3 py-2 text-sm bg-white"
@@ -1320,6 +1478,7 @@ export default function StudentProfileEditor({
                           itemIndex === index
                             ? {
                                 moduleKey: "",
+                                customModuleCode: "",
                                 studyTerm: "",
                               }
                             : item

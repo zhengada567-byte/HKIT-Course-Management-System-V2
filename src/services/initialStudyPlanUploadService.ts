@@ -13,6 +13,7 @@ import {
   isDegreeStyleModuleCode,
   isHdStyleModuleCode,
 } from "../lib/studyPlanModuleCode";
+import { isModuleCodeInDegreeCatalog } from "../lib/studyPlanDegreeCatalog";
 
 import {
   parseArticulationFromUpload,
@@ -1180,7 +1181,6 @@ function buildDegreeModulesFromModulePairs(
     );
   }
 
-  const degreeCatalogByCode = buildCatalogByModuleCode(degreeProgrammeModules);
   const bridgingCatalogByCode = buildCatalogByModuleCode(bridgingOptions);
 
   const bridgingModules: StudyPlanModule[] = [];
@@ -1188,7 +1188,9 @@ function buildDegreeModulesFromModulePairs(
 
   for (const parsed of pairResult.modules) {
     const moduleCode = normalizeModuleCode(parsed.moduleCode);
-    const degreeMatch = degreeCatalogByCode.get(moduleCode);
+    const degreeMatch = degreeProgrammeModules.find((entry) =>
+      isModuleCodeInDegreeCatalog(moduleCode, [entry])
+    );
     const bridgingMatch = bridgingCatalogByCode.get(moduleCode);
 
     if (parsed.status === "planned" && !parsed.studyTerm) {
@@ -1229,75 +1231,23 @@ function buildDegreeModulesFromModulePairs(
       continue;
     }
 
-    const inferred = inferPlanStageFromModuleCode(moduleCode);
-    const treatAsBridging =
-      inferred === "bridging" || isHdStyleModuleCode(moduleCode);
-    const treatAsProgramme =
-      inferred === "programme" || isDegreeStyleModuleCode(moduleCode);
-    const allowUnknownCodes = options?.relaxed;
+    warnings.push({
+      row: row.rowNumber,
+      studentId: student.studentId,
+      moduleCode,
+      message: `Module ${moduleCode} is not in the degree programme catalogue; imported as bridging.`,
+    });
 
-    if (treatAsBridging || treatAsProgramme || allowUnknownCodes) {
-      if (treatAsBridging) {
-        if (!bridgingMatch) {
-          warnings.push({
-            row: row.rowNumber,
-            studentId: student.studentId,
-            moduleCode,
-            message: `Module ${moduleCode} is not in articulation settings for this degree; imported as bridging (HD-style code).`,
-          });
-        }
-
-        bridgingModules.push(
-          applyPlanStageFromModuleCode(
-            createStudyPlanModule({
-              student,
-              moduleCode,
-              planStage: "bridging",
-              parsed,
-            }),
-            bridgingCatalogByCode.get(moduleCode)
-          )
-        );
-        continue;
-      }
-
-      if (treatAsProgramme) {
-        if (!degreeMatch) {
-          warnings.push({
-            row: row.rowNumber,
-            studentId: student.studentId,
-            moduleCode,
-            message: `Module ${moduleCode} is not in the degree programme catalogue; imported as programme module (degree-style code).`,
-          });
-        }
-
-        programmeModulesFromImport.push(
-          applyPlanStageFromModuleCode(
-            createStudyPlanModule({
-              student,
-              moduleCode,
-              planStage: "programme",
-              parsed,
-            }),
-            degreeCatalogByCode.get(moduleCode)
-          )
-        );
-        continue;
-      }
-
-      programmeModulesFromImport.push(
+    bridgingModules.push(
+      applyPlanStageFromModuleCode(
         createStudyPlanModule({
           student,
           moduleCode,
-          planStage: "programme",
+          planStage: "bridging",
           parsed,
-        })
-      );
-      continue;
-    }
-
-    throw new Error(
-      `Module ${moduleCode} is not part of this degree programme or its articulated bridging modules.`
+        }),
+        bridgingCatalogByCode.get(moduleCode)
+      )
     );
   }
 
