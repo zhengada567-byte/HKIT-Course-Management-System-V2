@@ -1879,14 +1879,17 @@ async function loadStudyPlanModulesByProfileIds(
   const modulesByProfile = new Map<string, StudyPlanModule[]>();
 
   for (const profileChunk of chunkValues(profileIds, 100)) {
-    const { data, error } = await supabase
-      .from("study_plan_modules")
-      .select("*")
-      .in("student_profile_id", profileChunk);
+    const rows = await fetchAllPaginatedRows<Record<string, unknown>>({
+      fetchPage: ({ from, to }) =>
+        supabase
+          .from("study_plan_modules")
+          .select("*")
+          .in("student_profile_id", profileChunk)
+          .order("id", { ascending: true })
+          .range(from, to),
+    });
 
-    if (error) throw error;
-
-    for (const row of data ?? []) {
+    for (const row of rows) {
       const profileId = String(row.student_profile_id ?? "").trim();
 
       if (!profileId) {
