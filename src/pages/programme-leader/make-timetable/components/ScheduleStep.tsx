@@ -383,7 +383,8 @@ export function ScheduleStep(props: {
           <div className="text-sm font-medium text-slate-900">排課偏好</div>
           <div className="mt-1 text-xs text-slate-600">
             Preferred start 預設 Any time（Day/Saturday 會在 08:00–14:30
-            內嘗試）。Night 固定 18:30。星期由老師 Availability 決定。
+            內嘗試）。Night：Mon–Fri 固定 18:30；亦可排周六全日（白天），Preferred
+            start 只影響周六白天時段。星期由老師 Availability 決定。
           </div>
 
           {prefError && (
@@ -419,7 +420,9 @@ export function ScheduleStep(props: {
               <tbody>
                 {moduleOptions.map((m) => {
                   const isEditable =
-                    m.mode === "Day" || m.mode === "Saturday";
+                    m.mode === "Day" ||
+                    m.mode === "Saturday" ||
+                    m.mode === "Night";
                   const startValue =
                     preferredStartByCode[m.moduleInstanceCode] ?? "";
                   return (
@@ -449,7 +452,11 @@ export function ScheduleStep(props: {
                           <select
                             className="form-select min-w-[6.5rem]"
                             value={startValue}
-                            title={`Preferred start time for ${m.moduleInstanceCode}`}
+                            title={
+                              m.mode === "Night"
+                                ? `Saturday preferred start for ${m.moduleInstanceCode} (Mon–Fri stays 18:30)`
+                                : `Preferred start time for ${m.moduleInstanceCode}`
+                            }
                             disabled={prefLoading}
                             onChange={(e) => {
                               const next = { ...preferredStartByCode };
@@ -462,7 +469,11 @@ export function ScheduleStep(props: {
                               setPreferredStartByCode(next);
                             }}
                           >
-                            <option value="">Any time</option>
+                            <option value="">
+                              {m.mode === "Night"
+                                ? "Sat any time"
+                                : "Any time"}
+                            </option>
                             {startTimeOptions.map((t) => (
                               <option key={t} value={t}>
                                 {t}
@@ -470,9 +481,7 @@ export function ScheduleStep(props: {
                             ))}
                           </select>
                         ) : (
-                          <span className="text-slate-500">
-                            {m.mode === "Night" ? "18:30" : "—"}
-                          </span>
+                          <span className="text-slate-500">—</span>
                         )}
                       </td>
                     </tr>

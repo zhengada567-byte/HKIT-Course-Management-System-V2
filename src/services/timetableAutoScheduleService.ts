@@ -89,18 +89,19 @@ function resolveAutoScheduleWeekdays(mode: string): Weekday[] {
     return [6];
   }
 
+  // Night: Mon–Fri evening + Saturday full day (handled in slot attempts).
+  if (mode === "Night") {
+    return [...SCHEDULING_WEEKDAYS, 6];
+  }
+
   return [...SCHEDULING_WEEKDAYS];
 }
 
-function resolveAutoScheduleStartWindows(params: {
-  mode: string;
-  preferredStart?: string;
-}): Array<{ start: string; end: string }> {
-  if (params.mode === "Night") {
-    return [{ start: NIGHT_START, end: NIGHT_END }];
-  }
-
-  const preferred = String(params.preferredStart ?? "").trim();
+function resolveDayStartWindows(preferredStart?: string): Array<{
+  start: string;
+  end: string;
+}> {
+  const preferred = String(preferredStart ?? "").trim();
   if (preferred) {
     return [{ start: preferred, end: addHours(preferred, 4) }];
   }
@@ -111,9 +112,73 @@ function resolveAutoScheduleStartWindows(params: {
   }));
 }
 
+function resolveAutoScheduleStartWindows(params: {
+  mode: string;
+  preferredStart?: string;
+}): Array<{ start: string; end: string }> {
+  if (params.mode === "Night") {
+    return [{ start: NIGHT_START, end: NIGHT_END }];
+  }
+
+  return resolveDayStartWindows(params.preferredStart);
+}
+
+/**
+ * Night mode: Mon–Fri fixed 18:30, plus Saturday daytime (full day).
+ * Other modes: start windows × weekday list (cartesian).
+ */
+function resolveAutoScheduleSlotAttempts(params: {
+  mode: string;
+  preferredStart?: string;
+}): Array<{ weekday: Weekday; start: string; end: string }> {
+  if (params.mode === "Night") {
+    const attempts: Array<{ weekday: Weekday; start: string; end: string }> =
+      [];
+
+    for (const weekday of SCHEDULING_WEEKDAYS) {
+      attempts.push({
+        weekday,
+        start: NIGHT_START,
+        end: NIGHT_END,
+      });
+    }
+
+    for (const window of resolveDayStartWindows(params.preferredStart)) {
+      attempts.push({
+        weekday: 6,
+        start: window.start,
+        end: window.end,
+      });
+    }
+
+    return attempts;
+  }
+
+  const weekdays = resolveAutoScheduleWeekdays(params.mode);
+  const windows = resolveAutoScheduleStartWindows(params);
+  const attempts: Array<{ weekday: Weekday; start: string; end: string }> = [];
+
+  for (const window of windows) {
+    for (const weekday of weekdays) {
+      attempts.push({
+        weekday,
+        start: window.start,
+        end: window.end,
+      });
+    }
+  }
+
+  return attempts;
+}
+
 function formatAutoScheduleTimeWindow(
+  mode: string,
   startWindows: Array<{ start: string; end: string }>
 ) {
+  if (mode === "Night") {
+    return "Mon–Fri 18:30–22:30; Sat 08:00–14:30";
+  }
+
   if (startWindows.length === 1) {
     return `${startWindows[0]!.start}–${startWindows[0]!.end}`;
   }
@@ -844,12 +909,17 @@ export async function autoScheduleInstances(params: {
 
     const size = Number(instance.instance_expected_size ?? 0);
     const mode = resolveInstanceMode(instance, timetableModule);
+    const preferredStart =
+      params.preferredStartByCode[instance.module_instance_code];
     const startWindows = resolveAutoScheduleStartWindows({
       mode,
-      preferredStart: params.preferredStartByCode[instance.module_instance_code],
+      preferredStart,
     });
-    const weekdaysToTry = resolveAutoScheduleWeekdays(mode);
-    const failureTimeWindow = formatAutoScheduleTimeWindow(startWindows);
+    const slotAttempts = resolveAutoScheduleSlotAttempts({
+      mode,
+      preferredStart,
+    });
+    const failureTimeWindow = formatAutoScheduleTimeWindow(mode, startWindows);
     const diagnosticWindow = startWindows[0] ?? {
       start: NIGHT_START,
       end: NIGHT_END,
@@ -921,77 +991,81 @@ export async function autoScheduleInstances(params: {
 
     const candidates: PlacementCandidate[] = [];
 
-    for (const { start, end } of startWindows) {
+    for (const { weekday, start, end } of slotAttempts) {
       const period = getPeriodForStartTime(start);
 
-      for (const weekday of weekdaysToTry) {
-        if (naSet.has(`${teacherName}||${weekday}||${period}`)) {
+      if (naSet.has(`${teacherName}||${weekday}||${period}`)) {
+        continue;
+      }
+
+      const slotKey = buildTimeslotKey({ weekday, start, end });
+      if (takenTeacherSlots.has(teacherSlotKey(teacherName, slotKey))) {
+        continue;
+      }
+
+      const dates = await buildTeachingDatesForWeekday({
+        academicYear: params.academicYear,
+        term: params.term,
+        weekday,
+      });
+
+      for (const room of rooms) {
+        if (takenRoomSlots.has(roomSlotKey(room.room_code, slotKey))) {
           continue;
         }
 
-        const slotKey = buildTimeslotKey({ weekday, start, end });
-        if (takenTeacherSlots.has(teacherSlotKey(teacherName, slotKey))) {
-          continue;
+        let conflict = false;
+        for (const date of dates) {
+          const existing = existingByDate.get(date) ?? [];
+          const overlapped = existing.some((s) => {
+            if (s.status === "cancel") return false;
+            const sStart = String(s.start_time).slice(0, 5);
+            const sEnd = String(s.end_time).slice(0, 5);
+            if (!overlaps({ start, end }, { start: sStart, end: sEnd })) {
+              return false;
+            }
+            if (s.room_code === room.room_code) return true;
+            if (String(s.teacher_name ?? "").trim() === teacherName) return true;
+            return false;
+          });
+          if (overlapped) {
+            conflict = true;
+            break;
+          }
         }
 
-        const dates = await buildTeachingDatesForWeekday({
-          academicYear: params.academicYear,
-          term: params.term,
-          weekday,
+        if (conflict) continue;
+
+        const score = scoreAutoScheduleSlot({
+          slotKey,
+          streamKey,
+          moduleYear,
+          alignKey,
+          programmeCode,
+          schedulingIdentities,
+          streamYearTimeslotState,
+          streamSlotByModule,
+          streamYearOccupiedSlots,
+          streamAllOccupiedSlots,
+          programmeSlotStreams,
         });
 
-        for (const room of rooms) {
-          if (takenRoomSlots.has(roomSlotKey(room.room_code, slotKey))) {
-            continue;
-          }
+        if (score === null) continue;
 
-          let conflict = false;
-          for (const date of dates) {
-            const existing = existingByDate.get(date) ?? [];
-            const overlapped = existing.some((s) => {
-              if (s.status === "cancel") return false;
-              const sStart = String(s.start_time).slice(0, 5);
-              const sEnd = String(s.end_time).slice(0, 5);
-              if (!overlaps({ start, end }, { start: sStart, end: sEnd })) {
-                return false;
-              }
-              if (s.room_code === room.room_code) return true;
-              if (String(s.teacher_name ?? "").trim() === teacherName) return true;
-              return false;
-            });
-            if (overlapped) {
-              conflict = true;
-              break;
-            }
-          }
-
-          if (conflict) continue;
-
-          const score = scoreAutoScheduleSlot({
-            slotKey,
-            streamKey,
-            moduleYear,
-            alignKey,
-            programmeCode,
-            schedulingIdentities,
-            streamYearTimeslotState,
-            streamSlotByModule,
-            streamYearOccupiedSlots,
-            streamAllOccupiedSlots,
-            programmeSlotStreams,
-          });
-
-          if (score === null) continue;
-
-          candidates.push({
-            weekday,
-            start,
-            end,
-            slotKey,
-            room,
-            score,
-          });
+        let placementScore = score;
+        // Prefer Saturday daytime for Night when a preferred start is set.
+        if (mode === "Night" && weekday === 6 && preferredStart) {
+          placementScore += 150;
         }
+
+        candidates.push({
+          weekday,
+          start,
+          end,
+          slotKey,
+          room,
+          score: placementScore,
+        });
       }
     }
 
@@ -1034,8 +1108,11 @@ export async function autoScheduleInstances(params: {
 
     if (!placed) {
       const teachingDatesByWeekday = new Map<Weekday, string[]>();
+      const weekdaysTried = Array.from(
+        new Set(slotAttempts.map((attempt) => attempt.weekday))
+      ) as Weekday[];
 
-      for (const weekday of weekdaysToTry) {
+      for (const weekday of weekdaysTried) {
         teachingDatesByWeekday.set(
           weekday,
           await buildTeachingDatesForWeekday({
@@ -1047,7 +1124,7 @@ export async function autoScheduleInstances(params: {
       }
 
       const weekdayDetail = buildWeekdayFailureDetail({
-        weekdays: weekdaysToTry,
+        weekdays: weekdaysTried,
         start: diagnosticWindow.start,
         end: diagnosticWindow.end,
         period: getPeriodForStartTime(diagnosticWindow.start),

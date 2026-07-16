@@ -24,10 +24,14 @@ import { listTimetableModulesByInstanceCodes } from "./timetableService";
 const WEEKLY_NIGHT_SLOT_START = "18:30";
 const WEEKLY_BLOCK_HOURS = 4;
 
-/** Weekly rows are identified by session start time; end time is display-only. */
+/**
+ * Weekly rows are identified by session start time; end time is display-only.
+ * Evening starts (≥18:30) collapse to the night row. Night-mode modules may
+ * also sit on daytime rows (e.g. Saturday) — do not force them to 18:30.
+ */
 export function normalizeWeeklySlotStart(
   startTime: string,
-  mode?: string | null
+  _mode?: string | null
 ): string {
   const start = String(startTime ?? "").trim().slice(0, 5);
 
@@ -35,10 +39,7 @@ export function normalizeWeeklySlotStart(
     return "09:00";
   }
 
-  if (
-    String(mode ?? "").trim() === "Night" ||
-    start >= WEEKLY_NIGHT_SLOT_START
-  ) {
+  if (start >= WEEKLY_NIGHT_SLOT_START) {
     return WEEKLY_NIGHT_SLOT_START;
   }
 
