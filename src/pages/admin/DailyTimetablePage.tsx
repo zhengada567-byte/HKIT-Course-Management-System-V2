@@ -26,6 +26,7 @@ import {
   type DailyTimetableEntry,
   type DailyTimetableModulePlan,
 } from "../../services/dailyTimetableService";
+import { clearClosedTimetableModule } from "../../services/dailyTimetableClearService";
 import {
   listTimetableModuleInstances,
   type TimetableModuleInstanceRow,
@@ -33,7 +34,6 @@ import {
 import { listProgrammes } from "../../services/programmeService";
 import { listTimetableModules } from "../../services/timetableService";
 import {
-  listScheduledTimetableModuleIds,
   listTimetableClassrooms,
   pruneTimetableSessionsOutsideStudyWeeks,
   type TimetableClassroomRow,
@@ -65,7 +65,9 @@ export function DailyTimetablePage() {
   const [selectedDate, setSelectedDate] = useState("");
   const [dailyLoading, setDailyLoading] = useState(false);
   const [moduleGenerateLoading, setModuleGenerateLoading] = useState(false);
+  const [moduleClearLoading, setModuleClearLoading] = useState(false);
   const [generateModuleId, setGenerateModuleId] = useState("");
+  const [step4ProgrammeCode, setStep4ProgrammeCode] = useState("");
   const [schedulableModules, setSchedulableModules] = useState<TimetableModuleRow[]>(
     []
   );
@@ -126,16 +128,15 @@ export function DailyTimetablePage() {
     setSchedulableModulesLoading(true);
 
     try {
-      const [modules, scheduledIds] = await Promise.all([
-        listTimetableModules({
-          academicYear,
-          moduleTerm: term,
-        }),
-        listScheduledTimetableModuleIds({ academicYear }),
-      ]);
+      // All split/no-split modules for the term (including those whose weekly
+      // sessions were already removed — needed for "close module" cleanup).
+      const modules = await listTimetableModules({
+        academicYear,
+        moduleTerm: term,
+      });
 
       const rows = modules
-        .filter((row) => row.module_term === term && scheduledIds.has(row.id))
+        .filter((row) => row.module_term === term)
         .sort((a, b) =>
           String(a.module_instance_code ?? "").localeCompare(
             String(b.module_instance_code ?? "")
@@ -168,12 +169,17 @@ export function DailyTimetablePage() {
     [programmes]
   );
 
-  const schedulableModulesForProgramme = useMemo(() => {
-    if (!programmeCode) {
+  const step4ProgrammeFilterOptions = useMemo(
+    () => [...programmeCodes, MIXED_PROGRAMME_CODE],
+    [programmeCodes]
+  );
+
+  const schedulableModulesForStep4 = useMemo(() => {
+    if (!step4ProgrammeCode) {
       return schedulableModules;
     }
 
-    if (isMixedProgrammeCode(programmeCode)) {
+    if (isMixedProgrammeCode(step4ProgrammeCode)) {
       const knownProgrammeCodes = new Set(
         programmeCodes.map((code) => code.toUpperCase())
       );
@@ -189,19 +195,21 @@ export function DailyTimetablePage() {
       });
     }
 
-    return schedulableModules.filter((row) => row.programme_code === programmeCode);
-  }, [programmeCode, programmeCodes, schedulableModules]);
+    return schedulableModules.filter(
+      (row) => row.programme_code === step4ProgrammeCode
+    );
+  }, [step4ProgrammeCode, programmeCodes, schedulableModules]);
 
   useEffect(() => {
     if (
       generateModuleId &&
-      schedulableModulesForProgramme.some((row) => row.id === generateModuleId)
+      schedulableModulesForStep4.some((row) => row.id === generateModuleId)
     ) {
       return;
     }
 
-    setGenerateModuleId(schedulableModulesForProgramme[0]?.id ?? "");
-  }, [generateModuleId, schedulableModulesForProgramme]);
+    setGenerateModuleId(schedulableModulesForStep4[0]?.id ?? "");
+  }, [generateModuleId, schedulableModulesForStep4]);
 
   useEffect(() => {
     if (programmeCode) return;
@@ -333,7 +341,7 @@ export function DailyTimetablePage() {
       return;
     }
 
-    const selectedModule = schedulableModulesForProgramme.find(
+    const selectedModule = schedulableModulesForStep4.find(
       (row) => row.id === generateModuleId
     );
     const moduleLabel = selectedModule?.module_instance_code ?? generateModuleId;
@@ -381,6 +389,75 @@ export function DailyTimetablePage() {
       );
     } finally {
       setModuleGenerateLoading(false);
+    }
+  }
+
+  async function handleClearClosedModule() {
+    if (!generateModuleId) {
+      setMessage(t.dailyTimetableModuleSelectRequired);
+      return;
+    }
+
+    const selectedModule = schedulableModulesForStep4.find(
+      (row) => row.id === generateModuleId
+    );
+    const moduleLabel = selectedModule?.module_instance_code ?? generateModuleId;
+
+    const ok = window.confirm(
+      t.dailyTimetableModuleClearConfirm.replace("{module}", moduleLabel)
+    );
+
+    if (!ok) return;
+
+    setModuleClearLoading(true);
+    setMessage("");
+
+    try {
+      const cleared = await clearClosedTimetableModule({
+        timetableModuleId: generateModuleId,
+      });
+
+      setResult((current) => {
+        if (!current) return current;
+
+        const modules = current.modules.filter(
+          (row) => row.timetableModuleId !== generateModuleId
+        );
+        const entriesByDate = new Map<string, DailyTimetableEntry[]>();
+
+        for (const plan of modules) {
+          for (const entry of plan.entries) {
+            const bucket = entriesByDate.get(entry.sessionDate) ?? [];
+            bucket.push(entry);
+            entriesByDate.set(entry.sessionDate, bucket);
+          }
+        }
+
+        return {
+          ...current,
+          modules,
+          entriesByDate,
+          warnings: current.warnings.filter(
+            (warning) => !warning.startsWith(`${cleared.moduleInstanceCode}:`)
+          ),
+        };
+      });
+
+      setWeeklyRefreshToken((value) => value + 1);
+      await loadSchedulableModules();
+      await loadWeeklyContext();
+
+      setMessage(
+        t.dailyTimetableModuleCleared
+          .replace("{module}", cleared.moduleInstanceCode)
+          .replace("{count}", String(cleared.enrollmentClearedCount))
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : t.dailyTimetableModuleClearFailed
+      );
+    } finally {
+      setModuleClearLoading(false);
     }
   }
 
@@ -628,18 +705,37 @@ export function DailyTimetablePage() {
             </div>
 
             <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[180px]">
+                <label className="form-label">{t.programmeCode}</label>
+                <select
+                  className="form-select"
+                  value={step4ProgrammeCode}
+                  title={t.programmeCode}
+                  disabled={schedulableModulesLoading}
+                  onChange={(event) => setStep4ProgrammeCode(event.target.value)}
+                >
+                  <option value="">{t.allProgrammes}</option>
+                  {step4ProgrammeFilterOptions.map((code) => (
+                    <option key={code} value={code}>
+                      {formatProgrammeCodeOptionLabel(code)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="min-w-[280px]">
                 <label className="form-label">{t.selectModule}</label>
                 <select
                   className="form-select"
                   value={generateModuleId}
+                  title={t.selectModule}
                   disabled={
-                    schedulableModulesLoading || schedulableModulesForProgramme.length === 0
+                    schedulableModulesLoading || schedulableModulesForStep4.length === 0
                   }
                   onChange={(event) => setGenerateModuleId(event.target.value)}
                 >
                   <option value="">—</option>
-                  {schedulableModulesForProgramme.map((row) => (
+                  {schedulableModulesForStep4.map((row) => (
                     <option key={row.id} value={row.id}>
                       {row.module_instance_code} ({row.programme_code})
                     </option>
@@ -652,6 +748,7 @@ export function DailyTimetablePage() {
                 className="btn btn-primary inline-flex items-center gap-2"
                 disabled={
                   moduleGenerateLoading ||
+                  moduleClearLoading ||
                   schedulableModulesLoading ||
                   !generateModuleId
                 }
@@ -664,9 +761,26 @@ export function DailyTimetablePage() {
                 )}
                 {moduleGenerateLoading ? t.loading : t.buildDailyTimetableForModule}
               </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary text-red-700 border-red-200 hover:bg-red-50 inline-flex items-center gap-2"
+                disabled={
+                  moduleGenerateLoading ||
+                  moduleClearLoading ||
+                  schedulableModulesLoading ||
+                  !generateModuleId
+                }
+                onClick={() => void handleClearClosedModule()}
+              >
+                {moduleClearLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
+                {moduleClearLoading ? t.loading : t.clearClosedTimetableModule}
+              </button>
             </div>
 
-            {!schedulableModulesLoading && schedulableModulesForProgramme.length === 0 && (
+            {!schedulableModulesLoading && schedulableModulesForStep4.length === 0 && (
               <p className="text-sm text-slate-500">{t.dailyTimetableModuleEmpty}</p>
             )}
           </div>

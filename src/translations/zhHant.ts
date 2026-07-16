@@ -211,8 +211,8 @@ export const zhHant = {
   buildDailyTimetableForModule: "產生此科每日課表",
   dailyTimetableModuleStep: "4. 按科目產生每日課表",
   dailyTimetableModuleStepHint:
-    "在週課表只改某一科後，在此選擇該科，只重產此科的 L/T 標籤；其他科目不受影響。",
-  dailyTimetableModuleEmpty: "此學期與課程篩選下，沒有已儲存週課表的科目。",
+    "本區塊有獨立的課程篩選（與上方周課表篩選無關）。可只重產某一科的 L/T，或關閉確定不開的那一班。",
+  dailyTimetableModuleEmpty: "此學期與課程篩選下沒有科目。",
   dailyTimetableModuleSelectRequired: "請先選擇科目。",
   dailyTimetableModuleGenerateConfirm:
     "依週課表重產 {module} 的每日 L/T 標籤？\n\n此科已有的取消／補課手動設定可能被覆蓋。",
@@ -220,6 +220,12 @@ export const zhHant = {
     "{module} 沒有學習週課節，請先在週課表儲存排程。",
   dailyTimetableModuleGenerated:
     "已為 {module} 產生每日標籤（更新 {count} 筆課節）。",
+  clearClosedTimetableModule: "關閉此班（不開課）",
+  dailyTimetableModuleClearConfirm:
+    "確定關閉 {module} 並從時間表移除？\n\n將會：\n• 刪除全部課節（若周課表已人手清空也可）\n• 刪除教師安排\n• 清空分到此班的學生入讀班別（保留學習計劃科目行）\n• 刪除此 instance（Make Timetable 列表不再顯示）\n\n同科其他班不受影響。此操作不可復原。",
+  dailyTimetableModuleCleared:
+    "已關閉 {module}：課節／教師安排／instance 已刪除；已清空 {count} 筆學生入讀班別。",
+  dailyTimetableModuleClearFailed: "關閉科目失敗。",
   exportWeeklyDailyTimetableExcel: "匯出每周及每日 Excel",
   exportWeeklyDailyTimetableHint:
     "每周工作表：每個科目一行（星期、時段、課室）。每日工作表：各科目每個 L/T 課節（不含後備與已取消）。",

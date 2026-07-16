@@ -221,9 +221,9 @@ export const en = {
   buildDailyTimetableForModule: "Generate daily for this module",
   dailyTimetableModuleStep: "4. Daily timetable by module",
   dailyTimetableModuleStepHint:
-    "After changing one module in the weekly timetable, select it here to regenerate L/T labels for that module only. Other modules are not changed.",
+    "Use this section's own programme filter (independent of the weekly timetable filter above). Regenerate L/T for one module, or close a module that will not run.",
   dailyTimetableModuleEmpty:
-    "No modules with saved weekly sessions for this term and programme filter.",
+    "No modules found for this term and programme filter.",
   dailyTimetableModuleSelectRequired: "Select a module first.",
   dailyTimetableModuleGenerateConfirm:
     "Regenerate daily L/T labels for {module} from its weekly timetable?\n\nManual cancel/make-up edits on this module may be overwritten.",
@@ -231,6 +231,12 @@ export const en = {
     "{module} has no study-week sessions — save weekly timetable first.",
   dailyTimetableModuleGenerated:
     "Generated daily labels for {module} ({count} session row(s) updated).",
+  clearClosedTimetableModule: "Close module (will not run)",
+  dailyTimetableModuleClearConfirm:
+    "Close {module} and remove it from the timetable?\n\nThis will:\n• Delete all sessions (OK if weekly was already cleared)\n• Delete teaching assignment(s)\n• Clear enrolled class for students on this instance only (study plan rows kept)\n• Delete this instance from Make Timetable\n\nOther classes of the same module are not affected. This cannot be undone.",
+  dailyTimetableModuleCleared:
+    "Closed {module}: sessions/assignment/instance removed; cleared enrolled class for {count} student module row(s).",
+  dailyTimetableModuleClearFailed: "Failed to close module.",
   exportWeeklyDailyTimetableExcel: "Export weekly & daily Excel",
   exportWeeklyDailyTimetableHint:
     "Weekly sheet: one row per module timeslot (weekday, time, room). Daily sheet: every L/T session per module (no backup or cancelled).",
