@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { useAcademicYear } from "../../../../contexts/AcademicYearContext";
+import { useLanguage } from "../../../../contexts/LanguageContext";
+import {
+  formatProgrammeCodeOptionLabel,
+  isMixedProgrammeCode,
+  MIXED_PROGRAMME_CODE,
+} from "../../../../lib/timetableProgramme";
 import {
   cn,
   getDefaultQuotaPlanningAcademicYear,
@@ -8,11 +14,14 @@ import {
   getPreviousAcademicYear,
 } from "../../../../lib/utils";
 import {
+  downloadClassEnrollmentReportCsv,
   downloadModuleEnrollmentReportCsv,
   downloadStudentHeadcountReportCsv,
+  getClassEnrollmentReport,
   getModuleEnrollmentReport,
   getStudentHeadcountReport,
   listModuleEnrollmentStudyTerms,
+  type ClassEnrollmentReportRow,
   type ModuleEnrollmentReportRow,
   type StudentHeadcountGroupBy,
   type StudentHeadcountReportRow,
@@ -23,11 +32,16 @@ import {
   type NewIntakeReport,
 } from "../../../../services/newIntakeReportService";
 import { listProgrammes } from "../../../../services/programmeService";
+import type { ModuleTerm } from "../../../../types/common";
 
-type ReportTab = "students" | "modules" | "new_intake";
+const OFFERED_TERMS: ModuleTerm[] = ["Feb", "Jun", "Sep"];
+
+type ReportTab = "students" | "modules" | "new_intake" | "class_enrollment";
 
 export default function ReportsTab() {
-  const { academicYear: currentAcademicYear } = useAcademicYear();
+  const { academicYear: currentAcademicYear, currentOfferedTerm } =
+    useAcademicYear();
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<ReportTab>("students");
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -68,6 +82,22 @@ export default function ReportsTab() {
     null
   );
 
+  const [classEnrollmentAcademicYear, setClassEnrollmentAcademicYear] =
+    useState(defaultPlanningYear);
+  const [classEnrollmentOfferedTerm, setClassEnrollmentOfferedTerm] =
+    useState<ModuleTerm>(currentOfferedTerm);
+  const [classEnrollmentProgrammeCode, setClassEnrollmentProgrammeCode] =
+    useState("");
+  const [classEnrollmentIncludeBridging, setClassEnrollmentIncludeBridging] =
+    useState(false);
+  const [classEnrollmentProgrammeOptions, setClassEnrollmentProgrammeOptions] =
+    useState<
+      { code: string; name: string | null; type: string | null }[]
+    >([]);
+  const [classEnrollmentRows, setClassEnrollmentRows] = useState<
+    ClassEnrollmentReportRow[]
+  >([]);
+
   const totalStudentCount = useMemo(() => {
     return studentRows.reduce((sum, row) => sum + row.studentCount, 0);
   }, [studentRows]);
@@ -75,6 +105,21 @@ export default function ReportsTab() {
   const totalModuleEnrollmentCount = useMemo(() => {
     return moduleRows.reduce((sum, row) => sum + row.studentCount, 0);
   }, [moduleRows]);
+
+  const totalClassEnrollmentCount = useMemo(() => {
+    return classEnrollmentRows.reduce((sum, row) => sum + row.studentCount, 0);
+  }, [classEnrollmentRows]);
+
+  const totalClassEnrollmentUnassigned = useMemo(() => {
+    return classEnrollmentRows
+      .filter((row) => !row.enrolledClass)
+      .reduce((sum, row) => sum + row.studentCount, 0);
+  }, [classEnrollmentRows]);
+
+  const isClassEnrollmentMixed = useMemo(
+    () => isMixedProgrammeCode(classEnrollmentProgrammeCode),
+    [classEnrollmentProgrammeCode]
+  );
 
   const moduleProgrammeCodes = useMemo(() => {
     return Array.from(
@@ -98,6 +143,23 @@ export default function ReportsTab() {
 
     return backgrounds;
   }, [moduleRows]);
+
+  const classEnrollmentRowBackgroundByIndex = useMemo(() => {
+    const backgrounds: string[] = [];
+    let useAltBackground = false;
+    let previousModuleCode = "";
+
+    for (const row of classEnrollmentRows) {
+      if (row.moduleCode !== previousModuleCode) {
+        useAltBackground = !useAltBackground;
+        previousModuleCode = row.moduleCode;
+      }
+
+      backgrounds.push(useAltBackground ? "bg-slate-50" : "bg-white");
+    }
+
+    return backgrounds;
+  }, [classEnrollmentRows]);
 
   async function loadStudentReport() {
     setLoading(true);
@@ -130,6 +192,28 @@ export default function ReportsTab() {
     }
   }
 
+  async function loadClassEnrollmentReport() {
+    if (!classEnrollmentProgrammeCode) {
+      setClassEnrollmentRows([]);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const data = await getClassEnrollmentReport({
+        academicYear: classEnrollmentAcademicYear,
+        offeredTerm: classEnrollmentOfferedTerm,
+        programmeCode: classEnrollmentProgrammeCode,
+        includeBridging: classEnrollmentIncludeBridging,
+      });
+
+      setClassEnrollmentRows(data);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function loadReports() {
     if (activeTab === "students") {
       await loadStudentReport();
@@ -138,6 +222,11 @@ export default function ReportsTab() {
 
     if (activeTab === "modules") {
       await loadModuleReport();
+      return;
+    }
+
+    if (activeTab === "class_enrollment") {
+      await loadClassEnrollmentReport();
       return;
     }
 
@@ -227,6 +316,39 @@ export default function ReportsTab() {
     }
   }
 
+  async function handleExportClassEnrollment() {
+    if (!classEnrollmentProgrammeCode) {
+      return;
+    }
+
+    setExporting(true);
+
+    try {
+      const result = await downloadClassEnrollmentReportCsv({
+        academicYear: classEnrollmentAcademicYear,
+        offeredTerm: classEnrollmentOfferedTerm,
+        programmeCode: classEnrollmentProgrammeCode,
+        includeBridging: classEnrollmentIncludeBridging,
+        unassignedLabel: t.enrollmentProfileNotEnrolled,
+      });
+
+      alert(
+        t.classEnrollmentReportExported
+          .replace("{count}", String(result.rowCount))
+          .replace("{file}", result.fileName)
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : t.classEnrollmentReportExportFailed;
+
+      alert(`${t.classEnrollmentReportExportFailed}\n\n${message}`);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   useEffect(() => {
     if (activeTab !== "modules") {
       return;
@@ -248,6 +370,10 @@ export default function ReportsTab() {
     moduleStudyTerm,
     newIntakeAcademicYear,
     newIntakeProgrammeCode,
+    classEnrollmentAcademicYear,
+    classEnrollmentOfferedTerm,
+    classEnrollmentProgrammeCode,
+    classEnrollmentIncludeBridging,
   ]);
 
   useEffect(() => {
@@ -281,6 +407,53 @@ export default function ReportsTab() {
       }
     })();
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "class_enrollment") return;
+
+    void (async () => {
+      try {
+        const programmes = await listProgrammes();
+        const map = new Map<
+          string,
+          { code: string; name: string | null; type: string | null }
+        >();
+
+        for (const row of programmes ?? []) {
+          const code = String(row.programme_code ?? "").trim();
+          if (!code) continue;
+          if (!map.has(code)) {
+            map.set(code, {
+              code,
+              name: row.programme_name ?? null,
+              type: row.programme_type ?? null,
+            });
+          }
+        }
+
+        setClassEnrollmentProgrammeOptions(
+          Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code))
+        );
+      } catch {
+        setClassEnrollmentProgrammeOptions([]);
+      }
+    })();
+  }, [activeTab]);
+
+  const classEnrollmentProgrammeSelectOptions = useMemo(() => {
+    return [
+      ...classEnrollmentProgrammeOptions,
+      { code: MIXED_PROGRAMME_CODE, name: t.mixedProgramme, type: null },
+    ];
+  }, [classEnrollmentProgrammeOptions, t.mixedProgramme]);
+
+  useEffect(() => {
+    setClassEnrollmentAcademicYear(defaultPlanningYear);
+  }, [defaultPlanningYear]);
+
+  useEffect(() => {
+    setClassEnrollmentOfferedTerm(currentOfferedTerm);
+  }, [currentOfferedTerm]);
 
   return (
     <div className="space-y-4">
@@ -327,6 +500,18 @@ export default function ReportsTab() {
           onClick={() => setActiveTab("new_intake")}
         >
           New Intake
+        </button>
+
+        <button
+          type="button"
+          className={`px-4 py-2 rounded-md text-sm ${
+            activeTab === "class_enrollment"
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted"
+          }`}
+          onClick={() => setActiveTab("class_enrollment")}
+        >
+          {t.classEnrollmentReportTab}
         </button>
       </div>
 
@@ -762,6 +947,246 @@ export default function ReportsTab() {
                       <td className="p-2">{row.fromHdPt}</td>
                       <td className="p-2">{row.fromDegreeBridgingFt}</td>
                       <td className="p-2">{row.fromDegreeBridgingPt}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "class_enrollment" && (
+        <div className="space-y-4">
+          <div className="rounded-md border bg-white p-4 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {t.classEnrollmentReportDescription}
+            </p>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <div>
+                <label
+                  htmlFor="class-enrollment-academic-year"
+                  className="mb-1 block text-sm font-medium"
+                >
+                  {t.classEnrollmentReportAcademicYear}
+                </label>
+                <select
+                  id="class-enrollment-academic-year"
+                  value={classEnrollmentAcademicYear}
+                  onChange={(event) =>
+                    setClassEnrollmentAcademicYear(event.target.value)
+                  }
+                  disabled={loading}
+                  className="w-full rounded border px-3 py-2 text-sm"
+                >
+                  {academicYearOptions.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="class-enrollment-offered-term"
+                  className="mb-1 block text-sm font-medium"
+                >
+                  {t.classEnrollmentReportOfferedTerm}
+                </label>
+                <select
+                  id="class-enrollment-offered-term"
+                  value={classEnrollmentOfferedTerm}
+                  onChange={(event) =>
+                    setClassEnrollmentOfferedTerm(event.target.value as ModuleTerm)
+                  }
+                  disabled={loading}
+                  className="w-full rounded border px-3 py-2 text-sm"
+                >
+                  {OFFERED_TERMS.map((term) => (
+                    <option key={term} value={term}>
+                      {term}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="class-enrollment-programme-code"
+                  className="mb-1 block text-sm font-medium"
+                >
+                  {t.classEnrollmentReportProgramme}
+                </label>
+                <select
+                  id="class-enrollment-programme-code"
+                  value={classEnrollmentProgrammeCode}
+                  onChange={(event) =>
+                    setClassEnrollmentProgrammeCode(event.target.value)
+                  }
+                  disabled={loading}
+                  className="w-full rounded border px-3 py-2 text-sm"
+                >
+                  <option value="">{t.classEnrollmentReportProgramme}</option>
+                  {classEnrollmentProgrammeSelectOptions.map((row) => (
+                    <option key={row.code} value={row.code}>
+                      {formatProgrammeCodeOptionLabel(row.code)}
+                      {row.name && row.code !== MIXED_PROGRAMME_CODE
+                        ? ` — ${row.name}`
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+                {isClassEnrollmentMixed && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {t.mixedProgrammeHint}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={classEnrollmentIncludeBridging}
+                    onChange={(event) =>
+                      setClassEnrollmentIncludeBridging(event.target.checked)
+                    }
+                    disabled={loading}
+                  />
+                  {t.classEnrollmentReportIncludeBridging}
+                </label>
+              </div>
+
+              <div className="flex items-end gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-md bg-muted text-sm"
+                  onClick={loadClassEnrollmentReport}
+                  disabled={loading || !classEnrollmentProgrammeCode}
+                >
+                  Refresh
+                </button>
+
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-md bg-emerald-600 text-white text-sm disabled:opacity-50"
+                  onClick={handleExportClassEnrollment}
+                  disabled={
+                    loading || exporting || !classEnrollmentProgrammeCode
+                  }
+                >
+                  Export CSV
+                </button>
+              </div>
+            </div>
+
+            {classEnrollmentProgrammeCode && (
+              <div className="space-y-1 text-sm text-muted-foreground">
+                <p>
+                  {t.classEnrollmentReportTotalStudents}:{" "}
+                  <span className="font-medium text-foreground">
+                    {totalClassEnrollmentCount}
+                  </span>
+                </p>
+                <p>
+                  {t.classEnrollmentReportUnassigned}:{" "}
+                  <span className="font-medium text-foreground">
+                    {totalClassEnrollmentUnassigned}
+                  </span>
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-md border overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  {isClassEnrollmentMixed ? (
+                    <>
+                      <th className="p-2 text-left">
+                        {t.classEnrollmentReportMemberProgrammes}
+                      </th>
+                      <th className="p-2 text-left">{t.combinedCode}</th>
+                      <th className="p-2 text-left">
+                        {t.classEnrollmentReportMemberModules}
+                      </th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="p-2 text-left">Stage</th>
+                      <th className="p-2 text-left">Module Code</th>
+                      <th className="p-2 text-left">Module Name</th>
+                    </>
+                  )}
+                  <th className="p-2 text-left">{t.enrolledClass}</th>
+                  <th className="p-2 text-left">Mode</th>
+                  <th className="p-2 text-left">FT</th>
+                  <th className="p-2 text-left">PT</th>
+                  <th className="p-2 text-left">Total</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {loading && (
+                  <tr>
+                    <td className="p-3" colSpan={8}>
+                      Loading...
+                    </td>
+                  </tr>
+                )}
+
+                {!loading && !classEnrollmentProgrammeCode && (
+                  <tr>
+                    <td className="p-3" colSpan={8}>
+                      {t.classEnrollmentReportSelectProgramme}
+                    </td>
+                  </tr>
+                )}
+
+                {!loading &&
+                  classEnrollmentProgrammeCode &&
+                  classEnrollmentRows.length === 0 && (
+                    <tr>
+                      <td className="p-3" colSpan={8}>
+                        {t.classEnrollmentReportNoData}
+                      </td>
+                    </tr>
+                  )}
+
+                {!loading &&
+                  classEnrollmentRows.map((row, index) => (
+                    <tr
+                      key={`${row.moduleCode}-${row.planStage}-${row.enrolledClass}-${index}`}
+                      className={cn(
+                        "border-t",
+                        classEnrollmentRowBackgroundByIndex[index],
+                        !row.enrolledClass && row.studentCount > 0
+                          ? "bg-amber-50"
+                          : undefined
+                      )}
+                    >
+                      {isClassEnrollmentMixed ? (
+                        <>
+                          <td className="p-2">{row.memberProgrammes || "-"}</td>
+                          <td className="p-2 font-medium">{row.moduleCode}</td>
+                          <td className="p-2">{row.moduleName}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="p-2">{row.planStage}</td>
+                          <td className="p-2 font-medium">{row.moduleCode}</td>
+                          <td className="p-2">{row.moduleName}</td>
+                        </>
+                      )}
+                      <td className="p-2">
+                        {row.enrolledClass || t.classEnrollmentReportUnassigned}
+                      </td>
+                      <td className="p-2">{row.instanceMode ?? "-"}</td>
+                      <td className="p-2">{row.ftCount}</td>
+                      <td className="p-2">{row.ptCount}</td>
+                      <td className="p-2 font-semibold">{row.studentCount}</td>
                     </tr>
                   ))}
               </tbody>
