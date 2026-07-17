@@ -502,12 +502,20 @@ export function ModuleBasicSettingsEditor({
       });
 
       if (syncResult.timetableModuleCount > 0) {
+        const skippedPart =
+          syncResult.skippedInstanceCount > 0
+            ? t.moduleBasicSettingsTimetableSkipped.replace(
+                "{skipped}",
+                String(syncResult.skippedInstanceCount)
+              )
+            : "";
         setMessage(
           t.moduleBasicSettingsTimetableUpdated
             .replace("{modules}", String(syncResult.timetableModuleCount))
             .replace("{assignments}", String(syncResult.assignmentUpdatedCount))
             .replace("{instances}", String(syncResult.instanceUpdatedCount))
-            .replace("{sessions}", String(syncResult.sessionUpdatedCount))
+            .replace("{sessions}", String(syncResult.sessionUpdatedCount)) +
+            skippedPart
         );
       } else {
         setMessage(t.moduleBasicSettingsTimetableUpdateNone);

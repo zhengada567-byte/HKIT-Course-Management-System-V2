@@ -58,6 +58,8 @@ export const zhHant = {
     "將下方顯示的教師推送到週/日時間表（指派、班別與課堂）。",
   moduleBasicSettingsTimetableUpdated:
     "已更新 {modules} 個時間表科目的教師：{assignments} 項指派、{instances} 個班別、{sessions} 節課堂。",
+  moduleBasicSettingsTimetableSkipped:
+    " 已跳過 {skipped} 個班別（周時間表已單獨設定不同老師）。",
   moduleBasicSettingsTimetableUpdateNone:
     "找不到對應的時間表科目／課堂。請先全部儲存，並確認已完成分班／排課。",
   moduleTeacherAssignmentDescription:

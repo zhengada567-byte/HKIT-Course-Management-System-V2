@@ -64,6 +64,8 @@ export const en = {
     "Push the teachers shown below to weekly/daily timetable (assignments, instances, and sessions).",
   moduleBasicSettingsTimetableUpdated:
     "Updated timetable teachers for {modules} module(s): {assignments} assignment(s), {instances} instance(s), {sessions} session(s).",
+  moduleBasicSettingsTimetableSkipped:
+    " Skipped {skipped} class instance(s) that already have a different teacher set in the weekly timetable.",
   moduleBasicSettingsTimetableUpdateNone:
     "No matching timetable modules/sessions found for the loaded modules. Save basic settings first, and ensure split/schedule already exists.",
   moduleTeacherAssignmentDescription:

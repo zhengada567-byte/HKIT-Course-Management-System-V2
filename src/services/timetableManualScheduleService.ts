@@ -9,6 +9,7 @@ import {
 } from "../lib/timetableSchedulingRules";
 import type { TimetableModuleRow } from "../types";
 import type { TimetableModuleInstanceRow } from "./timetableModuleInstanceService";
+import { applyTeacherToTimetableModuleInstance } from "./moduleDefaultTimetableSyncService";
 import {
   addHoursToTime,
   buildTeachingDatesForWeekday,
@@ -533,6 +534,140 @@ export function weeklyPlacementIdentity(placement: WeeklyPlacementRecord) {
   ].join("|");
 }
 
+function weeklyTeacherKey(teacherName: string | null | undefined) {
+  return normalizeTeacherNameKey(String(teacherName ?? "").trim() || "TBC");
+}
+
+export function collectWeeklyTeacherChanges(params: {
+  savedGrid: WeeklyGridState;
+  draftGrid: WeeklyGridState;
+  editableInstanceCodes: string[];
+  instanceByCode?: Map<string, TimetableModuleInstanceRow>;
+}): Array<{ placement: WeeklyPlacementRecord; teacherName: string }> {
+  const editable = new Set(
+    params.editableInstanceCodes
+      .map((code) => String(code ?? "").trim().toUpperCase())
+      .filter(Boolean)
+  );
+
+  const savedTeachers = new Map<string, string>();
+
+  for (const placement of collectWeeklyPlacements(params.savedGrid)) {
+    if (!editable.has(placement.moduleInstanceCode.toUpperCase())) {
+      continue;
+    }
+
+    savedTeachers.set(
+      weeklyPlacementIdentity(placement),
+      weeklyTeacherKey(placement.teacherName)
+    );
+  }
+
+  const changes: Array<{ placement: WeeklyPlacementRecord; teacherName: string }> =
+    [];
+
+  for (const placement of collectWeeklyPlacements(params.draftGrid)) {
+    if (!editable.has(placement.moduleInstanceCode.toUpperCase())) {
+      continue;
+    }
+
+    const identity = weeklyPlacementIdentity(placement);
+    const previousTeacher = savedTeachers.get(identity);
+    const nextTeacher = weeklyTeacherKey(placement.teacherName);
+
+    if (previousTeacher === undefined) {
+      const instance = params.instanceByCode?.get(
+        placement.moduleInstanceCode.toUpperCase()
+      );
+      const instanceTeacher = weeklyTeacherKey(instance?.instance_teacher_name);
+
+      if (nextTeacher === instanceTeacher) {
+        continue;
+      }
+
+      changes.push({
+        placement,
+        teacherName: String(placement.teacherName ?? "").trim() || "TBC",
+      });
+      continue;
+    }
+
+    if (previousTeacher === nextTeacher) {
+      continue;
+    }
+
+    changes.push({
+      placement,
+      teacherName: String(placement.teacherName ?? "").trim() || "TBC",
+    });
+  }
+
+  return changes;
+}
+
+async function persistWeeklyTeacherChanges(params: {
+  academicYear: string;
+  savedGrid: WeeklyGridState;
+  draftGrid: WeeklyGridState;
+  editableInstanceCodes: string[];
+  instanceByCode?: Map<string, TimetableModuleInstanceRow>;
+  createdBy?: string | null;
+}) {
+  const changes = collectWeeklyTeacherChanges(params);
+
+  if (changes.length === 0) {
+    return { teacherUpdatedCount: 0 };
+  }
+
+  const timetableModules = await listTimetableModulesByInstanceCodes({
+    academicYear: params.academicYear,
+    moduleInstanceCodes: changes.map(
+      (change) => change.placement.moduleInstanceCode
+    ),
+  });
+
+  const moduleByInstanceCode = new Map(
+    timetableModules.map((row) => [
+      String(row.module_instance_code ?? "").trim().toUpperCase(),
+      row,
+    ])
+  );
+
+  let teacherUpdatedCount = 0;
+
+  for (const change of changes) {
+    const timetableModule = moduleByInstanceCode.get(
+      change.placement.moduleInstanceCode.toUpperCase()
+    );
+
+    if (!timetableModule) {
+      throw new Error(
+        `Cannot update teacher for "${change.placement.moduleInstanceCode}": timetable module not found.`
+      );
+    }
+
+    await applyTeacherToTimetableModuleInstance({
+      academicYear: params.academicYear,
+      target: {
+        timetableModule,
+        teacherName: change.teacherName,
+        teachingStatus: "PT",
+        mode:
+          timetableModule.mode === "Day" ||
+          timetableModule.mode === "Night" ||
+          timetableModule.mode === "Saturday"
+            ? timetableModule.mode
+            : "Night",
+      },
+      updatedBy: params.createdBy ?? null,
+    });
+
+    teacherUpdatedCount += 1;
+  }
+
+  return { teacherUpdatedCount };
+}
+
 export function collectWeeklyPlacements(
   grid: WeeklyGridState
 ): WeeklyPlacementRecord[] {
@@ -684,5 +819,14 @@ export async function persistWeeklyTimetableDraft(params: {
     savedCount += 1;
   }
 
-  return { savedCount, removedCount };
+  const { teacherUpdatedCount } = await persistWeeklyTeacherChanges({
+    academicYear: params.academicYear,
+    savedGrid: params.savedGrid,
+    draftGrid: params.draftGrid,
+    editableInstanceCodes: params.editableInstanceCodes,
+    instanceByCode: params.instanceByCode,
+    createdBy: params.createdBy ?? null,
+  });
+
+  return { savedCount, removedCount, teacherUpdatedCount };
 }

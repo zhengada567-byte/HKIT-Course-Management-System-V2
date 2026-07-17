@@ -5,11 +5,13 @@ import { getProgrammeFamilyKey } from "../../../../lib/crossProgrammeCombine";
 import { dedupeJoinedModuleName } from "../../../../lib/moduleDisplay";
 import {
   resolveSchedulingIdentities,
+  normalizeTeacherNameKey,
   type SchedulingCombineMember,
   type StreamYearSchedulingIdentity,
 } from "../../../../lib/timetableSchedulingRules";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../contexts/AuthContext";
+import { listTeachers } from "../../../../services/teacherService";
 import { listTimetableModuleInstances,
   type TimetableModuleInstanceRow,
 } from "../../../../services/timetableModuleInstanceService";
@@ -20,6 +22,7 @@ import {
   buildWeeklyTimetableGridFromSessions,
   cloneWeeklyGridState,
   collectWeeklyPlacements,
+  collectWeeklyTeacherChanges,
   getRemainingClassroomsForWeeklyCell,
   persistWeeklyTimetableDraft,
   wouldWeeklyPlacementConflict,
@@ -32,7 +35,8 @@ import {
   type TimetableScheduleTerm,
 } from "../../../../services/timetableScheduleService";
 import { listTimetableModulesByInstanceCodes } from "../../../../services/timetableService";
-import type { TimetableModuleRow } from "../../../../types";
+import type { TeacherRow, TimetableModuleRow } from "../../../../types";
+import { InstanceTeacherSelect } from "./InstanceTeacherSelect";
 
 const weekdays: Array<{ id: 1 | 2 | 3 | 4 | 5 | 6; label: string }> = [
   { id: 1, label: "Mon" },
@@ -57,6 +61,7 @@ type EditDialogState = {
   end: string;
   item: WeeklyGridItem;
   roomCode: string;
+  teacherName: string;
 };
 
 type ViewScope = "all" | "programme";
@@ -377,6 +382,7 @@ export function WeeklyTimetableEditor(props: {
   const [loadedInstancesByCode, setLoadedInstancesByCode] = useState<
     Map<string, TimetableModuleInstanceRow>
   >(new Map());
+  const [teachers, setTeachers] = useState<TeacherRow[]>([]);
 
   const editableInstanceCodes = useMemo(
     () =>
@@ -566,6 +572,12 @@ export function WeeklyTimetableEditor(props: {
     }
   }, [refreshToken, panelOpen, viewScope, loadWeeklyTimetable]);
 
+  useEffect(() => {
+    void listTeachers(academicYear)
+      .then(setTeachers)
+      .catch(() => setTeachers([]));
+  }, [academicYear]);
+
   const isDirty = useMemo(() => {
     if (!weeklyGrid || !savedGrid) return false;
 
@@ -591,8 +603,19 @@ export function WeeklyTimetableEditor(props: {
       if (!savedKeys.has(key)) return true;
     }
 
+    if (
+      collectWeeklyTeacherChanges({
+        savedGrid,
+        draftGrid: weeklyGrid,
+        editableInstanceCodes: Array.from(editableInstanceCodeSet),
+        instanceByCode,
+      }).length > 0
+    ) {
+      return true;
+    }
+
     return false;
-  }, [editableInstanceCodeSet, savedGrid, weeklyGrid]);
+  }, [editableInstanceCodeSet, instanceByCode, savedGrid, weeklyGrid]);
 
   function handleRemoveItem(params: {
     weekday: 1 | 2 | 3 | 4 | 5 | 6;
@@ -642,21 +665,28 @@ export function WeeklyTimetableEditor(props: {
       end: params.end,
       item: params.item,
       roomCode: params.item.roomCode,
+      teacherName: params.item.teacherName || "TBC",
     });
   }
 
   function handleConfirmEdit() {
     if (!editDialog || !weeklyGrid) return;
 
-    const { weekday, start, end, item, roomCode } = editDialog;
+    const { weekday, start, end, item, roomCode, teacherName } = editDialog;
     const nextRoomCode = roomCode.trim();
+    const nextTeacherName = String(teacherName ?? "").trim() || "TBC";
 
     if (!nextRoomCode) {
       setEditError("Room is required.");
       return;
     }
 
-    if (nextRoomCode === item.roomCode) {
+    const roomUnchanged = nextRoomCode === item.roomCode;
+    const teacherUnchanged =
+      normalizeTeacherNameKey(nextTeacherName) ===
+      normalizeTeacherNameKey(item.teacherName || "TBC");
+
+    if (roomUnchanged && teacherUnchanged) {
       setEditDialog(null);
       setEditError(null);
       return;
@@ -675,6 +705,7 @@ export function WeeklyTimetableEditor(props: {
     const updatedPlacement: WeeklyGridItem = {
       ...item,
       roomCode: nextRoomCode,
+      teacherName: nextTeacherName,
     };
 
     const conflict = wouldWeeklyPlacementConflict(others, updatedPlacement);
@@ -820,8 +851,12 @@ export function WeeklyTimetableEditor(props: {
       });
 
       await loadWeeklyTimetable();
+      const teacherPart =
+        (result.teacherUpdatedCount ?? 0) > 0
+          ? `，更新 ${result.teacherUpdatedCount} 位老師`
+          : "";
       setSaveMessage(
-        `已儲存至系統：新增 ${result.savedCount} 項，移除 ${result.removedCount} 項。其他 PL 自動排課會讀取這些已儲存時段。`
+        `已儲存至系統：新增 ${result.savedCount} 項，移除 ${result.removedCount} 項${teacherPart}。其他 PL 自動排課會讀取這些已儲存時段。`
       );
       onAfterSave?.();
     } catch (error) {
@@ -1010,9 +1045,8 @@ export function WeeklyTimetableEditor(props: {
 
           {!readOnly && (
           <p className="text-xs text-slate-600">
-            Use Edit to change the classroom only. To change the timeslot or teacher,
-            remove the module and add it again in the target slot (or update the
-            teacher in Step 4).
+            Use Edit to change the classroom or teacher. To change the timeslot,
+            remove the module and add it again in the target slot.
           </p>
           )}
 
@@ -1341,7 +1375,7 @@ export function WeeklyTimetableEditor(props: {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-lg border bg-white p-5 shadow-lg">
             <div className="text-base font-semibold text-slate-900">
-              Edit classroom
+              Edit classroom / teacher
             </div>
             <div className="mt-1 text-sm text-slate-600">
               {weekdays.find((d) => d.id === editDialog.weekday)?.label}{" "}
@@ -1367,9 +1401,15 @@ export function WeeklyTimetableEditor(props: {
 
               <div>
                 <label className="form-label">Teacher</label>
-                <div className="form-input bg-slate-50 text-slate-700">
-                  {editDialog.item.teacherName || "TBC"}
-                </div>
+                <InstanceTeacherSelect
+                  value={editDialog.teacherName}
+                  teachers={teachers}
+                  onChange={(nextTeacher) =>
+                    setEditDialog((prev) =>
+                      prev ? { ...prev, teacherName: nextTeacher } : prev
+                    )
+                  }
+                />
               </div>
 
               <div>
@@ -1427,7 +1467,7 @@ export function WeeklyTimetableEditor(props: {
                 className="btn btn-primary"
                 onClick={() => handleConfirmEdit()}
               >
-                Save classroom
+                Save
               </button>
             </div>
           </div>

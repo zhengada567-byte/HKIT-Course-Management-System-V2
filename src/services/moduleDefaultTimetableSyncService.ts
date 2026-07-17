@@ -1,7 +1,9 @@
+import { normalizeTeacherNameKey } from "../lib/timetableSchedulingRules";
 import { supabase } from "../lib/supabase";
 import { fetchAllPaginatedRows } from "../lib/supabasePagination";
 import {
   getAcademicYearVariants,
+  isTBC,
   normalizeAcademicYear,
   normalizeStream,
 } from "../lib/utils";
@@ -31,7 +33,25 @@ export type SyncTeachersFromDefaultsResult = {
   instanceUpdatedCount: number;
   sessionUpdatedCount: number;
   timetableModuleCount: number;
+  skippedInstanceCount: number;
 };
+
+export function instanceTeacherDiffersFromSyncProposal(
+  currentTeacher: string | null | undefined,
+  proposedTeacher: string
+): boolean {
+  const current = normalizeText(currentTeacher);
+
+  if (!current || isTBC(current)) {
+    return false;
+  }
+
+  const proposed = normalizeText(proposedTeacher) || "TBC";
+
+  return (
+    normalizeTeacherNameKey(current) !== normalizeTeacherNameKey(proposed)
+  );
+}
 
 function normalizeText(value: unknown) {
   return String(value ?? "").trim();
@@ -141,6 +161,153 @@ async function listAssignmentsForTimetableModuleIds(ids: string[]) {
   return Array.from(latestByModuleId.values());
 }
 
+type TimetableTeacherApplyTarget = {
+  timetableModule: TimetableModuleRow;
+  teacherName: string;
+  teachingStatus: TeachingStatus;
+  mode: TeachingMode;
+};
+
+export async function applyTeacherToTimetableModuleInstance(params: {
+  academicYear: string;
+  target: TimetableTeacherApplyTarget;
+  existingAssignment?: TeachingAssignmentRow | null;
+  updatedBy?: string | null;
+  updatedAt?: string;
+}): Promise<{
+  assignmentUpdated: boolean;
+  instanceUpdatedCount: number;
+  sessionUpdatedCount: number;
+}> {
+  const academicYear = normalizeAcademicYear(params.academicYear);
+  const yearVariants = getAcademicYearVariants(academicYear);
+  const now = params.updatedAt ?? new Date().toISOString();
+  const teacherName =
+    (await canonicalizeTeacherNameForAcademicYear({
+      academicYear,
+      teacherName: normalizeText(params.target.teacherName) || "TBC",
+    })) ?? (normalizeText(params.target.teacherName) || "TBC");
+
+  const existing = params.existingAssignment ?? null;
+
+  if (existing) {
+    const { error } = await supabase
+      .from("teaching_assignments")
+      .update({
+        teacher_name: teacherName,
+        teaching_status: params.target.teachingStatus,
+        updated_by: params.updatedBy ?? null,
+        updated_at: now,
+      })
+      .eq("id", existing.id);
+
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from("teaching_assignments").upsert(
+      {
+        timetable_module_id: params.target.timetableModule.id,
+        academic_year: params.target.timetableModule.academic_year,
+        teacher_name: teacherName,
+        teacher_title: null,
+        teacher_family_name: null,
+        teacher_other_name: null,
+        teacher_employment_type: null,
+        teaching_status: params.target.teachingStatus,
+        programme_type: null,
+        combined_code: params.target.timetableModule.combined_code,
+        combine_type: params.target.timetableModule.combine_type,
+        module_instance_code: params.target.timetableModule.module_instance_code,
+        module_term: params.target.timetableModule.module_term,
+        assignment_version: 1,
+        confirmed: false,
+        confirmed_at: null,
+        confirmed_by: null,
+        updated_by: params.updatedBy ?? null,
+      },
+      {
+        onConflict: "timetable_module_id,assignment_version",
+      }
+    );
+
+    if (error) throw error;
+  }
+
+  const { error: modeError } = await supabase
+    .from("timetable_modules")
+    .update({
+      mode: params.target.mode,
+      updated_at: now,
+    })
+    .eq("id", params.target.timetableModule.id);
+
+  if (modeError) throw modeError;
+
+  const instanceCode = normalizeText(
+    params.target.timetableModule.module_instance_code
+  );
+
+  let instanceUpdatedCount = 0;
+
+  if (instanceCode) {
+    const { data, error } = await supabase
+      .from("timetable_module_instances")
+      .update({
+        instance_teacher_name: teacherName,
+        instance_mode: params.target.mode,
+        updated_at: now,
+      })
+      .in("academic_year", yearVariants)
+      .eq("module_instance_code", instanceCode)
+      .select("id");
+
+    if (error) throw error;
+    instanceUpdatedCount = data?.length ?? 0;
+  }
+
+  const sessionIds = await fetchAllPaginatedRows<{ id: string }>({
+    fetchPage: ({ from, to }) =>
+      supabase
+        .from("timetable_sessions")
+        .select("id")
+        .eq("timetable_module_id", params.target.timetableModule.id)
+        .order("id", { ascending: true })
+        .range(from, to),
+  });
+
+  let sessionUpdatedCount = 0;
+
+  if (sessionIds.length > 0) {
+    sessionUpdatedCount = await updateSessionsTeacherName({
+      sessionIds: sessionIds.map((row) => row.id),
+      teacherName,
+      updatedAt: now,
+    });
+  } else if (instanceCode) {
+    const byCode = await fetchAllPaginatedRows<{ id: string }>({
+      fetchPage: ({ from, to }) =>
+        supabase
+          .from("timetable_sessions")
+          .select("id")
+          .in("academic_year", yearVariants)
+          .eq("module_instance_code", instanceCode)
+          .order("id", { ascending: true })
+          .range(from, to),
+    });
+
+    sessionUpdatedCount = await updateSessionsTeacherName({
+      sessionIds: byCode.map((row) => row.id),
+      teacherName,
+      updatedAt: now,
+    });
+  }
+
+  return {
+    assignmentUpdated: true,
+    instanceUpdatedCount,
+    sessionUpdatedCount,
+  };
+}
+
 async function updateSessionsTeacherName(params: {
   sessionIds: string[];
   teacherName: string;
@@ -185,6 +352,7 @@ export async function syncTeachersFromModuleDefaultsToTimetable(params: {
     instanceUpdatedCount: 0,
     sessionUpdatedCount: 0,
     timetableModuleCount: 0,
+    skippedInstanceCount: 0,
   };
 
   if (updates.length === 0) {
@@ -354,6 +522,9 @@ export async function syncTeachersFromModuleDefaultsToTimetable(params: {
     existingAssignments.map((row) => [row.timetable_module_id, row] as const)
   );
 
+  const now = new Date().toISOString();
+  const yearVariants = getAcademicYearVariants(academicYear);
+
   const teacherNameCache = new Map<string, string>();
   async function resolveTeacherName(raw: string) {
     const key = normalizeText(raw) || "TBC";
@@ -369,131 +540,76 @@ export async function syncTeachersFromModuleDefaultsToTimetable(params: {
     return resolved;
   }
 
-  let assignmentUpdatedCount = 0;
-  const now = new Date().toISOString();
-  const yearVariants = getAcademicYearVariants(academicYear);
+  const instanceCodes = Array.from(
+    new Set(
+      targets
+        .map((target) =>
+          normalizeText(target.timetableModule.module_instance_code).toUpperCase()
+        )
+        .filter(Boolean)
+    )
+  );
 
-  for (const target of targets) {
-    const teacherName = await resolveTeacherName(target.teacherName);
-    const existing = assignmentByModuleId.get(target.timetableModule.id);
+  const instanceTeacherByCode = new Map<string, string>();
 
-    if (existing) {
-      const { error } = await supabase
-        .from("teaching_assignments")
-        .update({
-          teacher_name: teacherName,
-          teaching_status: target.teachingStatus,
-          updated_by: params.updatedBy ?? null,
-          updated_at: now,
-        })
-        .eq("id", existing.id);
+  if (instanceCodes.length > 0) {
+    const instanceRows = await fetchAllPaginatedRows<{
+      module_instance_code: string;
+      instance_teacher_name: string | null;
+    }>({
+      fetchPage: ({ from, to }) =>
+        supabase
+          .from("timetable_module_instances")
+          .select("module_instance_code, instance_teacher_name")
+          .in("academic_year", yearVariants)
+          .in("module_instance_code", instanceCodes)
+          .order("module_instance_code", { ascending: true })
+          .range(from, to),
+    });
 
-      if (error) throw error;
-    } else {
-      const { error } = await supabase.from("teaching_assignments").upsert(
-        {
-          timetable_module_id: target.timetableModule.id,
-          academic_year: target.timetableModule.academic_year,
-          teacher_name: teacherName,
-          teacher_title: null,
-          teacher_family_name: null,
-          teacher_other_name: null,
-          teacher_employment_type: null,
-          teaching_status: target.teachingStatus,
-          programme_type: null,
-          combined_code: target.timetableModule.combined_code,
-          combine_type: target.timetableModule.combine_type,
-          module_instance_code: target.timetableModule.module_instance_code,
-          module_term: target.timetableModule.module_term,
-          assignment_version: 1,
-          confirmed: false,
-          confirmed_at: null,
-          confirmed_by: null,
-          updated_by: params.updatedBy ?? null,
-        },
-        {
-          onConflict: "timetable_module_id,assignment_version",
-        }
+    for (const row of instanceRows) {
+      const code = normalizeText(row.module_instance_code).toUpperCase();
+      if (!code) continue;
+      instanceTeacherByCode.set(
+        code,
+        normalizeText(row.instance_teacher_name)
       );
-
-      if (error) throw error;
     }
-
-    const { error: modeError } = await supabase
-      .from("timetable_modules")
-      .update({
-        mode: target.mode,
-        updated_at: now,
-      })
-      .eq("id", target.timetableModule.id);
-
-    if (modeError) throw modeError;
-
-    assignmentUpdatedCount += 1;
   }
 
+  let assignmentUpdatedCount = 0;
   let instanceUpdatedCount = 0;
   let sessionUpdatedCount = 0;
+  let skippedInstanceCount = 0;
 
   for (const target of targets) {
     const teacherName = await resolveTeacherName(target.teacherName);
     const instanceCode = normalizeText(
       target.timetableModule.module_instance_code
-    );
+    ).toUpperCase();
+    const currentTeacher = instanceCode
+      ? instanceTeacherByCode.get(instanceCode)
+      : undefined;
 
-    if (instanceCode) {
-      const { data, error } = await supabase
-        .from("timetable_module_instances")
-        .update({
-          instance_teacher_name: teacherName,
-          instance_mode: target.mode,
-          updated_at: now,
-        })
-        .in("academic_year", yearVariants)
-        .eq("module_instance_code", instanceCode)
-        .select("id");
-
-      if (error) throw error;
-      instanceUpdatedCount += data?.length ?? 0;
-    }
-
-    const sessionIds = await fetchAllPaginatedRows<{ id: string }>({
-      fetchPage: ({ from, to }) =>
-        supabase
-          .from("timetable_sessions")
-          .select("id")
-          .eq("timetable_module_id", target.timetableModule.id)
-          .order("id", { ascending: true })
-          .range(from, to),
-    });
-
-    if (sessionIds.length > 0) {
-      sessionUpdatedCount += await updateSessionsTeacherName({
-        sessionIds: sessionIds.map((row) => row.id),
-        teacherName,
-        updatedAt: now,
-      });
+    if (instanceTeacherDiffersFromSyncProposal(currentTeacher, teacherName)) {
+      skippedInstanceCount += 1;
       continue;
     }
 
-    if (!instanceCode) continue;
-
-    const byCode = await fetchAllPaginatedRows<{ id: string }>({
-      fetchPage: ({ from, to }) =>
-        supabase
-          .from("timetable_sessions")
-          .select("id")
-          .in("academic_year", yearVariants)
-          .eq("module_instance_code", instanceCode)
-          .order("id", { ascending: true })
-          .range(from, to),
-    });
-
-    sessionUpdatedCount += await updateSessionsTeacherName({
-      sessionIds: byCode.map((row) => row.id),
-      teacherName,
+    const applied = await applyTeacherToTimetableModuleInstance({
+      academicYear,
+      target,
+      existingAssignment: assignmentByModuleId.get(target.timetableModule.id),
+      updatedBy: params.updatedBy ?? null,
       updatedAt: now,
     });
+
+    if (applied.assignmentUpdated) {
+      assignmentUpdatedCount += 1;
+    }
+
+    instanceUpdatedCount += applied.instanceUpdatedCount;
+    sessionUpdatedCount += applied.sessionUpdatedCount;
   }
 
   return {
@@ -502,6 +618,7 @@ export async function syncTeachersFromModuleDefaultsToTimetable(params: {
     instanceUpdatedCount,
     sessionUpdatedCount,
     timetableModuleCount: targets.length,
+    skippedInstanceCount,
   };
 }
 
