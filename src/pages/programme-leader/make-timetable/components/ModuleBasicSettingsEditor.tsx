@@ -18,10 +18,7 @@ import {
   upsertModuleDefaultAssignments,
   type ProgrammeModuleTeacherRow,
 } from "../../../../services/moduleDefaultAssignmentService";
-import {
-  buildTeacherSyncUpdatesFromDrafts,
-  syncTeachersFromModuleDefaultsToTimetable,
-} from "../../../../services/moduleDefaultTimetableSyncService";
+import { syncTeachersFromModuleDefaultsToTimetable } from "../../../../services/moduleDefaultTimetableSyncService";
 import {
   isModuleOfferingActive,
   loadPlanningOfferingByModuleId,
@@ -150,6 +147,7 @@ export function ModuleBasicSettingsEditor({
   >(() => new Set());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [updatingTimetable, setUpdatingTimetable] = useState(false);
   const [creatingTeacher, setCreatingTeacher] = useState(false);
   const [showNewTeacherForm, setShowNewTeacherForm] = useState(false);
   const [teacherAvailabilityOpen, setTeacherAvailabilityOpen] = useState(false);
@@ -397,6 +395,29 @@ export function ModuleBasicSettingsEditor({
     }
   }
 
+  function buildDraftUpdatesForLoadedRows() {
+    return rows.map((row) => {
+      const key = moduleDefaultAssignmentKey(
+        row.module.module_code,
+        row.module.stream_code
+      );
+      const draft = drafts[key] ?? buildDraftFromRow(row, teachers, true);
+
+      return {
+        module: row.module,
+        draft,
+        input: buildModuleDefaultAssignmentInput({
+          academicYear: selectedAcademicYear,
+          module: row.module,
+          teacherName: draft.teacherName,
+          teachingStatus: draft.teachingStatus,
+          teachers,
+          mode: draft.mode,
+        }),
+      };
+    });
+  }
+
   async function handleSaveAll() {
     if (!programmeCode || rows.length === 0) return;
 
@@ -418,43 +439,8 @@ export function ModuleBasicSettingsEditor({
     setMessage("");
 
     try {
-      const syncUpdates = buildTeacherSyncUpdatesFromDrafts({
-        rows: rows.map((row) => {
-          const key = moduleDefaultAssignmentKey(
-            row.module.module_code,
-            row.module.stream_code
-          );
-          const previous = buildDraftFromRow(row, teachers, true);
-          const draft = drafts[key] ?? previous;
-
-          return {
-            module: row.module,
-            previousTeacherName: previous.teacherName,
-            previousTeachingStatus: previous.teachingStatus,
-            previousMode: previous.mode,
-            nextTeacherName: draft.teacherName,
-            nextTeachingStatus: draft.teachingStatus,
-            nextMode: draft.mode,
-          };
-        }),
-      });
-
-      const payload = rows.map((row) => {
-        const key = moduleDefaultAssignmentKey(
-          row.module.module_code,
-          row.module.stream_code
-        );
-        const draft = drafts[key] ?? buildDraftFromRow(row, teachers, true);
-
-        return buildModuleDefaultAssignmentInput({
-          academicYear: selectedAcademicYear,
-          module: row.module,
-          teacherName: draft.teacherName,
-          teachingStatus: draft.teachingStatus,
-          teachers,
-          mode: draft.mode,
-        });
-      });
+      const prepared = buildDraftUpdatesForLoadedRows();
+      const payload = prepared.map((row) => row.input);
 
       await upsertModuleDefaultAssignments(payload);
       await syncModuleOfferingsFromTeacherAssignment({
@@ -463,49 +449,75 @@ export function ModuleBasicSettingsEditor({
         moduleTerm,
         createdBy: user.id,
         modules: rows.map((row) => row.module),
-        offerings: rows.map((row) => {
-          const key = moduleDefaultAssignmentKey(
-            row.module.module_code,
-            row.module.stream_code
-          );
-          const draft = drafts[key] ?? buildDraftFromRow(row, teachers, true);
-
-          return {
-            moduleId: row.module.id,
-            offering: draft.offering,
-          };
-        }),
+        offerings: prepared.map((row) => ({
+          moduleId: row.module.id,
+          offering: row.draft.offering,
+        })),
       });
 
-      const syncResult =
-        syncUpdates.length > 0
-          ? await syncTeachersFromModuleDefaultsToTimetable({
-              academicYear: selectedAcademicYear,
-              updates: syncUpdates,
-              updatedBy: user.id,
-            })
-          : null;
-
       await loadRows();
+      setMessage(
+        t.moduleBasicSettingsSaved.replace("{count}", String(payload.length))
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
-      if (syncResult && syncResult.timetableModuleCount > 0) {
+  async function handleUpdateTimetable() {
+    if (!programmeCode || rows.length === 0) return;
+
+    if (!canEditAssignments) {
+      setMessage(
+        isReadOnlyYear
+          ? t.moduleTeacherReadOnlyYear
+          : t.featureUpdateLocksModuleTeacherBanner
+      );
+      return;
+    }
+
+    if (!user?.id) {
+      setMessage("Please login before updating the timetable.");
+      return;
+    }
+
+    setUpdatingTimetable(true);
+    setMessage("");
+
+    try {
+      const prepared = buildDraftUpdatesForLoadedRows();
+      const syncResult = await syncTeachersFromModuleDefaultsToTimetable({
+        academicYear: selectedAcademicYear,
+        updates: prepared.map((row) => ({
+          moduleCode: row.module.module_code,
+          programmeCode: row.module.programme_code,
+          streamCode: row.module.stream_code,
+          teacherName: row.draft.teacherName,
+          teachingStatus: row.draft.teachingStatus,
+          mode: row.draft.mode,
+        })),
+        updatedBy: user.id,
+      });
+
+      if (syncResult.timetableModuleCount > 0) {
         setMessage(
-          t.moduleBasicSettingsSavedWithTimetableSync
-            .replace("{saved}", String(payload.length))
+          t.moduleBasicSettingsTimetableUpdated
             .replace("{modules}", String(syncResult.timetableModuleCount))
             .replace("{assignments}", String(syncResult.assignmentUpdatedCount))
             .replace("{instances}", String(syncResult.instanceUpdatedCount))
             .replace("{sessions}", String(syncResult.sessionUpdatedCount))
         );
       } else {
-        setMessage(
-          t.moduleBasicSettingsSaved.replace("{count}", String(payload.length))
-        );
+        setMessage(t.moduleBasicSettingsTimetableUpdateNone);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Save failed.");
+      setMessage(
+        error instanceof Error ? error.message : "Update timetable failed."
+      );
     } finally {
-      setSaving(false);
+      setUpdatingTimetable(false);
     }
   }
 
@@ -516,7 +528,7 @@ export function ModuleBasicSettingsEditor({
     }
   }
 
-  const isBusy = loading || saving || creatingTeacher;
+  const isBusy = loading || saving || updatingTimetable || creatingTeacher;
   const controlsDisabled = isBusy || !canEditAssignments;
 
   return (
@@ -668,6 +680,16 @@ export function ModuleBasicSettingsEditor({
               onClick={() => void handleSaveAll()}
             >
               {saving ? t.loading : t.saveAll}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary whitespace-nowrap"
+              disabled={controlsDisabled || rows.length === 0}
+              title={t.moduleBasicSettingsUpdateTimetableHint}
+              onClick={() => void handleUpdateTimetable()}
+            >
+              {updatingTimetable ? t.loading : t.moduleBasicSettingsUpdateTimetable}
             </button>
           </div>
         </div>

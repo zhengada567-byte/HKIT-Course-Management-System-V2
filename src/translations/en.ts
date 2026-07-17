@@ -59,8 +59,13 @@ export const en = {
     "Set proposed teachers, teaching status, default mode (Day / Night / Sat), and whether each module is offered this year.",
   moduleBasicSettingsSaved:
     "Saved proposed teachers and offering for {count} module(s).",
-  moduleBasicSettingsSavedWithTimetableSync:
-    "Saved {saved} module(s). Pushed teacher changes to {modules} timetable module(s): {assignments} assignment(s), {instances} instance(s), {sessions} session(s).",
+  moduleBasicSettingsUpdateTimetable: "Update Timetable",
+  moduleBasicSettingsUpdateTimetableHint:
+    "Push the teachers shown below to weekly/daily timetable (assignments, instances, and sessions).",
+  moduleBasicSettingsTimetableUpdated:
+    "Updated timetable teachers for {modules} module(s): {assignments} assignment(s), {instances} instance(s), {sessions} session(s).",
+  moduleBasicSettingsTimetableUpdateNone:
+    "No matching timetable modules/sessions found for the loaded modules. Save basic settings first, and ensure split/schedule already exists.",
   moduleTeacherAssignmentDescription:
     "Select a programme to load proposed (default) teachers per module. Change teachers from the dropdown and save. New teachers are saved to the database and appear in the dropdown immediately.",
   loadModuleTeachers: "Load Modules",
