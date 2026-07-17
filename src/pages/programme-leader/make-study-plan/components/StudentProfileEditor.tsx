@@ -1539,13 +1539,22 @@ export default function StudentProfileEditor({
 
           <button
             type="button"
+            className="px-4 py-2 rounded-md bg-amber-600 text-white text-sm font-semibold shadow-sm ring-2 ring-amber-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => void handleSaveModules()}
+            disabled={savingModules || savingProfile}
+            title="保存模組列表並依模組重算學習狀態"
+          >
+            {savingModules ? "保存中..." : "保存修課計劃"}
+          </button>
+
+          <button
+            type="button"
             className="px-4 py-2 rounded-md bg-emerald-600 text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             onClick={handleExportStudyPlan}
             disabled={exporting || !student.id}
           >
             {exporting ? "Exporting..." : "Export CSV"}
           </button>
-
         </div>
       </div>
 
@@ -1563,16 +1572,16 @@ export default function StudentProfileEditor({
         saving={savingModules || savingProfile}
       />
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
         <button
           type="button"
-          className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-          onClick={handleSaveModules}
+          className="px-4 py-2 rounded-md bg-amber-600 text-white text-sm font-semibold shadow-sm ring-2 ring-amber-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={() => void handleSaveModules()}
           disabled={savingModules || savingProfile}
         >
           {savingModules ? "保存中..." : "保存修課計劃"}
         </button>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-amber-900">
           保存模組列表並依模組重算學習狀態；亦會寫入目前畫面上的學生資料。只改檔案時用「保存學生檔案」即可。
         </p>
       </div>
