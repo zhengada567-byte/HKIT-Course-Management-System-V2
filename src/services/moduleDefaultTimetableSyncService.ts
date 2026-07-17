@@ -1,4 +1,5 @@
 import { normalizeTeacherNameKey } from "../lib/timetableSchedulingRules";
+import { isTutorialTimetableSession } from "../lib/dailyTimetable";
 import { supabase } from "../lib/supabase";
 import { fetchAllPaginatedRows } from "../lib/supabasePagination";
 import {
@@ -264,11 +265,15 @@ export async function applyTeacherToTimetableModuleInstance(params: {
     instanceUpdatedCount = data?.length ?? 0;
   }
 
-  const sessionIds = await fetchAllPaginatedRows<{ id: string }>({
+  const sessionRows = await fetchAllPaginatedRows<{
+    id: string;
+    session_kind: string | null;
+    session_label: string | null;
+  }>({
     fetchPage: ({ from, to }) =>
       supabase
         .from("timetable_sessions")
-        .select("id")
+        .select("id, session_kind, session_label")
         .eq("timetable_module_id", params.target.timetableModule.id)
         .order("id", { ascending: true })
         .range(from, to),
@@ -276,26 +281,38 @@ export async function applyTeacherToTimetableModuleInstance(params: {
 
   let sessionUpdatedCount = 0;
 
-  if (sessionIds.length > 0) {
+  const lectureSessionIds = sessionRows
+    .filter((row) => !isTutorialTimetableSession(row))
+    .map((row) => row.id);
+
+  if (lectureSessionIds.length > 0) {
     sessionUpdatedCount = await updateSessionsTeacherName({
-      sessionIds: sessionIds.map((row) => row.id),
+      sessionIds: lectureSessionIds,
       teacherName,
       updatedAt: now,
     });
   } else if (instanceCode) {
-    const byCode = await fetchAllPaginatedRows<{ id: string }>({
+    const byCode = await fetchAllPaginatedRows<{
+      id: string;
+      session_kind: string | null;
+      session_label: string | null;
+    }>({
       fetchPage: ({ from, to }) =>
         supabase
           .from("timetable_sessions")
-          .select("id")
+          .select("id, session_kind, session_label")
           .in("academic_year", yearVariants)
           .eq("module_instance_code", instanceCode)
           .order("id", { ascending: true })
           .range(from, to),
     });
 
+    const lectureIdsByCode = byCode
+      .filter((row) => !isTutorialTimetableSession(row))
+      .map((row) => row.id);
+
     sessionUpdatedCount = await updateSessionsTeacherName({
-      sessionIds: byCode.map((row) => row.id),
+      sessionIds: lectureIdsByCode,
       teacherName,
       updatedAt: now,
     });

@@ -1,5 +1,33 @@
 import type { TimetableSessionStatus } from "./dailyTimetableSessionLabels";
 import type { DailyTimetableEntry } from "../services/dailyTimetableService";
+import { isTBC } from "./utils";
+
+export function resolveModuleDefaultTeacher(
+  entries: Array<Pick<DailyTimetableEntry, "teacherName">>
+): string | null {
+  const counts = new Map<string, number>();
+
+  for (const entry of entries) {
+    const name = String(entry.teacherName ?? "").trim();
+    if (!name || isTBC(name)) {
+      continue;
+    }
+
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+
+  let best: string | null = null;
+  let bestCount = 0;
+
+  for (const [name, count] of counts) {
+    if (count > bestCount) {
+      best = name;
+      bestCount = count;
+    }
+  }
+
+  return best;
+}
 
 export type DailySessionSlotTemplate = {
   startTime: string;

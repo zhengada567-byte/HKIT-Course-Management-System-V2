@@ -24,13 +24,13 @@ export interface DailySessionDraftInput {
   start_time: string;
   end_time: string;
   room_code: string;
+  teacher_name: string | null;
   status: TimetableSessionStatus;
   remark: string;
 }
 
 export interface PendingDailySessionAdd extends DailySessionDraftInput {
   clientId: string;
-  teacher_name?: string | null;
 }
 
 export function moduleEditorIsDirty(params: {
@@ -57,6 +57,7 @@ interface SessionSnapshot {
   start_time: string;
   end_time: string;
   room_code: string;
+  teacher_name: string | null;
   status: TimetableSessionStatus;
   remark: string;
 }
@@ -72,6 +73,7 @@ function snapshotFromRow(
     start_time: normalizeSessionTime(row.start_time).slice(0, 5),
     end_time: normalizeSessionTime(row.end_time).slice(0, 5),
     room_code: String(row.room_code ?? "").trim(),
+    teacher_name: String(row.teacher_name ?? "").trim() || null,
     status: row.status as TimetableSessionStatus,
     remark: String(row.remark ?? "").trim(),
   };
@@ -89,6 +91,7 @@ function snapshotFromDraft(
     start_time: normalizeSessionTime(draft.start_time).slice(0, 5),
     end_time: normalizeSessionTime(draft.end_time).slice(0, 5),
     room_code: String(draft.room_code ?? "").trim(),
+    teacher_name: String(draft.teacher_name ?? "").trim() || null,
     status: draft.status,
     remark: String(draft.remark ?? "").trim(),
   };
@@ -103,6 +106,7 @@ export function hasDraftChanges(
     start_time: entry.startTime,
     end_time: entry.endTime,
     room_code: entry.roomCode,
+    teacher_name: entry.teacherName ?? null,
     status: entry.status,
     remark: entry.remark ?? "",
   });
@@ -144,6 +148,12 @@ function buildChangeLines(before: SessionSnapshot, after: SessionSnapshot) {
       `${after.start_time}–${after.end_time}`
     ),
     formatFieldChange(before.label, "room", before.room_code, after.room_code),
+    formatFieldChange(
+      before.label,
+      "teacher",
+      before.teacher_name ?? "",
+      after.teacher_name ?? ""
+    ),
     formatFieldChange(before.label, "status", before.status, after.status),
     formatFieldChange(before.label, "remark", before.remark, after.remark),
   ].filter((line): line is string => Boolean(line));
@@ -170,7 +180,7 @@ export function buildModuleChangeSummary(params: {
 
   for (const pending of params.pendingAdds ?? []) {
     blocks.push(
-      `• New session — date: ${normalizeSessionDate(pending.session_date)}, time: ${normalizeSessionTime(pending.start_time).slice(0, 5)}–${normalizeSessionTime(pending.end_time).slice(0, 5)}, room: ${pending.room_code || "(empty)"}, status: ${pending.status}`
+      `• New session — date: ${normalizeSessionDate(pending.session_date)}, time: ${normalizeSessionTime(pending.start_time).slice(0, 5)}–${normalizeSessionTime(pending.end_time).slice(0, 5)}, room: ${pending.room_code || "(empty)"}, teacher: ${pending.teacher_name || "(empty)"}, status: ${pending.status}`
     );
   }
 
@@ -188,6 +198,7 @@ export function buildModuleChangeSummary(params: {
         start_time: entry.startTime,
         end_time: entry.endTime,
         room_code: entry.roomCode,
+        teacher_name: entry.teacherName ?? null,
         status: entry.status,
         remark: entry.remark ?? "",
       });
@@ -225,6 +236,7 @@ async function applySessionDraftUpdate(params: {
     start_time: normalizeSessionTime(params.draft.start_time),
     end_time: normalizeSessionTime(params.draft.end_time),
     room_code: String(params.draft.room_code).trim(),
+    teacher_name: String(params.draft.teacher_name ?? "").trim() || null,
     status: params.draft.status,
   };
 

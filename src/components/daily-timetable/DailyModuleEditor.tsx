@@ -3,8 +3,9 @@ import { CalendarDays, Plus, Trash2 } from "lucide-react";
 
 import { EmptyState } from "../ui/EmptyState";
 import { useLanguage } from "../../contexts/LanguageContext";
-import { buildDefaultNewSessionDraft } from "../../lib/dailyTimetableSessionDefaults";
+import { buildDefaultNewSessionDraft, resolveModuleDefaultTeacher } from "../../lib/dailyTimetableSessionDefaults";
 import type { TimetableSessionStatus } from "../../lib/dailyTimetableSessionLabels";
+import { InstanceTeacherSelect } from "../../pages/programme-leader/make-timetable/components/InstanceTeacherSelect";
 import {
   partitionDailyModuleEntries,
   type DailyTimetableBuildResult,
@@ -17,7 +18,9 @@ import {
   type DailySessionDraftInput,
   type PendingDailySessionAdd,
 } from "../../services/dailyTimetableModuleSaveService";
+import { listTeachers } from "../../services/teacherService";
 import type { TimetableClassroomRow, TimetableScheduleTerm } from "../../services/timetableScheduleService";
+import type { TeacherRow } from "../../types";
 import { displayStream } from "../../pages/programme-leader/make-timetable/helpers";
 
 type ViewMode = "module" | "date";
@@ -35,12 +38,18 @@ export type DailyModuleEditorProps = {
   onMessage: (message: string) => void;
 };
 
-function buildDraftFromEntry(entry: DailyTimetableEntry): DailySessionDraftInput {
+function buildDraftFromEntry(
+  entry: DailyTimetableEntry,
+  moduleDefaultTeacher: string | null = null
+): DailySessionDraftInput {
+  const sessionTeacher = String(entry.teacherName ?? "").trim();
+
   return {
     session_date: entry.sessionDate,
     start_time: entry.startTime.slice(0, 5),
     end_time: entry.endTime.slice(0, 5),
     room_code: entry.roomCode,
+    teacher_name: sessionTeacher || moduleDefaultTeacher || null,
     status: entry.status,
     remark: entry.remark ?? "",
   };
@@ -50,9 +59,11 @@ function initDraftsFromPlans(plans: DailyTimetableModulePlan[]) {
   const next: Record<string, DailySessionDraftInput> = {};
 
   for (const plan of plans) {
+    const moduleDefaultTeacher = resolveModuleDefaultTeacher(plan.entries);
+
     for (const entry of plan.entries) {
       if (!entry.sessionId) continue;
-      next[entry.sessionId] = buildDraftFromEntry(entry);
+      next[entry.sessionId] = buildDraftFromEntry(entry, moduleDefaultTeacher);
     }
   }
 
@@ -91,17 +102,16 @@ export function DailyModuleEditor({
     Record<string, Set<string>>
   >({});
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newSession, setNewSession] = useState<DailySessionDraftInput & {
-    teacherName: string | null;
-  }>({
+  const [newSession, setNewSession] = useState<DailySessionDraftInput>({
     session_date: "",
     start_time: "09:00",
     end_time: "13:00",
     room_code: "",
+    teacher_name: null,
     status: "normal",
     remark: "",
-    teacherName: null,
   });
+  const [teachers, setTeachers] = useState<TeacherRow[]>([]);
   const [savingModuleId, setSavingModuleId] = useState<string | null>(null);
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(
     () => new Set()
@@ -113,6 +123,20 @@ export function DailyModuleEditor({
     setPendingDeletesByModule({});
     setSelectedSessionIds(new Set());
   }, [result, modulePlans]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void listTeachers(academicYear).then((rows) => {
+      if (!cancelled) {
+        setTeachers(rows);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYear]);
 
   useEffect(() => {
     setSelectedSessionIds(new Set());
@@ -160,6 +184,23 @@ export function DailyModuleEditor({
       modulePlans.find((plan) => plan.timetableModuleId === selectedModuleId) ?? null,
     [modulePlans, selectedModuleId]
   );
+
+  const moduleDefaultTeachersById = useMemo(() => {
+    const map = new Map<string, string | null>();
+
+    for (const plan of modulePlans) {
+      map.set(
+        plan.timetableModuleId,
+        resolveModuleDefaultTeacher(plan.entries)
+      );
+    }
+
+    return map;
+  }, [modulePlans]);
+
+  const selectedModuleDefaultTeacher = selectedPlan
+    ? (moduleDefaultTeachersById.get(selectedPlan.timetableModuleId) ?? null)
+    : null;
 
   const selectedPendingAdds = pendingAddsByModule[selectedModuleId] ?? [];
   const selectedPendingDeletes =
@@ -246,7 +287,10 @@ export function DailyModuleEditor({
         for (const plan of modulePlans) {
           const entry = plan.entries.find((row) => row.sessionId === sessionId);
           if (entry) {
-            base = buildDraftFromEntry(entry);
+            base = buildDraftFromEntry(
+              entry,
+              moduleDefaultTeachersById.get(plan.timetableModuleId) ?? null
+            );
             break;
           }
         }
@@ -260,6 +304,7 @@ export function DailyModuleEditor({
             start_time: "09:00",
             end_time: "13:00",
             room_code: "",
+            teacher_name: null,
             status: "normal" as TimetableSessionStatus,
             remark: "",
           }),
@@ -270,12 +315,16 @@ export function DailyModuleEditor({
   }
 
   function resetModuleEditorState(moduleId: string, plan: DailyTimetableModulePlan) {
+    const moduleDefaultTeacher =
+      moduleDefaultTeachersById.get(moduleId) ??
+      resolveModuleDefaultTeacher(plan.entries);
+
     setDrafts((current) => {
       const next = { ...current };
 
       for (const entry of plan.entries) {
         if (!entry.sessionId) continue;
-        next[entry.sessionId] = buildDraftFromEntry(entry);
+        next[entry.sessionId] = buildDraftFromEntry(entry, moduleDefaultTeacher);
       }
 
       return next;
@@ -416,9 +465,9 @@ export function DailyModuleEditor({
       start_time: defaults.start_time,
       end_time: defaults.end_time,
       room_code: defaults.room_code,
+      teacher_name: defaults.teacherName,
       status: defaults.status,
       remark: defaults.remark,
-      teacherName: defaults.teacherName,
     });
     setShowAddForm(true);
   }
@@ -435,9 +484,9 @@ export function DailyModuleEditor({
       start_time: newSession.start_time,
       end_time: newSession.end_time,
       room_code: newSession.room_code,
+      teacher_name: newSession.teacher_name,
       status: newSession.status,
       remark: newSession.remark,
-      teacher_name: newSession.teacherName,
     };
 
     setPendingAddsByModule((current) => ({
@@ -738,6 +787,7 @@ export function DailyModuleEditor({
                 {showAddForm ? (
                   <AddSessionCard
                     newSession={newSession}
+                    teachers={teachers}
                     classrooms={classrooms}
                     onChange={setNewSession}
                     onCancel={() => setShowAddForm(false)}
@@ -750,6 +800,8 @@ export function DailyModuleEditor({
                   cancelled={selectedPlanPartitions.cancelled}
                   pendingAdds={selectedPendingAdds}
                   drafts={drafts}
+                  teachers={teachers}
+                  moduleDefaultTeacher={selectedModuleDefaultTeacher}
                   classrooms={classrooms}
                   selectedSessionIds={selectedSessionIds}
                   onToggleSessionSelection={toggleSessionSelection}
@@ -821,6 +873,8 @@ export function DailyModuleEditor({
               <EditableDailyTable
                 rows={dateEntries}
                 drafts={drafts}
+                teachers={teachers}
+                moduleDefaultTeachersById={moduleDefaultTeachersById}
                 classrooms={classrooms}
                 showModule
                 selectedSessionIds={selectedSessionIds}
@@ -867,16 +921,16 @@ function ModulePlanSummary({ plan }: { plan: DailyTimetableModulePlan }) {
 
 function AddSessionCard({
   newSession,
+  teachers,
   classrooms,
   onChange,
   onCancel,
   onAdd,
 }: {
-  newSession: DailySessionDraftInput & { teacherName: string | null };
+  newSession: DailySessionDraftInput;
+  teachers: TeacherRow[];
   classrooms: TimetableClassroomRow[];
-  onChange: (
-    value: DailySessionDraftInput & { teacherName: string | null }
-  ) => void;
+  onChange: (value: DailySessionDraftInput) => void;
   onCancel: () => void;
   onAdd: () => void;
 }) {
@@ -895,7 +949,7 @@ function AddSessionCard({
           </button>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-6">
+        <div className="grid gap-3 md:grid-cols-7">
           <div>
             <label className="form-label">{t.selectDate}</label>
             <input
@@ -947,6 +1001,16 @@ function AddSessionCard({
             </select>
           </div>
           <div>
+            <label className="form-label">{t.teacherName}</label>
+            <InstanceTeacherSelect
+              value={newSession.teacher_name}
+              teachers={teachers}
+              onChange={(teacherName) =>
+                onChange({ ...newSession, teacher_name: teacherName })
+              }
+            />
+          </div>
+          <div>
             <label className="form-label">{t.sessionStatus}</label>
             <select
               className="form-select"
@@ -982,6 +1046,8 @@ function EditableDailyModuleSessions({
   cancelled,
   pendingAdds,
   drafts,
+  teachers,
+  moduleDefaultTeacher,
   classrooms,
   showModule = false,
   selectedSessionIds,
@@ -997,6 +1063,8 @@ function EditableDailyModuleSessions({
   cancelled: DailyTimetableEntry[];
   pendingAdds: PendingDailySessionAdd[];
   drafts: Record<string, DailySessionDraftInput>;
+  teachers: TeacherRow[];
+  moduleDefaultTeacher: string | null;
   classrooms: TimetableClassroomRow[];
   showModule?: boolean;
   selectedSessionIds: Set<string>;
@@ -1025,6 +1093,7 @@ function EditableDailyModuleSessions({
             onRemove: () => onRemovePendingAdd(pending.clientId),
           }))}
           mode="pending"
+          teachers={teachers}
           classrooms={classrooms}
           showModule={showModule}
         />
@@ -1034,6 +1103,8 @@ function EditableDailyModuleSessions({
         title={t.dailyScheduledSessions}
         rows={scheduled}
         drafts={drafts}
+        teachers={teachers}
+        moduleDefaultTeacher={moduleDefaultTeacher}
         classrooms={classrooms}
         showModule={showModule}
         backupOptions={backup}
@@ -1050,6 +1121,8 @@ function EditableDailyModuleSessions({
           description={t.dailyBackupSessionsHint}
           rows={backup}
           drafts={drafts}
+          teachers={teachers}
+          moduleDefaultTeacher={moduleDefaultTeacher}
           classrooms={classrooms}
           showModule={showModule}
           highlightBackup
@@ -1066,6 +1139,8 @@ function EditableDailyModuleSessions({
           description={t.dailyCancelledSessionsHint}
           rows={cancelled}
           drafts={drafts}
+          teachers={teachers}
+          moduleDefaultTeacher={moduleDefaultTeacher}
           classrooms={classrooms}
           showModule={showModule}
           backupOptions={backup}
@@ -1093,6 +1168,9 @@ function SessionGroupTable({
   description,
   rows,
   drafts,
+  teachers,
+  moduleDefaultTeacher = null,
+  moduleDefaultTeachersById,
   classrooms,
   showModule = false,
   highlightBackup = false,
@@ -1109,6 +1187,9 @@ function SessionGroupTable({
   description?: string;
   rows: DailyTimetableEntry[] | PendingRow[];
   drafts?: Record<string, DailySessionDraftInput>;
+  teachers: TeacherRow[];
+  moduleDefaultTeacher?: string | null;
+  moduleDefaultTeachersById?: Map<string, string | null>;
   classrooms: TimetableClassroomRow[];
   showModule?: boolean;
   highlightBackup?: boolean;
@@ -1150,7 +1231,7 @@ function SessionGroupTable({
         ) : null}
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-[1020px] w-full text-sm">
+        <table className="min-w-[1180px] w-full text-sm">
           <thead className="bg-slate-50">
             <tr>
               {showModule ? (
@@ -1184,6 +1265,7 @@ function SessionGroupTable({
               <th className="px-3 py-2 text-left">{t.selectDate}</th>
               <th className="px-3 py-2 text-left">Time</th>
               <th className="px-3 py-2 text-left">Room</th>
+              <th className="px-3 py-2 text-left">{t.teacherName}</th>
               <th className="px-3 py-2 text-left">{t.sessionStatus}</th>
               <th className="px-3 py-2 text-left">{t.remark}</th>
               <th className="px-3 py-2 text-left">{t.actions}</th>
@@ -1195,18 +1277,27 @@ function SessionGroupTable({
                   <PendingSessionRow
                     key={row.key}
                     row={row}
+                    teachers={teachers}
                     classrooms={classrooms}
                   />
                 ))
-              : (rows as DailyTimetableEntry[]).map((row) => (
+              : (rows as DailyTimetableEntry[]).map((row) => {
+                  const rowModuleDefaultTeacher =
+                    moduleDefaultTeachersById?.get(row.timetableModuleId) ??
+                    moduleDefaultTeacher ??
+                    null;
+
+                  return (
                   <SessionEditRow
                     key={row.sessionId ?? `${row.moduleInstanceCode}-${row.sessionLabel}`}
                     row={row}
                     draft={
                       row.sessionId && drafts
-                        ? (drafts[row.sessionId] ?? buildDraftFromEntry(row))
-                        : buildDraftFromEntry(row)
+                        ? (drafts[row.sessionId] ??
+                            buildDraftFromEntry(row, rowModuleDefaultTeacher))
+                        : buildDraftFromEntry(row, rowModuleDefaultTeacher)
                     }
+                    teachers={teachers}
                     showModule={showModule}
                     highlightBackup={highlightBackup}
                     backupOptions={backupOptions}
@@ -1224,7 +1315,8 @@ function SessionGroupTable({
                     onApplyMakeupDraft={onApplyMakeupDraft}
                     onDeleteSession={onDeleteSession}
                   />
-                ))}
+                  );
+                })}
           </tbody>
         </table>
       </div>
@@ -1234,9 +1326,11 @@ function SessionGroupTable({
 
 function PendingSessionRow({
   row,
+  teachers,
   classrooms,
 }: {
   row: PendingRow;
+  teachers: TeacherRow[];
   classrooms: TimetableClassroomRow[];
 }) {
   const { t } = useLanguage();
@@ -1250,6 +1344,14 @@ function PendingSessionRow({
         {row.draft.start_time}–{row.draft.end_time}
       </td>
       <td className="px-3 py-2">{row.draft.room_code}</td>
+      <td className="px-3 py-2">
+        <InstanceTeacherSelect
+          value={row.draft.teacher_name}
+          teachers={teachers}
+          disabled
+          onChange={() => {}}
+        />
+      </td>
       <td className="px-3 py-2">{statusLabel(row.draft.status, t)}</td>
       <td className="px-3 py-2">{row.draft.remark || "—"}</td>
       <td className="px-3 py-2">
@@ -1268,6 +1370,7 @@ function PendingSessionRow({
 function SessionEditRow({
   row,
   draft,
+  teachers,
   showModule,
   highlightBackup,
   backupOptions,
@@ -1280,6 +1383,7 @@ function SessionEditRow({
 }: {
   row: DailyTimetableEntry;
   draft: DailySessionDraftInput;
+  teachers: TeacherRow[];
   showModule?: boolean;
   highlightBackup?: boolean;
   backupOptions?: DailyTimetableEntry[];
@@ -1301,7 +1405,7 @@ function SessionEditRow({
     return (
       <tr className="border-t">
         <td
-          colSpan={showModule ? 10 : 8}
+          colSpan={showModule ? 11 : 9}
           className="px-3 py-2 text-slate-500"
         >
           {row.sessionLabel} — not linked to a saved session
@@ -1409,6 +1513,15 @@ function SessionEditRow({
         </select>
       </td>
       <td className="px-3 py-2">
+        <InstanceTeacherSelect
+          value={draft.teacher_name}
+          teachers={teachers}
+          onChange={(teacherName) =>
+            onDraftChange(sessionId, { teacher_name: teacherName })
+          }
+        />
+      </td>
+      <td className="px-3 py-2">
         <select
           className="form-select min-w-28"
           value={draft.status}
@@ -1483,6 +1596,8 @@ function SessionEditRow({
 function EditableDailyTable({
   rows,
   drafts,
+  teachers,
+  moduleDefaultTeachersById,
   classrooms,
   showModule = false,
   selectedSessionIds,
@@ -1493,6 +1608,8 @@ function EditableDailyTable({
 }: {
   rows: DailyTimetableEntry[];
   drafts: Record<string, DailySessionDraftInput>;
+  teachers: TeacherRow[];
+  moduleDefaultTeachersById: Map<string, string | null>;
   classrooms: TimetableClassroomRow[];
   showModule?: boolean;
   selectedSessionIds: Set<string>;
@@ -1509,6 +1626,8 @@ function EditableDailyTable({
         title="Sessions on this date"
         rows={[...scheduled, ...cancelled]}
         drafts={drafts}
+        teachers={teachers}
+        moduleDefaultTeachersById={moduleDefaultTeachersById}
         classrooms={classrooms}
         showModule={showModule}
         backupOptions={backup}
@@ -1527,6 +1646,8 @@ function EditableDailyTable({
           title="Backup sessions on this date"
           rows={backup}
           drafts={drafts}
+          teachers={teachers}
+          moduleDefaultTeachersById={moduleDefaultTeachersById}
           classrooms={classrooms}
           showModule={showModule}
           highlightBackup

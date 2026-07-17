@@ -12,6 +12,18 @@ import { buildSessionLabelSequenceFromContactHours } from "./dailyTimetablePlan"
 
 export type DailySessionKind = "teaching" | "tutorial";
 
+export function isTutorialTimetableSession(params: {
+  session_kind?: string | null;
+  session_label?: string | null;
+}): boolean {
+  if (String(params.session_kind ?? "").trim() === "tutorial") {
+    return true;
+  }
+
+  const label = String(params.session_label ?? "").trim().toUpperCase();
+  return /^T\d+/.test(label);
+}
+
 export interface DailySessionLabelSlot {
   kind: DailySessionKind;
   label: string;
