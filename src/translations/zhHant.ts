@@ -52,6 +52,9 @@ export const zhHant = {
   moduleBasicSettings: "科目基本設定",
   moduleBasicSettingsDescription:
     "設定各科目的建議教師、任教狀態、預設 Mode（Day / Night / Sat），以及本年度是否開課。",
+  moduleBasicSettingsSaved: "已儲存 {count} 個科目的建議教師及開課設定。",
+  moduleBasicSettingsSavedWithTimetableSync:
+    "已儲存 {saved} 個科目。教師變更已同步至 {modules} 個時間表科目：{assignments} 項指派、{instances} 個班別、{sessions} 節課堂。",
   moduleTeacherAssignmentDescription:
     "選擇課程後載入各科目的建議教師，可從下拉選單重新選擇並儲存。按「新增教師」會寫入資料庫教師名冊，儲存後即可在下拉選單選用。",
   loadModuleTeachers: "載入科目",

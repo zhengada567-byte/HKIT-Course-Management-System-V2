@@ -19,6 +19,10 @@ import {
   type ProgrammeModuleTeacherRow,
 } from "../../../../services/moduleDefaultAssignmentService";
 import {
+  buildTeacherSyncUpdatesFromDrafts,
+  syncTeachersFromModuleDefaultsToTimetable,
+} from "../../../../services/moduleDefaultTimetableSyncService";
+import {
   isModuleOfferingActive,
   loadPlanningOfferingByModuleId,
   syncModuleOfferingsFromTeacherAssignment,
@@ -414,6 +418,27 @@ export function ModuleBasicSettingsEditor({
     setMessage("");
 
     try {
+      const syncUpdates = buildTeacherSyncUpdatesFromDrafts({
+        rows: rows.map((row) => {
+          const key = moduleDefaultAssignmentKey(
+            row.module.module_code,
+            row.module.stream_code
+          );
+          const previous = buildDraftFromRow(row, teachers, true);
+          const draft = drafts[key] ?? previous;
+
+          return {
+            module: row.module,
+            previousTeacherName: previous.teacherName,
+            previousTeachingStatus: previous.teachingStatus,
+            previousMode: previous.mode,
+            nextTeacherName: draft.teacherName,
+            nextTeachingStatus: draft.teachingStatus,
+            nextMode: draft.mode,
+          };
+        }),
+      });
+
       const payload = rows.map((row) => {
         const key = moduleDefaultAssignmentKey(
           row.module.module_code,
@@ -451,8 +476,32 @@ export function ModuleBasicSettingsEditor({
           };
         }),
       });
+
+      const syncResult =
+        syncUpdates.length > 0
+          ? await syncTeachersFromModuleDefaultsToTimetable({
+              academicYear: selectedAcademicYear,
+              updates: syncUpdates,
+              updatedBy: user.id,
+            })
+          : null;
+
       await loadRows();
-      setMessage(`Saved proposed teachers and offering for ${payload.length} module(s).`);
+
+      if (syncResult && syncResult.timetableModuleCount > 0) {
+        setMessage(
+          t.moduleBasicSettingsSavedWithTimetableSync
+            .replace("{saved}", String(payload.length))
+            .replace("{modules}", String(syncResult.timetableModuleCount))
+            .replace("{assignments}", String(syncResult.assignmentUpdatedCount))
+            .replace("{instances}", String(syncResult.instanceUpdatedCount))
+            .replace("{sessions}", String(syncResult.sessionUpdatedCount))
+        );
+      } else {
+        setMessage(
+          t.moduleBasicSettingsSaved.replace("{count}", String(payload.length))
+        );
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed.");
     } finally {
