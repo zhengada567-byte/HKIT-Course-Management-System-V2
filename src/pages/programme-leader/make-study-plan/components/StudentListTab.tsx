@@ -1,10 +1,20 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { TableViewport } from "../../../../components/tables/TableViewport";
+import { useLanguage } from "../../../../contexts/LanguageContext";
 import { getTermIndex } from "../helpers";
 import { formatProgrammeYearDisplay } from "../../../../lib/programmeYear";
 import type { StudyPlanStudent } from "../types";
-import { deleteStudyPlanStudent } from "../../../../services/studyPlanService";
+import {
+  getAutoGenerateEligibility,
+  type AutoGenerateEligibilityStatus,
+} from "../studyPlanAutoGenerate";
+import {
+  batchAutoGenerateStudyPlans,
+  deleteStudyPlanStudent,
+  getProgrammeTypeByCode,
+  listProfileIdsWithProgrammePlan,
+} from "../../../../services/studyPlanService";
 import {
   downloadStudyPlanCsv,
   type StudyPlanExportScope,
@@ -26,6 +36,20 @@ function normalizeStream(value: unknown): string {
 function displayStream(value: unknown): string {
   const stream = normalizeStream(value);
   return stream === "nil" ? "General" : stream;
+}
+
+function eligibilityLabel(
+  status: AutoGenerateEligibilityStatus,
+  t: ReturnType<typeof useLanguage>["t"]
+) {
+  if (status === "ready") return t.studyPlanAutoGenerateStatusReady;
+  if (status === "has_programme_plan") {
+    return t.studyPlanAutoGenerateStatusHasPlan;
+  }
+  if (status === "incomplete_profile") {
+    return t.studyPlanAutoGenerateStatusIncomplete;
+  }
+  return t.studyPlanAutoGenerateStatusIneligible;
 }
 
 type StudentSortKey =
@@ -155,6 +179,7 @@ export default function StudentListTab({
   onNew,
   onEdit,
 }: Props) {
+  const { t } = useLanguage();
   const [selectedProgrammeCode, setSelectedProgrammeCode] = useState("");
   const [selectedProgrammeStream, setSelectedProgrammeStream] = useState("");
   const [exportScope, setExportScope] =
@@ -163,6 +188,16 @@ export default function StudentListTab({
   const [exporting, setExporting] = useState(false);
   const [sortKey, setSortKey] = useState<StudentSortKey>("studentId");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [scanLoading, setScanLoading] = useState(false);
+  const [programmeType, setProgrammeType] = useState<string | null>(null);
+  const [profilesWithProgrammePlan, setProfilesWithProgrammePlan] = useState<
+    Set<string>
+  >(() => new Set());
+  const [selectedProfileIds, setSelectedProfileIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [batchGenerating, setBatchGenerating] = useState(false);
+  const [rescanToken, setRescanToken] = useState(0);
 
   function handleSortColumn(key: StudentSortKey) {
     if (sortKey === key) {
@@ -219,6 +254,243 @@ export default function StudentListTab({
       compareStudents(a, b, sortKey, sortDirection)
     );
   }, [filteredStudents, sortKey, sortDirection]);
+
+  const filteredProfileIds = useMemo(
+    () =>
+      filteredStudents
+        .map((student) => student.id)
+        .filter((id): id is string => Boolean(id)),
+    [filteredStudents]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function scanEligibleStudents() {
+      if (!selectedProgrammeCode) {
+        setProgrammeType(null);
+        setProfilesWithProgrammePlan(new Set());
+        setSelectedProfileIds(new Set());
+        return;
+      }
+
+      setScanLoading(true);
+
+      try {
+        const type = await getProgrammeTypeByCode(selectedProgrammeCode);
+
+        if (cancelled) {
+          return;
+        }
+
+        setProgrammeType(type ?? null);
+
+        const withPlan = await listProfileIdsWithProgrammePlan(filteredProfileIds);
+
+        if (cancelled) {
+          return;
+        }
+
+        setProfilesWithProgrammePlan(withPlan);
+
+        const autoSelected = new Set<string>();
+
+        for (const student of filteredStudents) {
+          if (!student.id) {
+            continue;
+          }
+
+          const status = getAutoGenerateEligibility({
+            student,
+            programmeType: type,
+            hasProgrammeModules: withPlan.has(student.id),
+          });
+
+          if (status === "ready") {
+            autoSelected.add(student.id);
+          }
+        }
+
+        setSelectedProfileIds(autoSelected);
+      } finally {
+        if (!cancelled) {
+          setScanLoading(false);
+        }
+      }
+    }
+
+    void scanEligibleStudents();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedProgrammeCode,
+    selectedProgrammeStream,
+    filteredStudents,
+    filteredProfileIds,
+    rescanToken,
+  ]);
+
+  const studentEligibilityById = useMemo(() => {
+    const map = new Map<string, AutoGenerateEligibilityStatus>();
+
+    for (const student of filteredStudents) {
+      if (!student.id) {
+        continue;
+      }
+
+      map.set(
+        student.id,
+        getAutoGenerateEligibility({
+          student,
+          programmeType,
+          hasProgrammeModules: profilesWithProgrammePlan.has(student.id),
+        })
+      );
+    }
+
+    return map;
+  }, [filteredStudents, programmeType, profilesWithProgrammePlan]);
+
+  const readyStudents = useMemo(
+    () =>
+      filteredStudents.filter(
+        (student) => student.id && studentEligibilityById.get(student.id) === "ready"
+      ),
+    [filteredStudents, studentEligibilityById]
+  );
+
+  const selectedReadyCount = useMemo(() => {
+    let count = 0;
+
+    for (const profileId of selectedProfileIds) {
+      if (studentEligibilityById.get(profileId) === "ready") {
+        count += 1;
+      }
+    }
+
+    return count;
+  }, [selectedProfileIds, studentEligibilityById]);
+
+  const allReadySelected =
+    readyStudents.length > 0 &&
+    readyStudents.every((student) => selectedProfileIds.has(student.id!));
+
+  const someReadySelected =
+    readyStudents.some((student) => selectedProfileIds.has(student.id!)) &&
+    !allReadySelected;
+
+  function toggleProfileSelection(profileId: string, checked: boolean) {
+    setSelectedProfileIds((current) => {
+      const next = new Set(current);
+
+      if (checked) {
+        next.add(profileId);
+      } else {
+        next.delete(profileId);
+      }
+
+      return next;
+    });
+  }
+
+  function toggleSelectAllReady(checked: boolean) {
+    setSelectedProfileIds((current) => {
+      const next = new Set(current);
+
+      for (const student of readyStudents) {
+        if (!student.id) {
+          continue;
+        }
+
+        if (checked) {
+          next.add(student.id);
+        } else {
+          next.delete(student.id);
+        }
+      }
+
+      return next;
+    });
+  }
+
+  async function handleBatchAutoGenerate() {
+    if (!selectedProgrammeCode) {
+      alert(t.studyPlanAutoGenerateSelectProgramme);
+      return;
+    }
+
+    const profileIds = Array.from(selectedProfileIds).filter(
+      (profileId) => studentEligibilityById.get(profileId) === "ready"
+    );
+
+    if (profileIds.length === 0) {
+      alert(t.studyPlanAutoGenerateNoSelection);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      t.studyPlanAutoGenerateConfirm.replace("{count}", String(profileIds.length))
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBatchGenerating(true);
+
+    try {
+      const studentsByProfileId = new Map(
+        filteredStudents
+          .filter((student) => student.id)
+          .map((student) => [student.id!, student])
+      );
+
+      const result = await batchAutoGenerateStudyPlans({
+        profileIds,
+        programmeCode: selectedProgrammeCode,
+        studentsByProfileId,
+      });
+
+      const lines = [
+        t.studyPlanAutoGenerateDoneSummary
+          .replace("{success}", String(result.successCount))
+          .replace("{failed}", String(result.failedCount)),
+      ];
+
+      const failures = result.results.filter((row) => !row.success);
+
+      if (failures.length > 0) {
+        lines.push("");
+        lines.push(t.studyPlanAutoGenerateFailures);
+
+        for (const row of failures.slice(0, 12)) {
+          const label = row.studentId
+            ? `${row.studentId} ${row.studentName}`.trim()
+            : t.studyPlanAutoGenerateSyncFailed;
+          lines.push(`• ${label}: ${row.message ?? "Failed"}`);
+        }
+
+        if (failures.length > 12) {
+          lines.push(`… +${failures.length - 12} more`);
+        }
+      }
+
+      alert(lines.join("\n"));
+      setRescanToken((token) => token + 1);
+      await onRefresh();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : t.studyPlanAutoGenerateBatchFailed;
+
+      alert(`${t.studyPlanAutoGenerateBatchFailed}\n\n${message}`);
+    } finally {
+      setBatchGenerating(false);
+    }
+  }
 
   async function handleDelete(student: StudyPlanStudent) {
     if (!student.id) return;
@@ -398,6 +670,57 @@ export default function StudentListTab({
         </div>
       </div>
 
+      <div className="shrink-0 rounded-md border border-blue-200 bg-blue-50/40 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-slate-900">
+              {t.studyPlanAutoGenerateTitle}
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              {t.studyPlanAutoGenerateDescription}
+            </p>
+            {selectedProgrammeCode ? (
+              <p className="text-xs text-slate-700">
+                {scanLoading
+                  ? t.studyPlanAutoGenerateScanning
+                  : t.studyPlanAutoGenerateSelectedSummary
+                      .replace("{selected}", String(selectedReadyCount))
+                      .replace("{ready}", String(readyStudents.length))}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded-md border bg-white px-3 py-2 text-sm disabled:opacity-50"
+              disabled={!selectedProgrammeCode || scanLoading || batchGenerating}
+              onClick={() => setRescanToken((token) => token + 1)}
+            >
+              {t.studyPlanAutoGenerateRescan}
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-blue-700 px-4 py-2 text-sm text-white disabled:opacity-50"
+              disabled={
+                !selectedProgrammeCode ||
+                scanLoading ||
+                batchGenerating ||
+                selectedReadyCount === 0
+              }
+              onClick={() => void handleBatchAutoGenerate()}
+            >
+              {batchGenerating
+                ? t.studyPlanAutoGenerateRunning
+                : t.studyPlanAutoGenerateRun.replace(
+                    "{count}",
+                    String(selectedReadyCount)
+                  )}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <details className="rounded-md border border-yellow-400 bg-yellow-100 p-4">
         <summary className="cursor-pointer rounded bg-yellow-200 px-2 py-1 text-sm font-semibold text-yellow-950">
           Export Study Plan (CSV)
@@ -462,6 +785,28 @@ export default function StudentListTab({
         <table className="data-table min-w-max text-sm">
           <thead>
             <tr>
+              <th className="sticky top-0 z-10 w-10 bg-slate-100 p-2 text-center">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300"
+                  checked={allReadySelected}
+                  disabled={
+                    !selectedProgrammeCode ||
+                    scanLoading ||
+                    readyStudents.length === 0
+                  }
+                  ref={(element) => {
+                    if (element) {
+                      element.indeterminate = someReadySelected;
+                    }
+                  }}
+                  aria-label={t.studyPlanAutoGenerateSelectAllReady}
+                  title={t.studyPlanAutoGenerateSelectAllReady}
+                  onChange={(event) =>
+                    toggleSelectAllReady(event.target.checked)
+                  }
+                />
+              </th>
               <SortableHeader
                 label="Student ID"
                 sortKey="studentId"
@@ -532,6 +877,9 @@ export default function StudentListTab({
                 sortDirection={sortDirection}
                 onSort={handleSortColumn}
               />
+              <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left text-sm font-semibold whitespace-nowrap">
+                {t.studyPlanAutoGeneratePlanColumn}
+              </th>
               <th className="sticky top-0 z-10 bg-slate-100 p-2 text-left whitespace-nowrap">
                 Actions
               </th>
@@ -541,7 +889,7 @@ export default function StudentListTab({
           <tbody>
             {loading && (
               <tr>
-                <td className="p-3" colSpan={11}>
+                <td className="p-3" colSpan={13}>
                   Loading...
                 </td>
               </tr>
@@ -549,7 +897,7 @@ export default function StudentListTab({
 
             {!loading && !selectedProgrammeCode && (
               <tr>
-                <td className="p-3 text-muted-foreground" colSpan={11}>
+                <td className="p-3 text-muted-foreground" colSpan={13}>
                   Please select a programme code to view students.
                 </td>
               </tr>
@@ -559,7 +907,7 @@ export default function StudentListTab({
               selectedProgrammeCode &&
               filteredStudents.length === 0 && (
                 <tr>
-                  <td className="p-3 text-muted-foreground" colSpan={11}>
+                  <td className="p-3 text-muted-foreground" colSpan={13}>
                     No students found for this programme and stream.
                   </td>
                 </tr>
@@ -567,8 +915,32 @@ export default function StudentListTab({
 
             {!loading &&
               selectedProgrammeCode &&
-              sortedStudents.map((student) => (
+              sortedStudents.map((student) => {
+                const eligibility = student.id
+                  ? studentEligibilityById.get(student.id) ?? "ineligible"
+                  : "ineligible";
+                const canSelect = eligibility === "ready" && Boolean(student.id);
+
+                return (
                 <tr key={student.id ?? student.studentId} className="border-t">
+                  <td className="p-2 text-center">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300"
+                      checked={Boolean(
+                        student.id && selectedProfileIds.has(student.id)
+                      )}
+                      disabled={!canSelect || scanLoading || batchGenerating}
+                      aria-label={`${t.studyPlanAutoGenerateSelectStudent} ${student.studentId}`}
+                      onChange={(event) => {
+                        if (!student.id) {
+                          return;
+                        }
+
+                        toggleProfileSelection(student.id, event.target.checked);
+                      }}
+                    />
+                  </td>
                   <td className="whitespace-nowrap p-2">{student.studentId}</td>
                   <td className="whitespace-nowrap p-2">{student.studentName}</td>
                   <td className="whitespace-nowrap p-2">{student.programmeCode}</td>
@@ -585,6 +957,21 @@ export default function StudentListTab({
                   <td className="whitespace-nowrap p-2">
                     <span className="rounded-full bg-muted px-2 py-1 text-xs">
                       {student.studentStatus ?? "potential"}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap p-2">
+                    <span
+                      className={`rounded-full px-2 py-1 text-xs ${
+                        eligibility === "ready"
+                          ? "bg-emerald-100 text-emerald-900"
+                          : eligibility === "has_programme_plan"
+                            ? "bg-slate-100 text-slate-700"
+                            : eligibility === "incomplete_profile"
+                              ? "bg-amber-100 text-amber-900"
+                              : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {eligibilityLabel(eligibility, t)}
                     </span>
                   </td>
                   <td className="whitespace-nowrap p-2 space-x-2">
@@ -613,7 +1000,8 @@ export default function StudentListTab({
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
           </tbody>
         </table>
       </TableViewport>

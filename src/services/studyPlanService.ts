@@ -50,6 +50,8 @@ import {
   getDegreeStartTermAfterBridging,
 } from "../pages/programme-leader/make-study-plan/studyPlanRules";
 
+import { isEligibleForAutoGenerateProfile } from "../pages/programme-leader/make-study-plan/studyPlanAutoGenerate";
+
 import { normalizeModuleType } from "./moduleService";
 
 import {
@@ -4044,4 +4046,238 @@ export async function listProgrammeStreamsByProgramme(
   const options = await listProgrammeOptions();
 
   return options.filter((item) => item.programmeCode === programmeCode);
+}
+
+export async function listProfileIdsWithProgrammePlan(
+  profileIds: string[]
+): Promise<Set<string>> {
+  const unique = Array.from(new Set(profileIds.filter(Boolean)));
+
+  if (unique.length === 0) {
+    return new Set();
+  }
+
+  const withPlan = new Set<string>();
+  const chunkSize = 100;
+
+  for (let index = 0; index < unique.length; index += chunkSize) {
+    const chunk = unique.slice(index, index + chunkSize);
+
+    const { data, error } = await supabase
+      .from("study_plan_modules")
+      .select("student_profile_id")
+      .eq("plan_stage", "programme")
+      .in("student_profile_id", chunk);
+
+    if (error) {
+      throw error;
+    }
+
+    for (const row of data ?? []) {
+      const profileId = String(row.student_profile_id ?? "").trim();
+
+      if (profileId) {
+        withPlan.add(profileId);
+      }
+    }
+  }
+
+  return withPlan;
+}
+
+export async function autoGenerateAndSaveStudyPlan(
+  profileId: string,
+  options?: {
+    skipPostSync?: boolean;
+    batch?: StudyPlanSaveBatchOptions;
+  }
+): Promise<{ assignedCount: number }> {
+  const { data: studentRow, error: studentError } = await supabase
+    .from("study_plan_students")
+    .select("*")
+    .eq("id", profileId)
+    .single();
+
+  if (studentError) {
+    throw studentError;
+  }
+
+  const student = await attachProgrammeTypeToStudent(fromStudentRow(studentRow));
+
+  if (
+    !isEligibleForAutoGenerateProfile(student, student.programmeType)
+  ) {
+    throw new Error(
+      "Student is not eligible for auto-generate (FT HD Y1 or FT Degree Y3 only)."
+    );
+  }
+
+  if (
+    !String(student.programmeCode ?? "").trim() ||
+    !String(student.programmeStream ?? "").trim() ||
+    !String(student.intakeTerm ?? "").trim()
+  ) {
+    throw new Error("Student profile is incomplete (programme, stream, or intake term missing).");
+  }
+
+  const { data: moduleRows, error: moduleError } = await supabase
+    .from("study_plan_modules")
+    .select("*")
+    .eq("student_profile_id", profileId);
+
+  if (moduleError) {
+    throw moduleError;
+  }
+
+  const savedModules = (moduleRows ?? []).map(fromModuleRow);
+
+  if (savedModules.some((module) => module.planStage === "programme")) {
+    throw new Error("Student already has programme-level study plan modules.");
+  }
+
+  const bridgingModules = savedModules.filter(
+    (module) => module.planStage === "bridging"
+  );
+
+  const catalogue = await loadProgrammeModules(
+    student.programmeCode,
+    student.programmeStream
+  );
+
+  if (catalogue.length === 0) {
+    throw new Error("No programme modules found in the module catalogue.");
+  }
+
+  const degree = isDegreeProgramme(student.programmeCode, student.programmeType);
+  const effectiveStartTerm = degree
+    ? getDegreeStartTermAfterBridging(bridgingModules, student.intakeTerm!)
+    : student.intakeTerm!;
+
+  const programmeTemplates = catalogue.map((template) => ({
+    ...template,
+    studentId: student.studentId,
+    studentProfileId: profileId,
+  }));
+
+  const generatedProgrammeModules = generateStudyPlanForStudent({
+    student,
+    modules: programmeTemplates,
+    startTerm: effectiveStartTerm,
+  });
+
+  const allModules = sortModulesForStudyPlan(
+    degree
+      ? [...bridgingModules, ...generatedProgrammeModules]
+      : generatedProgrammeModules
+  );
+
+  const assignedCount = allModules.filter(
+    (module) => module.status === "planned" && !!module.studyTerm
+  ).length;
+
+  if (assignedCount === 0) {
+    throw new Error(
+      "Generate completed, but no study terms were assigned. Check intake term and module catalogue."
+    );
+  }
+
+  await saveStudyPlanModules(student, allModules, {
+    skipPostSync: options?.skipPostSync ?? true,
+    skipDegreeReconcile: true,
+    batch: options?.batch,
+  });
+
+  return { assignedCount };
+}
+
+export interface StudyPlanBatchGenerateResult {
+  total: number;
+  successCount: number;
+  failedCount: number;
+  results: Array<{
+    profileId: string;
+    studentId: string;
+    studentName: string;
+    success: boolean;
+    message?: string;
+    assignedCount?: number;
+  }>;
+}
+
+export async function batchAutoGenerateStudyPlans(params: {
+  profileIds: string[];
+  programmeCode: string;
+  studentsByProfileId: Map<string, StudyPlanStudent>;
+}): Promise<StudyPlanBatchGenerateResult> {
+  const programmeType = await getProgrammeTypeByCode(params.programmeCode);
+  const batch: StudyPlanSaveBatchOptions = {
+    settings: await getStudyPlanSettingsCached(),
+    isDegreeProgramme: isDegreeProgrammeType(programmeType),
+  };
+
+  const results: StudyPlanBatchGenerateResult["results"] = [];
+  let successCount = 0;
+  let failedCount = 0;
+
+  for (const profileId of params.profileIds) {
+    const student = params.studentsByProfileId.get(profileId);
+    const studentId = student?.studentId ?? profileId;
+    const studentName = student?.studentName ?? "";
+
+    try {
+      const { assignedCount } = await autoGenerateAndSaveStudyPlan(profileId, {
+        skipPostSync: true,
+        batch,
+      });
+
+      successCount += 1;
+      results.push({
+        profileId,
+        studentId,
+        studentName,
+        success: true,
+        assignedCount,
+      });
+    } catch (error: unknown) {
+      failedCount += 1;
+
+      results.push({
+        profileId,
+        studentId,
+        studentName,
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to auto-generate study plan.",
+      });
+    }
+  }
+
+  if (successCount > 0) {
+    try {
+      await syncStudyPlanPostSave();
+    } catch (error: unknown) {
+      const message = formatStudyPlanSaveError(
+        error,
+        "Study plans were saved, but syncing timetable student numbers failed."
+      );
+
+      results.push({
+        profileId: "",
+        studentId: "",
+        studentName: "",
+        success: false,
+        message,
+      });
+      failedCount += 1;
+    }
+  }
+
+  return {
+    total: params.profileIds.length,
+    successCount,
+    failedCount,
+    results,
+  };
 }
