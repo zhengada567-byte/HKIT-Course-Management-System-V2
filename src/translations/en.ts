@@ -263,6 +263,37 @@ export const en = {
   loadDailyTimetable: "Load daily timetable",
   addSession: "Add session",
   sessionStatus: "Status",
+  sessionStatusNormal: "Normal",
+  sessionStatusCancel: "Cancelled",
+  sessionStatusMakeUp: "Make-up",
+  actions: "Actions",
+  deleteSession: "Delete",
+  deleteSelectedSessions: "Delete selected ({count})",
+  selectSession: "Select session",
+  selectAllSessionsInGroup: "Select all sessions in this group",
+  deleteDailySessionsBulkConfirm:
+    "Delete the following {count} session(s)?\n\n{list}\n\nClick Save module to apply and re-order L/T labels.",
+  dailyBulkDeleteQueued:
+    "Marked {count} session(s) for deletion. Click Save module to apply.",
+  deleteDailySessionConfirm:
+    "Permanently delete {label}?\n\nL/T labels will be re-ordered when you save.",
+  dailyDeleteSessionQueued:
+    "Session marked for deletion. Click Save module to apply.",
+  dailyAddSessionDefaultsHint:
+    "Time and room default to the most common pattern for this module.",
+  dailyAddSessionRequiredFields: "Date and room are required for a new session.",
+  dailyQueueAddSession: "Add to list",
+  dailyAddSessionQueued:
+    "Session added to the pending list. Click Save module to write to the timetable.",
+  dailyPendingSessions: "Pending new sessions",
+  dailyPendingSessionsHint: "These are saved when you click Save module.",
+  dailyPendingSessionLabel: "New",
+  removePendingSession: "Remove",
+  saveAllDailyChanges: "Save all changes",
+  dailyMultipleModulesUnsaved:
+    "{count} module(s) have unsaved changes.",
+  dailyMakeupDraftApplied:
+    "Make-up draft applied. Click Save module to store changes and send email.",
   remark: "Remark",
   remarkPlaceholder: "e.g. make-up reason",
   dailyScheduledSessions: "Scheduled sessions (L/T)",
@@ -284,7 +315,7 @@ export const en = {
     "Unsaved changes — save once to update all sessions and email timetable@hkit.edu.hk.",
   dailyModuleNoChanges: "No unsaved changes for this module.",
   dailyDateViewSaveHint:
-    "Switch to View by module to save changes and send the notification email.",
+    "Use Save module for the selected module, or Save all changes when multiple modules are edited.",
   applyMakeupDraft: "Draft make-up",
   excludeFromOffering: "Not Offered",
   restoreToOffering: "Restore to Offering",

@@ -1230,6 +1230,123 @@ export async function loadProgrammeDailyTimetable(params: {
   };
 }
 
+export async function reloadDailyModulePlan(params: {
+  academicYear: string;
+  term: TimetableScheduleTerm;
+  timetableModuleId: string;
+}): Promise<DailyTimetableModulePlan | null> {
+  const academicYear = normalizeAcademicYear(params.academicYear);
+  const { termSummary, termWeeks, excluded } = await loadTermCalendarContext({
+    academicYear,
+    term: params.term,
+  });
+
+  const { data: module, error } = await supabase
+    .from("timetable_modules")
+    .select("*")
+    .eq("id", params.timetableModuleId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!module) return null;
+
+  const sessions = await listSessionsForTimetableModule(module.id);
+  const studySessions = sessions.filter((row) =>
+    isIsoDateInTermStudyWeek(row.session_date, termWeeks)
+  );
+
+  if (studySessions.length === 0) {
+    return null;
+  }
+
+  const hours = await loadModuleCatalogContext(module.id);
+  const entries = sortDailyTimetableEntries(
+    studySessions.map((row) =>
+      sessionRowToDailyEntry(row, module as TimetableModuleRow, hours.programmeType)
+    )
+  );
+
+  const weekday =
+    inferWeekdayFromSessions(
+      studySessions.filter((row) => row.status !== "cancel")
+    ) ??
+    entries[0]?.weekday ??
+    0;
+
+  const programmeCode = String(module.programme_code ?? "").trim();
+  const isHd = isHdDailyTimetableModule({
+    programmeCode,
+    programmeType: hours.programmeType,
+  });
+
+  const dateSlots = buildWeekDateSlots({
+    termWeeks,
+    excluded,
+    primaryWeekday: weekday,
+  });
+
+  const labelSequence = buildSessionLabelSequenceFromContactHours({
+    programmeCode,
+    programmeType: hours.programmeType,
+    teachingContactHours: hours.teachingContactHours,
+    tutorialContactHours: hours.tutorialContactHours,
+    maxSlots: dateSlots.length,
+  });
+
+  return {
+    timetableModuleId: module.id,
+    moduleInstanceCode: String(module.module_instance_code ?? "").trim(),
+    moduleCode: entries[0]?.moduleCode ?? "",
+    moduleName: module.module_name,
+    programmeCode,
+    streamCode: String(module.stream_code ?? "").trim(),
+    moduleTerm: String(module.module_term ?? "").trim(),
+    isHd,
+    weekday,
+    weekdayLabel: weekdayLabel(weekday),
+    teachingContactHours: hours.teachingContactHours,
+    tutorialContactHours: hours.tutorialContactHours,
+    labelledSessionCount: labelSequence.length,
+    weeklySlotCount: entries.filter((row) => row.status !== "cancel").length,
+    outsideStudyWeekSlotCount: 0,
+    extraWeeklySlotCount: entries.filter((row) => row.isBackup).length,
+    labelSequence,
+    entries,
+    warnings: [],
+  };
+}
+
+export function replaceModuleInDailyResult(
+  current: DailyTimetableBuildResult,
+  plan: DailyTimetableModulePlan
+): DailyTimetableBuildResult {
+  const modules = current.modules.some(
+    (row) => row.timetableModuleId === plan.timetableModuleId
+  )
+    ? current.modules.map((row) =>
+        row.timetableModuleId === plan.timetableModuleId ? plan : row
+      )
+    : [...current.modules, plan].sort((a, b) =>
+        a.moduleInstanceCode.localeCompare(b.moduleInstanceCode)
+      );
+
+  const entriesByDate = new Map<string, DailyTimetableEntry[]>();
+
+  for (const modulePlan of modules) {
+    for (const entry of modulePlan.entries) {
+      const bucket = entriesByDate.get(entry.sessionDate) ?? [];
+      bucket.push(entry);
+      entriesByDate.set(entry.sessionDate, bucket);
+    }
+  }
+
+  return {
+    ...current,
+    modules,
+    entriesByDate,
+  };
+}
+
 export async function updateDailyTimetableSession(params: {
   sessionId: string;
   session_date?: string;

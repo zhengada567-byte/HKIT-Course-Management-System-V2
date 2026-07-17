@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Download, Loader2, RefreshCw } from "lucide-react";
+import { Download, Loader2, RefreshCw } from "lucide-react";
 
 import { DataTable } from "../../components/tables/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -14,6 +14,7 @@ import {
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
+import { DailyModuleEditor } from "../../components/daily-timetable/DailyModuleEditor";
 import { downloadWeeklyDailyTimetableExcel } from "../../services/dailyTimetableExportService";
 import { StudentWeeklyConflictPanel } from "./components/StudentWeeklyConflictPanel";
 import { WeeklyTimetableEditor } from "../programme-leader/make-timetable/components/WeeklyTimetableEditor";
@@ -22,6 +23,8 @@ import {
   mergeDailyTimetableModuleResult,
   persistDailyTimetableLabels,
   regenerateDailyTimetableForModule,
+  reloadDailyModulePlan,
+  replaceModuleInDailyResult,
   type DailyTimetableBuildResult,
   type DailyTimetableEntry,
   type DailyTimetableModulePlan,
@@ -41,8 +44,6 @@ import {
 } from "../../services/timetableScheduleService";
 import type { ProgrammeRow, TimetableModuleRow } from "../../types";
 
-type ViewMode = "module" | "date";
-
 const termOptions: TimetableScheduleTerm[] = ["Sep", "Feb"];
 
 export function DailyTimetablePage() {
@@ -60,9 +61,6 @@ export function DailyTimetablePage() {
   const [weeklyOpen, setWeeklyOpen] = useState(true);
   const [weeklyRefreshToken, setWeeklyRefreshToken] = useState(0);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("module");
-  const [selectedModuleId, setSelectedModuleId] = useState("");
-  const [selectedDate, setSelectedDate] = useState("");
   const [dailyLoading, setDailyLoading] = useState(false);
   const [moduleGenerateLoading, setModuleGenerateLoading] = useState(false);
   const [moduleClearLoading, setModuleClearLoading] = useState(false);
@@ -76,6 +74,20 @@ export function DailyTimetablePage() {
   const [result, setResult] = useState<DailyTimetableBuildResult | null>(null);
   const [message, setMessage] = useState("");
   const [exporting, setExporting] = useState(false);
+
+  async function handleRefreshDailyModule(timetableModuleId: string) {
+    const plan = await reloadDailyModulePlan({
+      academicYear,
+      term,
+      timetableModuleId,
+    });
+
+    if (!plan) return;
+
+    setResult((current) =>
+      current ? replaceModuleInDailyResult(current, plan) : current
+    );
+  }
 
   const startTimeOptions = useMemo(() => buildDayClassStartTimeOptions(), []);
 
@@ -119,8 +131,6 @@ export function DailyTimetablePage() {
 
   useEffect(() => {
     setResult(null);
-    setSelectedModuleId("");
-    setSelectedDate("");
     setGenerateModuleId("");
   }, [term]);
 
@@ -250,55 +260,6 @@ export function DailyTimetablePage() {
     return modules.filter((row) => row.programmeCode === dailyProgrammeFilter);
   }, [dailyProgrammeFilter, programmeCodes, result]);
 
-  const filteredModuleIds = useMemo(
-    () => new Set(filteredModules.map((row) => row.timetableModuleId)),
-    [filteredModules]
-  );
-
-  const availableDates = useMemo(() => {
-    if (!result) return [];
-
-    const dates = new Set<string>();
-
-    for (const plan of filteredModules) {
-      for (const entry of plan.entries) {
-        dates.add(entry.sessionDate);
-      }
-    }
-
-    return Array.from(dates).sort();
-  }, [filteredModules, result]);
-
-  useEffect(() => {
-    if (!result) return;
-
-    if (
-      selectedModuleId &&
-      filteredModules.some((row) => row.timetableModuleId === selectedModuleId)
-    ) {
-      return;
-    }
-
-    setSelectedModuleId(filteredModules[0]?.timetableModuleId ?? "");
-  }, [filteredModules, result, selectedModuleId]);
-
-  const selectedPlan = useMemo(() => {
-    if (!result || !selectedModuleId) return null;
-
-    return (
-      filteredModules.find((row) => row.timetableModuleId === selectedModuleId) ??
-      null
-    );
-  }, [filteredModules, result, selectedModuleId]);
-
-  const dateEntries = useMemo(() => {
-    if (!result || !selectedDate) return [];
-
-    return (result.entriesByDate.get(selectedDate) ?? []).filter((row) =>
-      filteredModuleIds.has(row.timetableModuleId)
-    );
-  }, [filteredModuleIds, result, selectedDate]);
-
   async function handlePruneOutsideStudyWeeks() {
     const ok = window.confirm(
       `Delete timetable sessions on revision/exam/marking weeks for ${academicYear} ${term} term?\n\nStudy weeks are capped at 14 per term.`
@@ -371,12 +332,6 @@ export function DailyTimetablePage() {
       }
 
       setResult((current) => mergeDailyTimetableModuleResult(current, moduleResult));
-      setSelectedModuleId(generateModuleId);
-      setSelectedDate(
-        moduleResult.modules[0]?.entries[0]?.sessionDate ??
-          Array.from(moduleResult.entriesByDate.keys()).sort()[0] ??
-          ""
-      );
 
       setMessage(
         t.dailyTimetableModuleGenerated
@@ -474,8 +429,6 @@ export function DailyTimetablePage() {
       const persisted = await persistDailyTimetableLabels(built);
 
       setResult(built);
-      setSelectedModuleId(built.modules[0]?.timetableModuleId ?? "");
-      setSelectedDate(Array.from(built.entriesByDate.keys()).sort()[0] ?? "");
 
       setMessage(
         built.modules.length === 0
@@ -814,90 +767,16 @@ export function DailyTimetablePage() {
 
           {result && result.modules.length > 0 && (
             <>
-              <div className="flex flex-wrap items-end gap-3">
-                <button
-                  type="button"
-                  className={`btn ${viewMode === "module" ? "btn-primary" : "btn-secondary"}`}
-                  onClick={() => setViewMode("module")}
-                >
-                  {t.viewByModule}
-                </button>
-                <button
-                  type="button"
-                  className={`btn ${viewMode === "date" ? "btn-primary" : "btn-secondary"}`}
-                  onClick={() => setViewMode("date")}
-                >
-                  {t.viewByDate}
-                </button>
-              </div>
-
-              {viewMode === "module" ? (
-                <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-                  <div className="card">
-                    <div className="card-body space-y-2">
-                      <label className="form-label">{t.selectModule}</label>
-                      <select
-                        className="form-select"
-                        value={selectedModuleId}
-                        onChange={(event) =>
-                          setSelectedModuleId(event.target.value)
-                        }
-                      >
-                        <option value="">—</option>
-                        {filteredModules.map((plan) => (
-                          <option
-                            key={plan.timetableModuleId}
-                            value={plan.timetableModuleId}
-                          >
-                            {plan.moduleInstanceCode} ({plan.programmeCode})
-                          </option>
-                        ))}
-                      </select>
-
-                      {selectedPlan && <ModulePlanSummary plan={selectedPlan} />}
-                    </div>
-                  </div>
-
-                  <div>
-                    {selectedPlan ? (
-                      <DailyEntriesTable rows={selectedPlan.entries} />
-                    ) : (
-                      <EmptyState message={t.selectModule} />
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
-                  <div className="card">
-                    <div className="card-body space-y-2">
-                      <label className="form-label flex items-center gap-1">
-                        <CalendarDays className="h-4 w-4" />
-                        {t.selectDate}
-                      </label>
-                      <select
-                        className="form-select"
-                        value={selectedDate}
-                        onChange={(event) => setSelectedDate(event.target.value)}
-                      >
-                        <option value="">—</option>
-                        {availableDates.map((iso) => (
-                          <option key={iso} value={iso}>
-                            {iso}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    {selectedDate && dateEntries.length > 0 ? (
-                      <DailyEntriesTable rows={dateEntries} showModule />
-                    ) : (
-                      <EmptyState message={t.selectDate} />
-                    )}
-                  </div>
-                </div>
-              )}
+              <DailyModuleEditor
+                academicYear={academicYear}
+                term={term}
+                result={result}
+                modulePlans={filteredModules}
+                classrooms={classrooms}
+                changedBy={user?.username ?? null}
+                onRefreshPlan={handleRefreshDailyModule}
+                onMessage={setMessage}
+              />
 
               <div className="card">
                 <div className="card-body">
@@ -960,101 +839,6 @@ export function DailyTimetablePage() {
         </div>
       </section>
       )}
-    </div>
-  );
-}
-
-function ModulePlanSummary({ plan }: { plan: DailyTimetableModulePlan }) {
-  return (
-    <div className="space-y-1 text-xs text-slate-600">
-      <p>
-        <span className="font-medium text-slate-800">{plan.moduleCode}</span>
-        {plan.moduleName ? ` · ${plan.moduleName}` : ""}
-      </p>
-      <p>
-        {plan.programmeCode} / {plan.streamCode || "nil"} · {plan.weekdayLabel}
-      </p>
-      <p>
-        Study-week slots {plan.weeklySlotCount} · L/T labels{" "}
-        {plan.labelledSessionCount}
-      </p>
-      <p className="font-mono text-[11px] leading-snug">
-        {plan.labelSequence.map((slot) => slot.label).join(" → ")}
-      </p>
-    </div>
-  );
-}
-
-function DailyEntriesTable({
-  rows,
-  showModule = false,
-}: {
-  rows: DailyTimetableEntry[];
-  showModule?: boolean;
-}) {
-  const { t } = useLanguage();
-
-  return (
-    <div className="card">
-      <div className="card-body">
-        <DataTable
-          rows={rows}
-          rowKey={(row) =>
-            `${row.timetableModuleId}|${row.sessionLabel}|${row.sessionDate}`
-          }
-          columns={[
-            ...(showModule
-              ? [
-                  {
-                    key: "module",
-                    header: t.moduleCode,
-                    render: (row: DailyTimetableEntry) => (
-                      <span className="font-mono text-sm">
-                        {row.moduleInstanceCode}
-                      </span>
-                    ),
-                  },
-                  {
-                    key: "programme",
-                    header: t.programmeCode,
-                    render: (row: DailyTimetableEntry) => row.programmeCode,
-                  },
-                ]
-              : []),
-            {
-              key: "label",
-              header: "Session",
-              render: (row) => (
-                <span className="font-semibold text-slate-900">
-                  {row.sessionLabel}
-                </span>
-              ),
-            },
-            {
-              key: "kind",
-              header: "Type",
-              render: (row) =>
-                row.sessionKind === "teaching" ? "Lecture" : "Tutorial",
-            },
-            {
-              key: "date",
-              header: t.selectDate,
-              render: (row) => row.sessionDate,
-            },
-            {
-              key: "time",
-              header: "Time",
-              render: (row) =>
-                `${row.startTime.slice(0, 5)} – ${row.endTime.slice(0, 5)}`,
-            },
-            {
-              key: "room",
-              header: "Room",
-              render: (row) => row.roomCode || "—",
-            },
-          ]}
-        />
-      </div>
     </div>
   );
 }

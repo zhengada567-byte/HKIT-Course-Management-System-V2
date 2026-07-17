@@ -1,5 +1,6 @@
 import { formatCancelledRemark } from "../lib/dailyTimetableSessionLabels";
 import { supabase } from "../lib/supabase";
+import { normalizeAcademicYear } from "../lib/utils";
 import {
   applyDailyLabelsToTimetableModule,
   loadModuleCatalogContext,
@@ -8,6 +9,7 @@ import {
   type DailyTimetableModulePlan,
 } from "./dailyTimetableService";
 import {
+  isIsoDateInTermStudyWeek,
   normalizeSessionDate,
   normalizeSessionTime,
   type TimetableScheduleTerm,
@@ -24,6 +26,28 @@ export interface DailySessionDraftInput {
   room_code: string;
   status: TimetableSessionStatus;
   remark: string;
+}
+
+export interface PendingDailySessionAdd extends DailySessionDraftInput {
+  clientId: string;
+  teacher_name?: string | null;
+}
+
+export function moduleEditorIsDirty(params: {
+  plan: DailyTimetableModulePlan;
+  drafts: Record<string, DailySessionDraftInput>;
+  pendingAdds?: PendingDailySessionAdd[];
+  pendingDeletes?: ReadonlySet<string>;
+}) {
+  if ((params.pendingAdds?.length ?? 0) > 0) {
+    return true;
+  }
+
+  if ((params.pendingDeletes?.size ?? 0) > 0) {
+    return true;
+  }
+
+  return moduleHasDraftChanges(params.plan, params.drafts);
 }
 
 interface SessionSnapshot {
@@ -133,11 +157,26 @@ export function buildModuleChangeSummary(params: {
   beforeById: Map<string, SessionSnapshot>;
   plan: DailyTimetableModulePlan;
   drafts: Record<string, DailySessionDraftInput>;
+  pendingAdds?: PendingDailySessionAdd[];
+  pendingDeletes?: ReadonlySet<string>;
 }) {
   const blocks: string[] = [];
 
+  for (const sessionId of params.pendingDeletes ?? []) {
+    const before = params.beforeById.get(sessionId);
+    if (!before) continue;
+    blocks.push(`• ${before.label} — deleted`);
+  }
+
+  for (const pending of params.pendingAdds ?? []) {
+    blocks.push(
+      `• New session — date: ${normalizeSessionDate(pending.session_date)}, time: ${normalizeSessionTime(pending.start_time).slice(0, 5)}–${normalizeSessionTime(pending.end_time).slice(0, 5)}, room: ${pending.room_code || "(empty)"}, status: ${pending.status}`
+    );
+  }
+
   for (const entry of params.plan.entries) {
     if (!entry.sessionId) continue;
+    if (params.pendingDeletes?.has(entry.sessionId)) continue;
 
     const draft = params.drafts[entry.sessionId];
     if (!draft || !hasDraftChanges(entry, draft)) continue;
@@ -214,8 +253,13 @@ export async function saveDailyTimetableModule(params: {
   term: TimetableScheduleTerm;
   plan: DailyTimetableModulePlan;
   drafts: Record<string, DailySessionDraftInput>;
+  pendingAdds?: PendingDailySessionAdd[];
+  pendingDeletes?: string[];
   changedBy?: string | null;
 }) {
+  const pendingDeletes = new Set(params.pendingDeletes ?? []);
+  const pendingAdds = params.pendingAdds ?? [];
+
   const beforeRows = await listModuleSessions(params.plan.timetableModuleId);
   const beforeById = new Map<string, SessionSnapshot>();
 
@@ -227,6 +271,8 @@ export async function saveDailyTimetableModule(params: {
     beforeById,
     plan: params.plan,
     drafts: params.drafts,
+    pendingAdds,
+    pendingDeletes,
   });
 
   if (!changeSummary.trim()) {
@@ -239,16 +285,31 @@ export async function saveDailyTimetableModule(params: {
     };
   }
 
+  const { module } = await loadModuleCatalogContext(params.plan.timetableModuleId);
+  const { termWeeks, excluded, termSummary } = await loadTermCalendarContext({
+    academicYear: params.academicYear,
+    term: params.term,
+  });
+
+  if (pendingDeletes.size > 0) {
+    const { error } = await supabase
+      .from("timetable_sessions")
+      .delete()
+      .in("id", Array.from(pendingDeletes));
+
+    if (error) throw error;
+  }
+
   const rowById = new Map(beforeRows.map((row) => [row.id, row]));
 
   const cancelUpdates = params.plan.entries.filter((entry) => {
-    if (!entry.sessionId) return false;
+    if (!entry.sessionId || pendingDeletes.has(entry.sessionId)) return false;
     const draft = params.drafts[entry.sessionId];
     return draft?.status === "cancel" && hasDraftChanges(entry, draft);
   });
 
   const otherUpdates = params.plan.entries.filter((entry) => {
-    if (!entry.sessionId) return false;
+    if (!entry.sessionId || pendingDeletes.has(entry.sessionId)) return false;
     const draft = params.drafts[entry.sessionId];
     if (!draft || draft.status === "cancel") return false;
     return hasDraftChanges(entry, draft);
@@ -274,11 +335,33 @@ export async function saveDailyTimetableModule(params: {
     });
   }
 
-  const { module } = await loadModuleCatalogContext(params.plan.timetableModuleId);
-  const { termWeeks, excluded, termSummary } = await loadTermCalendarContext({
-    academicYear: params.academicYear,
-    term: params.term,
-  });
+  for (const pending of pendingAdds) {
+    const sessionDate = normalizeSessionDate(pending.session_date);
+
+    if (!isIsoDateInTermStudyWeek(sessionDate, termWeeks)) {
+      throw new Error("Session date must fall within a study week.");
+    }
+
+    const { error } = await supabase.from("timetable_sessions").insert({
+      academic_year: normalizeAcademicYear(params.academicYear),
+      timetable_module_id: params.plan.timetableModuleId,
+      module_instance_code: module.module_instance_code,
+      module_code:
+        String(module.base_module_code ?? "").trim() || module.module_instance_code,
+      module_name: module.module_name,
+      session_date: sessionDate,
+      start_time: normalizeSessionTime(pending.start_time),
+      end_time: normalizeSessionTime(pending.end_time),
+      room_code: String(pending.room_code).trim(),
+      teacher_name: pending.teacher_name ?? null,
+      status: pending.status ?? "normal",
+      remark: pending.remark.trim() || null,
+      created_by: params.changedBy ?? null,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) throw error;
+  }
 
   await applyDailyLabelsToTimetableModule(
     params.plan.timetableModuleId,
@@ -298,7 +381,8 @@ export async function saveDailyTimetableModule(params: {
   });
 
   return {
-    updatedCount: cancelUpdates.length + otherUpdates.length,
+    updatedCount:
+      cancelUpdates.length + otherUpdates.length + pendingAdds.length + pendingDeletes.size,
     changeSummary,
     emailSent: emailResult.sent,
     emailStatus: emailResult.status,

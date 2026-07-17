@@ -251,6 +251,33 @@ export const zhHant = {
   loadDailyTimetable: "載入每日時間表",
   addSession: "新增課節",
   sessionStatus: "狀態",
+  sessionStatusNormal: "正常",
+  sessionStatusCancel: "取消",
+  sessionStatusMakeUp: "補課",
+  actions: "操作",
+  deleteSession: "刪除",
+  deleteSelectedSessions: "刪除已選 ({count})",
+  selectSession: "選取課節",
+  selectAllSessionsInGroup: "全選此區課節",
+  deleteDailySessionsBulkConfirm:
+    "確定刪除以下 {count} 節課堂？\n\n{list}\n\n請按「儲存此科目」後才會寫入並重排 L/T。",
+  dailyBulkDeleteQueued:
+    "已標記 {count} 節課堂待刪除，請按「儲存此科目」寫入。",
+  deleteDailySessionConfirm:
+    "確定永久刪除 {label}？\n\n儲存後會重新排列 L/T 編號。",
+  dailyDeleteSessionQueued: "已標記刪除，請按「儲存此科目」才會寫入。",
+  dailyAddSessionDefaultsHint: "時間與課室預設為此科目最常見的安排。",
+  dailyAddSessionRequiredFields: "請填寫日期及課室。",
+  dailyQueueAddSession: "加入清單",
+  dailyAddSessionQueued: "已加入待儲存清單，請按「儲存此科目」寫入時間表。",
+  dailyPendingSessions: "待新增課節",
+  dailyPendingSessionsHint: "按「儲存此科目」後才會寫入資料庫。",
+  dailyPendingSessionLabel: "新增",
+  removePendingSession: "移除",
+  saveAllDailyChanges: "儲存全部變更",
+  dailyMultipleModulesUnsaved: "有 {count} 個科目尚未儲存。",
+  dailyMakeupDraftApplied:
+    "已套用補課草稿，請按「儲存此科目」寫入並發送電郵通知。",
   remark: "備註",
   remarkPlaceholder: "例如補課原因",
   dailyScheduledSessions: "已編號課節（L/T）",
@@ -271,7 +298,8 @@ export const zhHant = {
   dailyModuleUnsavedChanges:
     "有未儲存變更 — 請一次儲存，系統會更新所有課節並發送電郵至 timetable@hkit.edu.hk。",
   dailyModuleNoChanges: "此科目沒有未儲存的變更。",
-  dailyDateViewSaveHint: "請改用「按科目檢視」以儲存並發送通知電郵。",
+  dailyDateViewSaveHint:
+    "可儲存目前選定科目，若多個科目有變更則用「儲存全部變更」。",
   applyMakeupDraft: "草稿補課",
   excludeFromOffering: "不開課",
   restoreToOffering: "還原開課",
