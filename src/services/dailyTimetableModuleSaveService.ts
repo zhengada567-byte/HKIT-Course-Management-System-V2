@@ -8,6 +8,7 @@ import {
   type DailyTimetableEntry,
   type DailyTimetableModulePlan,
 } from "./dailyTimetableService";
+import { listAcademicCalendarTimeBreaks } from "./academicCalendarService";
 import {
   isIsoDateInTermStudyWeek,
   normalizeSessionDate,
@@ -31,6 +32,60 @@ export interface DailySessionDraftInput {
 
 export interface PendingDailySessionAdd extends DailySessionDraftInput {
   clientId: string;
+}
+
+type TimeBreak = {
+  breakName: string;
+  startIso: string; // YYYY-MM-DD
+  endIso: string; // YYYY-MM-DD
+  startMinutes: number;
+  endMinutes: number;
+  startTimeText: string; // HH:mm
+  endTimeText: string; // HH:mm
+};
+
+function parseTimeToMinutes(time: string): number {
+  const text = String(time ?? "").trim().slice(0, 5);
+  const [hhText, mmText] = text.split(":");
+
+  const hh = Number(hhText);
+  const mm = Number(mmText);
+
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return NaN;
+  if (hh < 0 || hh > 23) return NaN;
+  if (mm < 0 || mm > 59) return NaN;
+
+  return hh * 60 + mm;
+}
+
+function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number) {
+  return aStart < bEnd && bStart < aEnd;
+}
+
+function findOverlappingTimeBreaks(params: {
+  sessionDate: string; // YYYY-MM-DD
+  startTime: string; // HH:mm:ss or HH:mm
+  endTime: string; // HH:mm:ss or HH:mm
+  timeBreaks: TimeBreak[];
+}): TimeBreak[] {
+  const startMinutes = parseTimeToMinutes(params.startTime);
+  const endMinutes = parseTimeToMinutes(params.endTime);
+
+  if (
+    !Number.isFinite(startMinutes) ||
+    !Number.isFinite(endMinutes) ||
+    !params.sessionDate
+  ) {
+    return [];
+  }
+
+  return params.timeBreaks.filter((br) => {
+    if (params.sessionDate < br.startIso || params.sessionDate > br.endIso) {
+      return false;
+    }
+
+    return rangesOverlap(startMinutes, endMinutes, br.startMinutes, br.endMinutes);
+  });
 }
 
 export function moduleEditorIsDirty(params: {
@@ -229,7 +284,38 @@ async function applySessionDraftUpdate(params: {
   label: string;
   draft: DailySessionDraftInput;
   existingRow?: TimetableSessionRow;
+  timeBreaks: TimeBreak[];
 }) {
+  const draftSessionDate = normalizeSessionDate(params.draft.session_date);
+  const draftStartTime = normalizeSessionTime(params.draft.start_time);
+  const draftEndTime = normalizeSessionTime(params.draft.end_time);
+
+  const overlapping = findOverlappingTimeBreaks({
+    sessionDate: draftSessionDate,
+    startTime: draftStartTime,
+    endTime: draftEndTime,
+    timeBreaks: params.timeBreaks,
+  });
+
+  if (overlapping.length > 0) {
+    const existing = params.existingRow;
+    const dateTimeChanged =
+      !existing ||
+      normalizeSessionDate(existing.session_date) !== draftSessionDate ||
+      normalizeSessionTime(existing.start_time) !== draftStartTime ||
+      normalizeSessionTime(existing.end_time) !== draftEndTime;
+
+    // A: existing blocked sessions can remain, but PL cannot move a session into a blocked slot.
+    if (dateTimeChanged) {
+      const names = Array.from(
+        new Set(overlapping.map((b) => b.breakName))
+      ).join(", ");
+      throw new Error(
+        `Cannot save: session overlaps blocked time-slot(s): ${names}.`
+      );
+    }
+  }
+
   const patch: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
     session_date: normalizeSessionDate(params.draft.session_date),
@@ -303,6 +389,45 @@ export async function saveDailyTimetableModule(params: {
     term: params.term,
   });
 
+  const timeBreakRows = await listAcademicCalendarTimeBreaks(
+    params.academicYear
+  );
+
+  const timeBreaks: TimeBreak[] = timeBreakRows
+    .map((br) => {
+      const startIso = String(br.start_date ?? "").trim().slice(0, 10);
+      const endIso = String(br.end_date ?? "").trim().slice(0, 10);
+
+      const startTimeText = String(br.start_time ?? "").trim().slice(0, 5);
+      const endTimeText = String(br.end_time ?? "").trim().slice(0, 5);
+
+      const startMinutes = parseTimeToMinutes(startTimeText);
+      const endMinutes = parseTimeToMinutes(endTimeText);
+
+      if (
+        !startIso ||
+        !endIso ||
+        !startTimeText ||
+        !endTimeText ||
+        !Number.isFinite(startMinutes) ||
+        !Number.isFinite(endMinutes) ||
+        endMinutes <= startMinutes
+      ) {
+        return null;
+      }
+
+      return {
+        breakName: String(br.break_name ?? "").trim() || "Time break",
+        startIso,
+        endIso,
+        startMinutes,
+        endMinutes,
+        startTimeText,
+        endTimeText,
+      };
+    })
+    .filter((b): b is TimeBreak => Boolean(b));
+
   if (pendingDeletes.size > 0) {
     const { error } = await supabase
       .from("timetable_sessions")
@@ -334,6 +459,7 @@ export async function saveDailyTimetableModule(params: {
       label: entry.sessionLabel,
       draft,
       existingRow: rowById.get(entry.sessionId!),
+      timeBreaks,
     });
   }
 
@@ -344,6 +470,7 @@ export async function saveDailyTimetableModule(params: {
       label: entry.sessionLabel,
       draft,
       existingRow: rowById.get(entry.sessionId!),
+      timeBreaks,
     });
   }
 
@@ -352,6 +479,22 @@ export async function saveDailyTimetableModule(params: {
 
     if (!isIsoDateInTermStudyWeek(sessionDate, termWeeks)) {
       throw new Error("Session date must fall within a study week.");
+    }
+
+    const overlapping = findOverlappingTimeBreaks({
+      sessionDate,
+      startTime: normalizeSessionTime(pending.start_time),
+      endTime: normalizeSessionTime(pending.end_time),
+      timeBreaks,
+    });
+
+    if (overlapping.length > 0) {
+      const names = Array.from(new Set(overlapping.map((b) => b.breakName))).join(
+        ", "
+      );
+      throw new Error(
+        `Cannot save: new session overlaps blocked time-slot(s): ${names}.`
+      );
     }
 
     const { error } = await supabase.from("timetable_sessions").insert({

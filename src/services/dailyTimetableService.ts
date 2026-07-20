@@ -38,6 +38,7 @@ import { normalizeAcademicYear } from "../lib/utils";
 import {
   getPublishedAcademicCalendar,
   listAcademicCalendarBreaks,
+  listAcademicCalendarTimeBreaks,
   listHkPublicHolidays,
 } from "./academicCalendarService";
 import {
@@ -276,6 +277,20 @@ async function loadModuleCatalogHours() {
   return map;
 }
 
+function parseTimeToMinutes(time: string): number {
+  const text = String(time ?? "").trim().slice(0, 5);
+  const [hhText, mmText] = text.split(":");
+
+  const hh = Number(hhText);
+  const mm = Number(mmText);
+
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return NaN;
+  if (hh < 0 || hh > 23) return NaN;
+  if (mm < 0 || mm > 59) return NaN;
+
+  return hh * 60 + mm;
+}
+
 export async function loadTermCalendarContext(params: {
   academicYear: string;
   term: TimetableScheduleTerm;
@@ -301,6 +316,43 @@ export async function loadTermCalendarContext(params: {
       end: parseIsoDate(br.end_date),
     }))
     .filter((br): br is { start: Date; end: Date } => Boolean(br.start && br.end));
+
+  const timeBreakRows = await listAcademicCalendarTimeBreaks(
+    params.academicYear
+  );
+
+  // Time-slot breaks are used for Daily timetable warnings + save validation.
+  const timeBreaks = timeBreakRows
+    .map((br) => {
+      const start = parseIsoDate(br.start_date);
+      const end = parseIsoDate(br.end_date);
+
+      const startTimeText = String(br.start_time ?? "").slice(0, 5);
+      const endTimeText = String(br.end_time ?? "").slice(0, 5);
+
+      const startMinutes = parseTimeToMinutes(startTimeText);
+      const endMinutes = parseTimeToMinutes(endTimeText);
+
+      if (!start || !end || !Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) {
+        return null;
+      }
+
+      // Assume breaks do not cross midnight (DB constraint enforces end_time > start_time).
+      if (endMinutes <= startMinutes) {
+        return null;
+      }
+
+      return {
+        breakName: br.break_name,
+        startIso: toIsoDateString(start),
+        endIso: toIsoDateString(end),
+        startMinutes,
+        endMinutes,
+        startTimeText,
+        endTimeText,
+      };
+    })
+    .filter((b): b is NonNullable<typeof b> => Boolean(b));
 
   const christmasStart = parseIsoDate(calendarRow.christmas_start ?? "");
   const christmasEnd = parseIsoDate(calendarRow.christmas_end ?? "");
@@ -347,6 +399,7 @@ export async function loadTermCalendarContext(params: {
     excluded,
     termSummary,
     termWeeks,
+    timeBreaks,
   };
 }
 
@@ -610,7 +663,8 @@ export async function buildDailyTimetable(params: {
   timetableModuleId?: string;
 }): Promise<DailyTimetableBuildResult> {
   const academicYear = normalizeAcademicYear(params.academicYear);
-  const { excluded, termSummary, termWeeks } = await loadTermCalendarContext({
+  const { excluded, termSummary, termWeeks, timeBreaks } =
+    await loadTermCalendarContext({
     academicYear,
     term: params.term,
   });
@@ -753,6 +807,40 @@ export async function buildDailyTimetable(params: {
     if (!plan) continue;
 
     modules.push(plan);
+
+    // Time-slot breaks only apply to Daily timetable (warnings + save validation).
+    // They do not change weekly timetable slot generation.
+    if (timeBreaks.length > 0) {
+      for (const entry of plan.entries) {
+        if (entry.status === "cancel") continue;
+
+        const startMinutes = parseTimeToMinutes(entry.startTime);
+        const endMinutes = parseTimeToMinutes(entry.endTime);
+
+        if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) {
+          continue;
+        }
+
+        const iso = entry.sessionDate;
+
+        for (const br of timeBreaks) {
+          if (iso < br.startIso || iso > br.endIso) continue;
+
+          const overlaps =
+            startMinutes < br.endMinutes && br.startMinutes < endMinutes;
+
+          if (!overlaps) continue;
+
+          globalWarnings.push(
+            `${plan.moduleInstanceCode}: ${entry.sessionLabel} (${entry.sessionKind}) on ${iso} ${entry.startTime.slice(
+              0,
+              5
+            )}–${entry.endTime.slice(0, 5)} overlaps "${br.breakName}" (${br.startTimeText}–${br.endTimeText}).`
+          );
+        }
+      }
+    }
+
     globalWarnings.push(...plan.warnings.map((w) => `${plan.moduleInstanceCode}: ${w}`));
   }
 
@@ -1117,7 +1205,8 @@ export async function loadProgrammeDailyTimetable(params: {
     throw new Error("Programme code is required.");
   }
 
-  const { termSummary, termWeeks, excluded } = await loadTermCalendarContext({
+  const { termSummary, termWeeks, excluded, timeBreaks } =
+    await loadTermCalendarContext({
     academicYear,
     term: params.term,
   });
@@ -1208,6 +1297,40 @@ export async function loadProgrammeDailyTimetable(params: {
   }
 
   modules.sort((a, b) => a.moduleInstanceCode.localeCompare(b.moduleInstanceCode));
+
+  // Add time-slot break warnings for existing daily timetable sessions.
+  if (timeBreaks.length > 0) {
+    for (const plan of modules) {
+      for (const entry of plan.entries) {
+        if (entry.status === "cancel") continue;
+
+        const startMinutes = parseTimeToMinutes(entry.startTime);
+        const endMinutes = parseTimeToMinutes(entry.endTime);
+
+        if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) {
+          continue;
+        }
+
+        const iso = entry.sessionDate;
+
+        for (const br of timeBreaks) {
+          if (iso < br.startIso || iso > br.endIso) continue;
+
+          const overlaps =
+            startMinutes < br.endMinutes && br.startMinutes < endMinutes;
+
+          if (!overlaps) continue;
+
+          globalWarnings.push(
+            `${plan.moduleInstanceCode}: ${entry.sessionLabel} (${entry.sessionKind}) on ${iso} ${entry.startTime.slice(
+              0,
+              5
+            )}–${entry.endTime.slice(0, 5)} overlaps "${br.breakName}" (${br.startTimeText}–${br.endTimeText}).`
+          );
+        }
+      }
+    }
+  }
 
   const entriesByDate = new Map<string, DailyTimetableEntry[]>();
 

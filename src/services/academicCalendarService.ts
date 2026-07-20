@@ -37,6 +37,18 @@ export interface AcademicCalendarBreakRow {
   updated_at: string;
 }
 
+export interface AcademicCalendarTimeBreakRow {
+  id: string;
+  academic_year: string;
+  break_name: string;
+  start_date: string;
+  end_date: string;
+  start_time: string;
+  end_time: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface HkPublicHolidayRow {
   holiday_date: string;
   holiday_name: string;
@@ -167,6 +179,22 @@ export async function listAcademicCalendarBreaks(
   return (data ?? []) as AcademicCalendarBreakRow[];
 }
 
+export async function listAcademicCalendarTimeBreaks(
+  academicYear: string
+): Promise<AcademicCalendarTimeBreakRow[]> {
+  const year = normalizeAcademicYear(academicYear);
+
+  const { data, error } = await supabase
+    .from("academic_calendar_time_breaks")
+    .select("*")
+    .eq("academic_year", year)
+    .order("start_date", { ascending: true });
+
+  if (error) throw error;
+
+  return (data ?? []) as AcademicCalendarTimeBreakRow[];
+}
+
 export async function upsertAcademicCalendarBreak(params: {
   id?: string;
   academicYear: string;
@@ -191,6 +219,47 @@ export async function upsertAcademicCalendarBreak(params: {
   const { error } = await supabase
     .from("academic_calendar_breaks")
     .upsert(payload, { onConflict: "id" });
+
+  if (error) throw error;
+}
+
+export async function upsertAcademicCalendarTimeBreak(params: {
+  id?: string;
+  academicYear: string;
+  breakName: string;
+  startDate: string;
+  endDate: string;
+  startTime: string; // HH:mm (or HH:mm:ss)
+  endTime: string; // HH:mm (or HH:mm:ss)
+}) {
+  const year = normalizeAcademicYear(params.academicYear);
+
+  requireDate(params.startDate, "break start_date");
+  requireDate(params.endDate, "break end_date");
+
+  const payload = {
+    id: params.id,
+    academic_year: year,
+    break_name: params.breakName.trim(),
+    start_date: params.startDate,
+    end_date: params.endDate,
+    start_time: String(params.startTime).trim(),
+    end_time: String(params.endTime).trim(),
+    updated_at: new Date().toISOString(),
+  } as Record<string, unknown>;
+
+  const { error } = await supabase
+    .from("academic_calendar_time_breaks")
+    .upsert(payload, { onConflict: "id" });
+
+  if (error) throw error;
+}
+
+export async function deleteAcademicCalendarTimeBreak(id: string) {
+  const { error } = await supabase
+    .from("academic_calendar_time_breaks")
+    .delete()
+    .eq("id", id);
 
   if (error) throw error;
 }

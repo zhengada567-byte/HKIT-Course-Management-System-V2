@@ -14,11 +14,14 @@ import {
   downloadAcademicCalendarExcel,
   getAcademicCalendarDraft,
   listAcademicCalendarBreaks,
+  deleteAcademicCalendarTimeBreak,
   filterPublicHolidaysInMonth,
   loadPublicHolidaysForCalendarDisplay,
+  listAcademicCalendarTimeBreaks,
   publishAcademicCalendar,
   updateHkPublicHolidaysFrom1823,
   upsertAcademicCalendarBreak,
+  upsertAcademicCalendarTimeBreak,
   upsertAcademicCalendarDraft,
   type PublicHolidayForDisplay,
 } from "../../services/academicCalendarService";
@@ -85,6 +88,22 @@ export function AcademicCalendarAdminPage() {
     }>
   >([]);
 
+  const [timeBreakName, setTimeBreakName] = useState("");
+  const [timeBreakStartDate, setTimeBreakStartDate] = useState("");
+  const [timeBreakEndDate, setTimeBreakEndDate] = useState("");
+  const [timeBreakStartTime, setTimeBreakStartTime] = useState("18:30");
+  const [timeBreakEndTime, setTimeBreakEndTime] = useState("22:30");
+  const [timeBreaks, setTimeBreaks] = useState<
+    Array<{
+      id: string;
+      break_name: string;
+      start_date: string;
+      end_date: string;
+      start_time: string;
+      end_time: string;
+    }>
+  >([]);
+
   const [preview, setPreview] = useState<AcademicCalendarResult | null>(null);
   const [publicHolidays, setPublicHolidays] = useState<PublicHolidayForDisplay[]>(
     []
@@ -131,6 +150,7 @@ export function AcademicCalendarAdminPage() {
         setCnyStart("");
         setCnyEnd("");
         setBreaks([]);
+        setTimeBreaks([]);
         setPreview(null);
         return;
       }
@@ -148,6 +168,18 @@ export function AcademicCalendarAdminPage() {
           break_name: b.break_name,
           start_date: b.start_date,
           end_date: b.end_date,
+        }))
+      );
+
+      const timeBreakRows = await listAcademicCalendarTimeBreaks(academicYear);
+      setTimeBreaks(
+        timeBreakRows.map((b) => ({
+          id: b.id,
+          break_name: b.break_name,
+          start_date: b.start_date,
+          end_date: b.end_date,
+          start_time: String(b.start_time ?? "").slice(0, 5),
+          end_time: String(b.end_time ?? "").slice(0, 5),
         }))
       );
 
@@ -341,6 +373,81 @@ export function AcademicCalendarAdminPage() {
       } catch (error) {
         setMessage(
           error instanceof Error ? error.message : "Failed to delete break."
+        );
+      } finally {
+        setSaving(false);
+      }
+    },
+    [loadDraft]
+  );
+
+  const addTimeBreak = useCallback(async () => {
+    if (
+      !timeBreakName.trim() ||
+      !timeBreakStartDate ||
+      !timeBreakEndDate ||
+      !timeBreakStartTime ||
+      !timeBreakEndTime
+    ) {
+      setMessage("Time break name, start/end date, and time are required.");
+      return;
+    }
+
+    // Basic validation for v1: end_time must be after start_time.
+    if (timeBreakEndTime <= timeBreakStartTime) {
+      setMessage("End time must be after start time.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+
+    try {
+      await upsertAcademicCalendarTimeBreak({
+        academicYear,
+        breakName: timeBreakName,
+        startDate: timeBreakStartDate as any,
+        endDate: timeBreakEndDate as any,
+        startTime: timeBreakStartTime,
+        endTime: timeBreakEndTime,
+      });
+
+      setTimeBreakName("");
+      setTimeBreakStartDate("");
+      setTimeBreakEndDate("");
+      setTimeBreakStartTime("18:30");
+      setTimeBreakEndTime("22:30");
+      await loadDraft();
+      setMessage("Time break saved.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Failed to save time break."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    academicYear,
+    loadDraft,
+    timeBreakEndDate,
+    timeBreakEndTime,
+    timeBreakName,
+    timeBreakStartDate,
+    timeBreakStartTime,
+  ]);
+
+  const removeTimeBreak = useCallback(
+    async (id: string) => {
+      setSaving(true);
+      setMessage("");
+
+      try {
+        await deleteAcademicCalendarTimeBreak(id);
+        await loadDraft();
+        setMessage("Time break deleted.");
+      } catch (error) {
+        setMessage(
+          error instanceof Error ? error.message : "Failed to delete time break."
         );
       } finally {
         setSaving(false);
@@ -592,6 +699,141 @@ export function AcademicCalendarAdminPage() {
                         type="button"
                         className="text-red-600 hover:underline"
                         onClick={() => removeBreak(b.id)}
+                        disabled={loading || saving}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <h3 className="font-semibold text-slate-900">
+            Time-slot Breaks (Daily timetable)
+          </h3>
+        </div>
+        <div className="card-body space-y-3">
+          <div className="grid gap-3 md:grid-cols-5">
+            <div className="md:col-span-2">
+              <label className="form-label" htmlFor="ac-admin-time-break-name">
+                Break Name
+              </label>
+              <input
+                id="ac-admin-time-break-name"
+                className="form-input"
+                value={timeBreakName}
+                onChange={(e) => setTimeBreakName(e.target.value)}
+                disabled={loading || saving}
+                placeholder="e.g. Mid-autumn evening"
+              />
+            </div>
+            <div>
+              <label className="form-label" htmlFor="ac-admin-time-break-start-date">
+                Start Date
+              </label>
+              <input
+                id="ac-admin-time-break-start-date"
+                type="date"
+                className="form-input"
+                value={timeBreakStartDate}
+                onChange={(e) => setTimeBreakStartDate(e.target.value)}
+                disabled={loading || saving}
+              />
+            </div>
+            <div>
+              <label className="form-label" htmlFor="ac-admin-time-break-end-date">
+                End Date
+              </label>
+              <input
+                id="ac-admin-time-break-end-date"
+                type="date"
+                className="form-input"
+                value={timeBreakEndDate}
+                onChange={(e) => setTimeBreakEndDate(e.target.value)}
+                disabled={loading || saving}
+              />
+            </div>
+            <div>
+              <label className="form-label" htmlFor="ac-admin-time-break-start-time">
+                Start Time
+              </label>
+              <input
+                id="ac-admin-time-break-start-time"
+                type="time"
+                className="form-input"
+                value={timeBreakStartTime}
+                onChange={(e) => setTimeBreakStartTime(e.target.value)}
+                disabled={loading || saving}
+              />
+            </div>
+            <div>
+              <label className="form-label" htmlFor="ac-admin-time-break-end-time">
+                End Time
+              </label>
+              <input
+                id="ac-admin-time-break-end-time"
+                type="time"
+                className="form-input"
+                value={timeBreakEndTime}
+                onChange={(e) => setTimeBreakEndTime(e.target.value)}
+                disabled={loading || saving}
+              />
+            </div>
+          </div>
+
+          <div>
+            <button
+              type="button"
+              className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50"
+              onClick={addTimeBreak}
+              disabled={loading || saving}
+            >
+              Add / Save Time Break
+            </button>
+          </div>
+
+          <div className="rounded-md border overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="p-2 text-left">Name</th>
+                  <th className="p-2 text-left">Start</th>
+                  <th className="p-2 text-left">End</th>
+                  <th className="p-2 text-left">Time</th>
+                  <th className="p-2 text-left"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {timeBreaks.length === 0 && (
+                  <tr className="border-t">
+                    <td className="p-3" colSpan={5}>
+                      No time-slot breaks.
+                    </td>
+                  </tr>
+                )}
+                {timeBreaks.map((b) => (
+                  <tr key={b.id} className="border-t">
+                    <td className="p-2">{b.break_name}</td>
+                    <td className="p-2">
+                      {b.start_date} {b.start_time}
+                    </td>
+                    <td className="p-2">
+                      {b.end_date} {b.end_time}
+                    </td>
+                    <td className="p-2">
+                      {b.start_time}–{b.end_time}
+                    </td>
+                    <td className="p-2">
+                      <button
+                        type="button"
+                        className="text-red-600 hover:underline"
+                        onClick={() => removeTimeBreak(b.id)}
                         disabled={loading || saving}
                       >
                         Delete
