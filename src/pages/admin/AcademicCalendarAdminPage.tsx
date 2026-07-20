@@ -960,7 +960,7 @@ export function AcademicCalendarAdminPage() {
                   />
                 </div>
                 <div className="flex items-end text-sm text-slate-600">
-                  Public holidays and school breaks affect working-day start/end dates; holiday weeks (Christmas/CNY full weeks) are inserted into the timeline.
+                  Public holidays and whole-day breaks affect working-day dates. Time-slot breaks are shown for Daily timetable only and do not remove whole days.
                 </div>
               </div>
 
@@ -970,11 +970,20 @@ export function AcademicCalendarAdminPage() {
                   weeks={preview.weeks}
                   publicHolidays={publicHolidays}
                   holidayPeriods={holidayPeriods}
-                  breaks={breaks.map((b) => ({
-                    name: b.break_name,
-                    startDate: b.start_date as any,
-                    endDate: b.end_date as any,
-                  }))}
+                  breaks={[
+                    ...breaks.map((b) => ({
+                      name: b.break_name,
+                      startDate: b.start_date as any,
+                      endDate: b.end_date as any,
+                    })),
+                    ...timeBreaks.map((b) => ({
+                      name: b.break_name,
+                      startDate: b.start_date as any,
+                      endDate: b.end_date as any,
+                      startTime: b.start_time,
+                      endTime: b.end_time,
+                    })),
+                  ]}
                   termStartIsoDates={
                     new Set(preview.terms.map((t) => toIsoDateString(t.termStartDate) as any))
                   }
@@ -982,6 +991,50 @@ export function AcademicCalendarAdminPage() {
                     new Set(preview.terms.map((t) => toIsoDateString(t.termEndDate) as any))
                   }
                 />
+              </div>
+
+              <div className="mt-4 rounded-md border overflow-x-auto">
+                <h3 className="border-b bg-muted px-3 py-2 text-sm font-semibold text-slate-900">
+                  School Breaks
+                </h3>
+                <table className="w-full text-sm">
+                  <thead className="bg-muted">
+                    <tr>
+                      <th className="p-2 text-left">Name</th>
+                      <th className="p-2 text-left">Dates</th>
+                      <th className="p-2 text-left">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {breaks.length === 0 && timeBreaks.length === 0 && (
+                      <tr>
+                        <td className="p-2 text-slate-500" colSpan={3}>
+                          No school breaks for this academic year.
+                        </td>
+                      </tr>
+                    )}
+                    {breaks.map((b) => (
+                      <tr key={b.id} className="border-t">
+                        <td className="p-2">{b.break_name}</td>
+                        <td className="p-2 whitespace-nowrap bg-orange-50">
+                          {b.start_date} → {b.end_date}
+                        </td>
+                        <td className="p-2 text-slate-500">All day</td>
+                      </tr>
+                    ))}
+                    {timeBreaks.map((b) => (
+                      <tr key={b.id} className="border-t">
+                        <td className="p-2">{b.break_name}</td>
+                        <td className="p-2 whitespace-nowrap bg-violet-50">
+                          {b.start_date} → {b.end_date}
+                        </td>
+                        <td className="p-2 whitespace-nowrap bg-violet-50">
+                          {b.start_time}–{b.end_time}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
 
               <div className="mt-4 rounded-md border overflow-x-auto">

@@ -14,6 +14,9 @@ export interface CalendarBreakItem {
   name: string;
   startDate: IsoDateString;
   endDate: IsoDateString;
+  /** When set, this is a time-slot break (evening block), not a whole-day break. */
+  startTime?: string;
+  endTime?: string;
 }
 
 function startOfMonth(date: Date) {
@@ -127,9 +130,16 @@ export function MonthCalendar(props: {
           const week = findWeekForDate(props.weeks, d);
           const category = week?.category;
           const term = week?.term;
-          const isSchoolBreak = props.breaks.some((b) =>
+          const dayBreaks = props.breaks.filter((b) =>
             isIsoInRange(iso, b.startDate, b.endDate)
           );
+          const wholeDayBreaks = dayBreaks.filter(
+            (b) => !b.startTime && !b.endTime
+          );
+          const timeSlotBreaks = dayBreaks.filter(
+            (b) => Boolean(b.startTime) || Boolean(b.endTime)
+          );
+          const isSchoolBreak = wholeDayBreaks.length > 0;
           const holidayPeriod = findHolidayPeriodForDate(
             iso,
             props.holidayPeriods ?? []
@@ -185,11 +195,31 @@ export function MonthCalendar(props: {
                     {publicHolidayName ?? "Public Holiday"}
                   </span>
                 )}
-                {isSchoolBreak && (
-                  <span className="inline-flex items-center rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-800">
-                    Break
+                {wholeDayBreaks.map((b) => (
+                  <span
+                    key={`${b.name}-${b.startDate}-${b.endDate}`}
+                    className="inline-flex max-w-full items-center truncate rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-800"
+                    title={b.name}
+                  >
+                    {b.name || "Break"}
                   </span>
-                )}
+                ))}
+                {timeSlotBreaks.map((b) => {
+                  const timeLabel =
+                    b.startTime && b.endTime
+                      ? `${b.startTime}–${b.endTime}`
+                      : "Time break";
+                  const title = `${b.name} (${timeLabel})`;
+                  return (
+                    <span
+                      key={`${b.name}-${b.startDate}-${b.endDate}-${timeLabel}`}
+                      className="inline-flex max-w-full items-center truncate rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800"
+                      title={title}
+                    >
+                      {b.name || timeLabel}
+                    </span>
+                  );
+                })}
                 {isPeriodHoliday && holidayPeriod && (
                   <span className="inline-flex items-center rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-800">
                     {holidayPeriod.label}

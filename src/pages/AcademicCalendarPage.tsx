@@ -11,6 +11,7 @@ import {
   buildAcademicCalendarPreview,
   downloadAcademicCalendarExcel,
   listAcademicCalendarBreaks,
+  listAcademicCalendarTimeBreaks,
   filterPublicHolidaysInMonth,
   loadPublicHolidaysForCalendarDisplay,
   type PublicHolidayForDisplay,
@@ -52,6 +53,15 @@ export function AcademicCalendarPage() {
   const [breaks, setBreaks] = useState<
     Array<{ name: string; startDate: string; endDate: string }>
   >([]);
+  const [timeBreaks, setTimeBreaks] = useState<
+    Array<{
+      name: string;
+      startDate: string;
+      endDate: string;
+      startTime: string;
+      endTime: string;
+    }>
+  >([]);
   const [publicHolidays, setPublicHolidays] = useState<PublicHolidayForDisplay[]>(
     []
   );
@@ -91,8 +101,24 @@ export function AcademicCalendarPage() {
         }))
       );
 
+      try {
+        const timeBreakRows = await listAcademicCalendarTimeBreaks(academicYear);
+        setTimeBreaks(
+          timeBreakRows.map((b) => ({
+            name: b.break_name,
+            startDate: b.start_date,
+            endDate: b.end_date,
+            startTime: String(b.start_time ?? "").slice(0, 5),
+            endTime: String(b.end_time ?? "").slice(0, 5),
+          }))
+        );
+      } catch {
+        setTimeBreaks([]);
+      }
     } catch (error) {
       setCalendar(null);
+      setBreaks([]);
+      setTimeBreaks([]);
       setPublicHolidays([]);
       setMessage(
         error instanceof Error
@@ -303,7 +329,7 @@ export function AcademicCalendarPage() {
                   />
                 </div>
                 <div className="flex items-end text-sm text-slate-600">
-                  Public holidays are excluded from weekday counts. Breaks are display only.
+                  Public holidays are excluded from weekday counts. Whole-day and time-slot breaks are display only.
                 </div>
               </div>
 
@@ -313,11 +339,20 @@ export function AcademicCalendarPage() {
                   weeks={calendar.weeks}
                   publicHolidays={publicHolidays}
                   holidayPeriods={calendar.holidayPeriods}
-                  breaks={breaks.map((b) => ({
-                    name: b.name,
-                    startDate: b.startDate as any,
-                    endDate: b.endDate as any,
-                  }))}
+                  breaks={[
+                    ...breaks.map((b) => ({
+                      name: b.name,
+                      startDate: b.startDate as any,
+                      endDate: b.endDate as any,
+                    })),
+                    ...timeBreaks.map((b) => ({
+                      name: b.name,
+                      startDate: b.startDate as any,
+                      endDate: b.endDate as any,
+                      startTime: b.startTime,
+                      endTime: b.endTime,
+                    })),
+                  ]}
                   termStartIsoDates={
                     new Set(calendar.terms.map((t) => toIsoDateString(t.termStartDate) as any))
                   }
@@ -325,6 +360,53 @@ export function AcademicCalendarPage() {
                     new Set(calendar.terms.map((t) => toIsoDateString(t.termEndDate) as any))
                   }
                 />
+              </div>
+
+              <div className="mt-4 rounded-md border overflow-x-auto">
+                <h3 className="border-b bg-muted px-3 py-2 text-sm font-semibold text-slate-900">
+                  School Breaks
+                </h3>
+                <table className="w-full text-sm">
+                  <thead className="bg-muted">
+                    <tr>
+                      <th className="p-2 text-left">Name</th>
+                      <th className="p-2 text-left">Dates</th>
+                      <th className="p-2 text-left">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {breaks.length === 0 && timeBreaks.length === 0 && (
+                      <tr>
+                        <td className="p-2 text-slate-500" colSpan={3}>
+                          No school breaks for this academic year.
+                        </td>
+                      </tr>
+                    )}
+                    {breaks.map((b) => (
+                      <tr key={`day-${b.name}-${b.startDate}-${b.endDate}`} className="border-t">
+                        <td className="p-2">{b.name}</td>
+                        <td className="p-2 whitespace-nowrap bg-orange-50">
+                          {b.startDate} → {b.endDate}
+                        </td>
+                        <td className="p-2 text-slate-500">All day</td>
+                      </tr>
+                    ))}
+                    {timeBreaks.map((b) => (
+                      <tr
+                        key={`time-${b.name}-${b.startDate}-${b.endDate}-${b.startTime}`}
+                        className="border-t"
+                      >
+                        <td className="p-2">{b.name}</td>
+                        <td className="p-2 whitespace-nowrap bg-violet-50">
+                          {b.startDate} → {b.endDate}
+                        </td>
+                        <td className="p-2 whitespace-nowrap bg-violet-50">
+                          {b.startTime}–{b.endTime}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
 
               <div className="mt-4 rounded-md border overflow-x-auto">
