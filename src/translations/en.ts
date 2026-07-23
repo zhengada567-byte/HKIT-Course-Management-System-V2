@@ -39,6 +39,18 @@ export const en = {
     "Shows non-TBC teachers' actual loading by term with HD and Degree counts. Filter uses catalogue employment (FT/PT), not per-module teaching status. Sep/Feb uses the timetable when scheduled; otherwise assignments.",
   teacherLoadingSearchHint:
     "Select teacher employment type and click Search to view results.",
+  teacherLoadingView: "Report view",
+  teacherLoadingViewModules: "Module counts",
+  teacherLoadingViewContactHours: "Contact hours",
+  teacherContactHoursDescription:
+    "Sums actual duration of numbered L/T sessions under each teacher (from Daily/Weekly session teacher). Backups, cancelled, and empty/TBC teachers are excluded. Expand a row to see modules.",
+  teacherContactHoursSearchHint:
+    "Select employment type (and optional term), then click Search.",
+  teacherContactHoursTermAll: "All terms",
+  teacherContactHoursSessions: "Sessions",
+  teacherContactHoursLecture: "Lecture hours",
+  teacherContactHoursTutorial: "Tutorial hours",
+  teacherContactHoursTotal: "Total hours",
   teacherLoadingModules: "Modules",
   teacherLoadingHdModules: "HD Modules",
   teacherLoadingDegreeModules: "Degree Modules",

@@ -34,6 +34,17 @@ export const zhHant = {
   teacherLoadingDescription:
     "顯示非 TBC 教師按學期的實際教學量，以及 HD／Degree 科目數目。篩選以教師名册聘用身份（FT／PT）為準，與夜課／日課（此科教學身份）無關。九月／二月已排時間表者從時間表計算，其餘從教學分配計算。",
   teacherLoadingSearchHint: "請選擇教師聘用身份後按「搜尋」查閱。",
+  teacherLoadingView: "報表檢視",
+  teacherLoadingViewModules: "科目數量",
+  teacherLoadingViewContactHours: "Contact hours",
+  teacherContactHoursDescription:
+    "按每位教師名下已編號 L/T 課節的實際時長加總（以 Daily／Weekly session 老師為準）。Backup、已取消、以及空白／TBC 老師不計入。展開列可查看各科目明細。",
+  teacherContactHoursSearchHint: "選擇聘用身份（及可選學期）後按「搜尋」。",
+  teacherContactHoursTermAll: "全部學期",
+  teacherContactHoursSessions: "課節數",
+  teacherContactHoursLecture: "Lecture 時數",
+  teacherContactHoursTutorial: "Tutorial 時數",
+  teacherContactHoursTotal: "總時數",
   teacherLoadingModules: "教學量",
   teacherLoadingHdModules: "HD 科目",
   teacherLoadingDegreeModules: "Degree 科目",

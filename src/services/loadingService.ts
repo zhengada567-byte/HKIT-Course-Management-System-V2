@@ -1,5 +1,6 @@
 // src/services/loadingService.ts
 
+import { saveAs } from "file-saver";
 import {
   isDegreeProgrammeType,
   isHDProgrammeType,
@@ -1091,4 +1092,85 @@ export async function getTeacherLoadingSummary(params: {
     params.employmentType,
     teachers
   );
+}
+
+function escapeCsvCell(value: string) {
+  const text = String(value ?? "");
+
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  return text;
+}
+
+function rowsToCsv(headers: string[], rows: string[][]) {
+  return [headers, ...rows]
+    .map((row) => row.map(escapeCsvCell).join(","))
+    .join("\n");
+}
+
+function sanitizeFilePart(value: string) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[^\w.-]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "export";
+}
+
+/** Download module-count Teacher Loading summary CSV. */
+export function downloadTeacherLoadingSummaryCsv(params: {
+  rows: TeacherLoadingSummaryRow[];
+  academicYear: string;
+  employmentType: "FT" | "PT";
+}) {
+  const headers = [
+    "Teacher",
+    "Employment",
+    "Sep Modules",
+    "Sep HD Modules",
+    "Sep Degree Modules",
+    "Feb Modules",
+    "Feb HD Modules",
+    "Feb Degree Modules",
+    "Jun Modules",
+    "Jun HD Modules",
+    "Jun Degree Modules",
+    "Annual Modules",
+    "Annual HD Modules",
+    "Annual Degree Modules",
+  ];
+
+  const csvRows = params.rows.map((row) => [
+    row.teacher_name,
+    row.teacher_employment_type ?? "",
+    String(row.sep_actual_loading),
+    String(row.sep_hd_module_count),
+    String(row.sep_degree_module_count),
+    String(row.feb_actual_loading),
+    String(row.feb_hd_module_count),
+    String(row.feb_degree_module_count),
+    String(row.jun_actual_loading),
+    String(row.jun_hd_module_count),
+    String(row.jun_degree_module_count),
+    String(row.annual_actual_loading),
+    String(row.hd_module_count),
+    String(row.degree_module_count),
+  ]);
+
+  const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const fileName = [
+    "teacher_loading_modules",
+    sanitizeFilePart(params.academicYear),
+    params.employmentType,
+    dateStamp,
+  ].join("_") + ".csv";
+
+  saveAs(
+    new Blob(["\uFEFF" + rowsToCsv(headers, csvRows)], {
+      type: "text/csv;charset=utf-8;",
+    }),
+    fileName
+  );
+
+  return { fileName, rowCount: csvRows.length };
 }
