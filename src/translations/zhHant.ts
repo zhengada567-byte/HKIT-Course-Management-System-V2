@@ -298,6 +298,20 @@ export const zhHant = {
   sessionStatusMakeUp: "補課",
   actions: "操作",
   deleteSession: "刪除",
+  promoteSessionToLecture: "→ Lecture",
+  demoteSessionToTutorial: "→ Tutorial",
+  promoteSessionToLectureConfirm:
+    "將 {label} 改為 Lecture？系統會重新編號（L1… / T1…），並鎖定課節類型，之後自動重貼標籤會保留此組合。",
+  demoteSessionToTutorialConfirm:
+    "將 {label} 改為 Tutorial？系統會重新編號（L1… / T1…），並鎖定課節類型，之後自動重貼標籤會保留此組合。",
+  dailySessionKindChanged: "已更新課節類型並重新編號。",
+  dailySessionKindChangeFailed: "更改課節類型失敗。",
+  clearDailyLabelPlanLock: "解除 L/T 類型鎖定",
+  clearDailyLabelPlanLockConfirm:
+    "解除手動 Lecture/Tutorial 鎖定，並按 contact hours 規則重貼標籤？",
+  dailyLabelPlanLockCleared: "已解除 L/T 類型鎖定，並按 contact hours 重貼標籤。",
+  dailyLabelPlanLockClearFailed: "解除 L/T 類型鎖定失敗。",
+  dailyLabelPlanLockedBadge: "已鎖定 L/T 類型",
   deleteSelectedSessions: "刪除已選 ({count})",
   selectSession: "選取課節",
   selectAllSessionsInGroup: "全選此區課節",

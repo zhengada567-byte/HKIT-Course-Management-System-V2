@@ -310,6 +310,21 @@ export const en = {
   sessionStatusMakeUp: "Make-up",
   actions: "Actions",
   deleteSession: "Delete",
+  promoteSessionToLecture: "→ Lecture",
+  demoteSessionToTutorial: "→ Tutorial",
+  promoteSessionToLectureConfirm:
+    "Change {label} to a Lecture? Labels will be renumbered (L1… / T1…) and kinds will be locked so auto-relabel keeps this mix.",
+  demoteSessionToTutorialConfirm:
+    "Change {label} to a Tutorial? Labels will be renumbered (L1… / T1…) and kinds will be locked so auto-relabel keeps this mix.",
+  dailySessionKindChanged: "Session kind updated and labels renumbered.",
+  dailySessionKindChangeFailed: "Failed to change session kind.",
+  clearDailyLabelPlanLock: "Unlock L/T kinds",
+  clearDailyLabelPlanLockConfirm:
+    "Clear the manual lecture/tutorial lock and restore labels from contact hours?",
+  dailyLabelPlanLockCleared:
+    "L/T kind lock cleared; labels restored from contact hours.",
+  dailyLabelPlanLockClearFailed: "Failed to clear L/T kind lock.",
+  dailyLabelPlanLockedBadge: "L/T kinds locked",
   deleteSelectedSessions: "Delete selected ({count})",
   selectSession: "Select session",
   selectAllSessionsInGroup: "Select all sessions in this group",

@@ -8,6 +8,12 @@ import {
   type WeekRange,
 } from "../lib/academicCalendar";
 import {
+  buildPreserveKindLabelAssignments,
+  isDailyLabelPlanLocked,
+  parseDailyLabelPlanOverride,
+  type DailyLabelPlanOverride,
+} from "../lib/dailyTimetableLabelOverride";
+import {
   buildSessionLabelAssignments,
   formatCancelledRemark,
   isBackupTimetableSession,
@@ -136,6 +142,8 @@ export interface DailyTimetableModulePlan {
   /** Weekly slots beyond labelled count. */
   extraWeeklySlotCount: number;
   labelSequence: DailySessionLabelSlot[];
+  /** True when L/T kinds are manually locked (preserve_kinds override). */
+  labelPlanLocked: boolean;
   entries: DailyTimetableEntry[];
   warnings: string[];
 }
@@ -428,6 +436,15 @@ function materializeModuleDailyPlan(params: {
   const weekday = params.contactPlan.weekday;
   const labelSequence = params.contactPlan.labelSequence;
   const warnings = [...params.contactPlan.warnings];
+  const labelPlanLocked = isDailyLabelPlanLocked(
+    (params.module as TimetableModuleRow).daily_label_plan_override
+  );
+
+  if (labelPlanLocked) {
+    warnings.push(
+      "L/T kinds are locked (manual lecture/tutorial change). Relabel keeps kinds and only renumbers labels."
+    );
+  }
 
   const slotTemplate = pickWeeklySlotTemplate(studyWeekSessions);
 
@@ -593,6 +610,7 @@ function materializeModuleDailyPlan(params: {
     outsideStudyWeekSlotCount,
     extraWeeklySlotCount,
     labelSequence,
+    labelPlanLocked,
     entries,
     warnings,
   };
@@ -929,6 +947,41 @@ export async function applyDailyLabelsToTimetableModule(
   const studyWeekSessions = sessions.filter((row) =>
     isIsoDateInTermStudyWeek(row.session_date, termWeeks)
   );
+
+  const override = parseDailyLabelPlanOverride(module.daily_label_plan_override);
+
+  if (override?.strategy === "preserve_kinds") {
+    const assignments = buildPreserveKindLabelAssignments({
+      sessions: studyWeekSessions.map((row) => ({
+        id: row.id,
+        status: row.status as TimetableSessionStatus,
+        session_date: normalizeSessionDate(row.session_date),
+        start_time: normalizeSessionTime(row.start_time),
+        session_kind: row.session_kind,
+        session_label: row.session_label,
+      })),
+    });
+
+    const now = new Date().toISOString();
+    let updatedCount = 0;
+
+    for (const assignment of assignments) {
+      const { error } = await supabase
+        .from("timetable_sessions")
+        .update({
+          session_label: assignment.session_label,
+          session_kind: assignment.session_kind,
+          session_number: assignment.session_number,
+          updated_at: now,
+        })
+        .eq("id", assignment.id);
+
+      if (error) throw error;
+      updatedCount += 1;
+    }
+
+    return { updatedCount };
+  }
 
   const weekday = inferWeekdayFromSessions(
     studyWeekSessions.filter((row) => row.status !== "cancel")
@@ -1291,6 +1344,7 @@ export async function loadProgrammeDailyTimetable(params: {
       outsideStudyWeekSlotCount: 0,
       extraWeeklySlotCount: entries.filter((row) => row.isBackup).length,
       labelSequence,
+      labelPlanLocked: isDailyLabelPlanLocked(module.daily_label_plan_override),
       entries,
       warnings: [],
     });
@@ -1434,6 +1488,7 @@ export async function reloadDailyModulePlan(params: {
     outsideStudyWeekSlotCount: 0,
     extraWeeklySlotCount: entries.filter((row) => row.isBackup).length,
     labelSequence,
+    labelPlanLocked: isDailyLabelPlanLocked(module.daily_label_plan_override),
     entries,
     warnings: [],
   };
@@ -1731,4 +1786,111 @@ export async function createDailyTimetableSession(params: {
   );
 
   return { sessionId: String(data.id), timetableModuleId: params.timetableModuleId };
+}
+
+const PRESERVE_KINDS_OVERRIDE: DailyLabelPlanOverride = {
+  locked: true,
+  strategy: "preserve_kinds",
+};
+
+async function setDailyLabelPlanOverride(
+  timetableModuleId: string,
+  override: DailyLabelPlanOverride | null
+) {
+  const { error } = await supabase
+    .from("timetable_modules")
+    .update({
+      daily_label_plan_override: override,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", timetableModuleId);
+
+  if (error) {
+    if (
+      /daily_label_plan_override/i.test(error.message) ||
+      error.code === "42703"
+    ) {
+      throw new Error(
+        "Database missing column daily_label_plan_override. Apply migration 046_timetable_modules_daily_label_plan_override.sql first."
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Change one session to Lecture or Tutorial, lock label plan to preserve kinds,
+ * then renumber L1..Ln / T1..Tm by date.
+ */
+export async function changeDailySessionKind(params: {
+  sessionId: string;
+  targetKind: DailySessionKind;
+  academicYear: string;
+  term: TimetableScheduleTerm;
+}) {
+  const { data: session, error: loadError } = await supabase
+    .from("timetable_sessions")
+    .select("id, timetable_module_id, session_kind, session_label, status")
+    .eq("id", params.sessionId)
+    .single();
+
+  if (loadError) throw loadError;
+
+  if (String(session.status ?? "") === "cancel") {
+    throw new Error("Cannot change kind of a cancelled session.");
+  }
+
+  const timetableModuleId = String(session.timetable_module_id ?? "");
+  if (!timetableModuleId) {
+    throw new Error("Session is not linked to a timetable module.");
+  }
+
+  const { error: kindError } = await supabase
+    .from("timetable_sessions")
+    .update({
+      session_kind: params.targetKind,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", params.sessionId);
+
+  if (kindError) throw kindError;
+
+  await setDailyLabelPlanOverride(timetableModuleId, PRESERVE_KINDS_OVERRIDE);
+
+  const { termWeeks, excluded, termSummary } = await loadTermCalendarContext({
+    academicYear: params.academicYear,
+    term: params.term,
+  });
+
+  await applyDailyLabelsToTimetableModule(
+    timetableModuleId,
+    termWeeks,
+    termSummary,
+    excluded
+  );
+
+  return { timetableModuleId };
+}
+
+/** Clear manual L/T kind lock and restore contact-hour label sequence. */
+export async function clearDailyLabelPlanLock(params: {
+  timetableModuleId: string;
+  academicYear: string;
+  term: TimetableScheduleTerm;
+}) {
+  await setDailyLabelPlanOverride(params.timetableModuleId, null);
+
+  const { termWeeks, excluded, termSummary } = await loadTermCalendarContext({
+    academicYear: params.academicYear,
+    term: params.term,
+  });
+
+  await applyDailyLabelsToTimetableModule(
+    params.timetableModuleId,
+    termWeeks,
+    termSummary,
+    excluded
+  );
+
+  return { timetableModuleId: params.timetableModuleId };
 }

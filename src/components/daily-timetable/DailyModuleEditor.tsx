@@ -8,10 +8,13 @@ import type { TimetableSessionStatus } from "../../lib/dailyTimetableSessionLabe
 import { InstanceTeacherSelect } from "../../pages/programme-leader/make-timetable/components/InstanceTeacherSelect";
 import {
   partitionDailyModuleEntries,
+  changeDailySessionKind,
+  clearDailyLabelPlanLock,
   type DailyTimetableBuildResult,
   type DailyTimetableEntry,
   type DailyTimetableModulePlan,
 } from "../../services/dailyTimetableService";
+import { isTutorialTimetableSession } from "../../lib/dailyTimetable";
 import {
   moduleEditorIsDirty,
   saveDailyTimetableModule,
@@ -113,6 +116,7 @@ export function DailyModuleEditor({
   });
   const [teachers, setTeachers] = useState<TeacherRow[]>([]);
   const [savingModuleId, setSavingModuleId] = useState<string | null>(null);
+  const [kindBusySessionId, setKindBusySessionId] = useState<string | null>(null);
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(
     () => new Set()
   );
@@ -641,6 +645,68 @@ export function DailyModuleEditor({
     onMessage(t.dailyDeleteSessionQueued);
   }
 
+  async function handleChangeSessionKind(
+    sessionId: string,
+    label: string,
+    targetKind: "teaching" | "tutorial"
+  ) {
+    const confirmText =
+      targetKind === "teaching"
+        ? t.promoteSessionToLectureConfirm.replace("{label}", label)
+        : t.demoteSessionToTutorialConfirm.replace("{label}", label);
+
+    if (!window.confirm(confirmText)) {
+      return;
+    }
+
+    setKindBusySessionId(sessionId);
+
+    try {
+      const result = await changeDailySessionKind({
+        sessionId,
+        targetKind,
+        academicYear,
+        term,
+      });
+      await onRefreshPlan(result.timetableModuleId);
+      onMessage(t.dailySessionKindChanged);
+    } catch (error) {
+      onMessage(
+        error instanceof Error
+          ? error.message
+          : t.dailySessionKindChangeFailed
+      );
+    } finally {
+      setKindBusySessionId(null);
+    }
+  }
+
+  async function handleClearLabelPlanLock(plan: DailyTimetableModulePlan) {
+    if (!window.confirm(t.clearDailyLabelPlanLockConfirm)) {
+      return;
+    }
+
+    setSavingModuleId(plan.timetableModuleId);
+
+    try {
+      await clearDailyLabelPlanLock({
+        timetableModuleId: plan.timetableModuleId,
+        academicYear,
+        term,
+      });
+      await onRefreshPlan(plan.timetableModuleId);
+      onMessage(t.dailyLabelPlanLockCleared);
+    } catch (error) {
+      onMessage(
+        error instanceof Error
+          ? error.message
+          : t.dailyLabelPlanLockClearFailed
+      );
+    } finally {
+      setSavingModuleId(null);
+    }
+  }
+
   const selectedDeletableCount = getSelectedDeletableItems().length;
 
   function renderSaveBar(plan: DailyTimetableModulePlan | null, allowSaveAll = false) {
@@ -669,6 +735,16 @@ export function DailyModuleEditor({
                 : t.dailyModuleNoChanges}
           </p>
           <div className="flex flex-wrap gap-2">
+            {plan?.labelPlanLocked ? (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={saving}
+                onClick={() => void handleClearLabelPlanLock(plan)}
+              >
+                {t.clearDailyLabelPlanLock}
+              </button>
+            ) : null}
             {selectedDeletableCount > 0 ? (
               <button
                 type="button"
@@ -815,6 +891,8 @@ export function DailyModuleEditor({
                       label
                     )
                   }
+                  onChangeSessionKind={handleChangeSessionKind}
+                  kindBusySessionId={kindBusySessionId}
                   onRemovePendingAdd={(clientId) =>
                     handleRemovePendingAdd(selectedPlan.timetableModuleId, clientId)
                   }
@@ -884,6 +962,8 @@ export function DailyModuleEditor({
                 onDeleteSession={(sessionId, label, moduleId) =>
                   handleQueueDeleteSession(moduleId, sessionId, label)
                 }
+                onChangeSessionKind={handleChangeSessionKind}
+                kindBusySessionId={kindBusySessionId}
               />
             ) : (
               <EmptyState message={t.selectDate} />
@@ -896,6 +976,8 @@ export function DailyModuleEditor({
 }
 
 function ModulePlanSummary({ plan }: { plan: DailyTimetableModulePlan }) {
+  const { t } = useLanguage();
+
   return (
     <div className="space-y-1 text-xs text-slate-600">
       <p className="font-medium text-slate-800">{plan.moduleInstanceCode}</p>
@@ -903,6 +985,9 @@ function ModulePlanSummary({ plan }: { plan: DailyTimetableModulePlan }) {
         {displayStream(plan.streamCode)} · {plan.weekdayLabel} ·{" "}
         {plan.isHd ? "HD" : "Degree"}
       </p>
+      {plan.labelPlanLocked ? (
+        <p className="font-medium text-violet-700">{t.dailyLabelPlanLockedBadge}</p>
+      ) : null}
       {plan.extraWeeklySlotCount > 0 ? (
         <p className="text-amber-700">
           {plan.extraWeeklySlotCount} backup slot(s)
@@ -1056,6 +1141,8 @@ function EditableDailyModuleSessions({
   onDraftChange,
   onApplyMakeupDraft,
   onDeleteSession,
+  onChangeSessionKind,
+  kindBusySessionId = null,
   onRemovePendingAdd,
 }: {
   scheduled: DailyTimetableEntry[];
@@ -1076,6 +1163,12 @@ function EditableDailyModuleSessions({
     backupSessionId: string
   ) => void;
   onDeleteSession: (sessionId: string, label: string) => void;
+  onChangeSessionKind?: (
+    sessionId: string,
+    label: string,
+    targetKind: "teaching" | "tutorial"
+  ) => void;
+  kindBusySessionId?: string | null;
   onRemovePendingAdd: (clientId: string) => void;
 }) {
   const { t } = useLanguage();
@@ -1114,6 +1207,8 @@ function EditableDailyModuleSessions({
         onDraftChange={onDraftChange}
         onApplyMakeupDraft={onApplyMakeupDraft}
         onDeleteSession={onDeleteSession}
+        onChangeSessionKind={onChangeSessionKind}
+        kindBusySessionId={kindBusySessionId}
       />
       {backup.length > 0 ? (
         <SessionGroupTable
@@ -1131,6 +1226,8 @@ function EditableDailyModuleSessions({
           onToggleGroupSelection={onToggleGroupSelection}
           onDraftChange={onDraftChange}
           onDeleteSession={onDeleteSession}
+          onChangeSessionKind={onChangeSessionKind}
+          kindBusySessionId={kindBusySessionId}
         />
       ) : null}
       {cancelled.length > 0 ? (
@@ -1150,6 +1247,8 @@ function EditableDailyModuleSessions({
           onDraftChange={onDraftChange}
           onApplyMakeupDraft={onApplyMakeupDraft}
           onDeleteSession={onDeleteSession}
+          onChangeSessionKind={onChangeSessionKind}
+          kindBusySessionId={kindBusySessionId}
         />
       ) : null}
     </div>
@@ -1182,6 +1281,8 @@ function SessionGroupTable({
   onDraftChange,
   onApplyMakeupDraft,
   onDeleteSession,
+  onChangeSessionKind,
+  kindBusySessionId = null,
 }: {
   title: string;
   description?: string;
@@ -1204,6 +1305,12 @@ function SessionGroupTable({
     backupSessionId: string
   ) => void;
   onDeleteSession?: (sessionId: string, label: string) => void;
+  onChangeSessionKind?: (
+    sessionId: string,
+    label: string,
+    targetKind: "teaching" | "tutorial"
+  ) => void;
+  kindBusySessionId?: string | null;
 }) {
   const { t } = useLanguage();
 
@@ -1314,6 +1421,10 @@ function SessionGroupTable({
                     onDraftChange={onDraftChange!}
                     onApplyMakeupDraft={onApplyMakeupDraft}
                     onDeleteSession={onDeleteSession}
+                    onChangeSessionKind={onChangeSessionKind}
+                    kindBusy={Boolean(
+                      row.sessionId && kindBusySessionId === row.sessionId
+                    )}
                   />
                   );
                 })}
@@ -1380,6 +1491,8 @@ function SessionEditRow({
   onDraftChange,
   onApplyMakeupDraft,
   onDeleteSession,
+  onChangeSessionKind,
+  kindBusy = false,
 }: {
   row: DailyTimetableEntry;
   draft: DailySessionDraftInput;
@@ -1396,6 +1509,12 @@ function SessionEditRow({
     backupSessionId: string
   ) => void;
   onDeleteSession?: (sessionId: string, label: string) => void;
+  onChangeSessionKind?: (
+    sessionId: string,
+    label: string,
+    targetKind: "teaching" | "tutorial"
+  ) => void;
+  kindBusy?: boolean;
 }) {
   const { t } = useLanguage();
   const [selectedBackupId, setSelectedBackupId] = useState("");
@@ -1434,6 +1553,17 @@ function SessionEditRow({
     !row.isBackup &&
     backupChoices.length > 0 &&
     onApplyMakeupDraft;
+
+  const isTutorial = isTutorialTimetableSession({
+    session_kind: row.sessionKind,
+    session_label: row.sessionLabel,
+  });
+  const canChangeKind =
+    !isPending &&
+    !row.isBackup &&
+    draft.status !== "cancel" &&
+    row.status !== "cancel" &&
+    onChangeSessionKind;
 
   return (
     <tr className={rowClass}>
@@ -1576,18 +1706,39 @@ function SessionEditRow({
         </div>
       </td>
       <td className="px-3 py-2">
-        {!isPending && onDeleteSession ? (
-          <button
-            type="button"
-            className="btn btn-secondary inline-flex items-center gap-1 py-1 text-xs text-red-700"
-            onClick={() => onDeleteSession(sessionId, row.sessionLabel)}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t.deleteSession}
-          </button>
-        ) : (
-          <span className="text-xs text-slate-400">—</span>
-        )}
+        <div className="flex flex-col gap-1">
+          {canChangeKind ? (
+            <button
+              type="button"
+              className="btn btn-secondary py-1 text-xs whitespace-nowrap"
+              disabled={kindBusy}
+              onClick={() =>
+                onChangeSessionKind!(
+                  sessionId,
+                  row.sessionLabel,
+                  isTutorial ? "teaching" : "tutorial"
+                )
+              }
+            >
+              {isTutorial
+                ? t.promoteSessionToLecture
+                : t.demoteSessionToTutorial}
+            </button>
+          ) : null}
+          {!isPending && onDeleteSession ? (
+            <button
+              type="button"
+              className="btn btn-secondary inline-flex items-center gap-1 py-1 text-xs text-red-700"
+              disabled={kindBusy}
+              onClick={() => onDeleteSession(sessionId, row.sessionLabel)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {t.deleteSession}
+            </button>
+          ) : !canChangeKind ? (
+            <span className="text-xs text-slate-400">—</span>
+          ) : null}
+        </div>
       </td>
     </tr>
   );
@@ -1605,6 +1756,8 @@ function EditableDailyTable({
   onToggleGroupSelection,
   onDraftChange,
   onDeleteSession,
+  onChangeSessionKind,
+  kindBusySessionId = null,
 }: {
   rows: DailyTimetableEntry[];
   drafts: Record<string, DailySessionDraftInput>;
@@ -1617,6 +1770,12 @@ function EditableDailyTable({
   onToggleGroupSelection: (rows: DailyTimetableEntry[], checked: boolean) => void;
   onDraftChange: (sessionId: string, patch: Partial<DailySessionDraftInput>) => void;
   onDeleteSession: (sessionId: string, label: string, moduleId: string) => void;
+  onChangeSessionKind?: (
+    sessionId: string,
+    label: string,
+    targetKind: "teaching" | "tutorial"
+  ) => void;
+  kindBusySessionId?: string | null;
 }) {
   const { scheduled, backup, cancelled } = partitionDailyModuleEntries(rows, drafts);
 
@@ -1640,6 +1799,8 @@ function EditableDailyTable({
           if (!row) return;
           onDeleteSession(sessionId, label, row.timetableModuleId);
         }}
+        onChangeSessionKind={onChangeSessionKind}
+        kindBusySessionId={kindBusySessionId}
       />
       {backup.length > 0 ? (
         <SessionGroupTable
@@ -1660,6 +1821,8 @@ function EditableDailyTable({
             if (!row) return;
             onDeleteSession(sessionId, label, row.timetableModuleId);
           }}
+          onChangeSessionKind={onChangeSessionKind}
+          kindBusySessionId={kindBusySessionId}
         />
       ) : null}
     </div>

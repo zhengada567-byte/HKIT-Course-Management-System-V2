@@ -210,6 +210,11 @@ export interface TimetableModuleRow {
   split_confirmed: boolean;
   assignment_confirmed: boolean;
   confirmed_version: number;
+  /** When locked with preserve_kinds, Daily relabel keeps session_kind and only renumbers L/T. */
+  daily_label_plan_override?: {
+    locked?: boolean;
+    strategy?: string;
+  } | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
