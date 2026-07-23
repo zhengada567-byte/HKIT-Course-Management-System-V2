@@ -52,7 +52,7 @@ function slotKey(startTime: string, endTime: string, roomCode: string) {
   return `${normalizeTime(startTime)}|${normalizeTime(endTime)}|${String(roomCode ?? "").trim()}`;
 }
 
-function isActiveScheduledEntry(
+function isActiveNonCancelledEntry(
   entry: DailyTimetableEntry,
   drafts: Record<string, SessionDraftLike>,
   pendingDeletes: ReadonlySet<string>
@@ -61,12 +61,21 @@ function isActiveScheduledEntry(
     return false;
   }
 
-  if (entry.isBackup) {
+  const status = drafts[entry.sessionId]?.status ?? entry.status;
+  return status !== "cancel";
+}
+
+/** Active labelled sessions only (excludes backups) — used for majority time/room template. */
+function isActiveScheduledEntry(
+  entry: DailyTimetableEntry,
+  drafts: Record<string, SessionDraftLike>,
+  pendingDeletes: ReadonlySet<string>
+) {
+  if (!isActiveNonCancelledEntry(entry, drafts, pendingDeletes)) {
     return false;
   }
 
-  const status = drafts[entry.sessionId]?.status ?? entry.status;
-  return status !== "cancel";
+  return !entry.isBackup;
 }
 
 /**
@@ -149,7 +158,7 @@ export function suggestNextSessionDate(params: {
   const pendingDeletes = params.pendingDeletes ?? new Set<string>();
 
   const dates = params.entries
-    .filter((entry) => isActiveScheduledEntry(entry, drafts, pendingDeletes))
+    .filter((entry) => isActiveNonCancelledEntry(entry, drafts, pendingDeletes))
     .map((entry) => {
       if (!entry.sessionId) {
         return entry.sessionDate;

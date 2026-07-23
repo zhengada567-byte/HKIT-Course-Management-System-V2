@@ -2,7 +2,6 @@ import type { DailySessionKind } from "./dailyTimetable";
 import type {
   SessionLabelAssignmentResult,
   SessionLabelAssignmentTarget,
-  TimetableSessionStatus,
 } from "./dailyTimetableSessionLabels";
 
 export type DailyLabelPlanOverride = {
@@ -44,10 +43,14 @@ export function parseDailyLabelPlanOverride(
   return { locked: true, strategy: "preserve_kinds" };
 }
 
+/**
+ * Resolve kind for preserve-kinds renumber.
+ * Unlabelled backups (no kind / no L|T label) stay null so they remain backups.
+ */
 export function resolveSessionKindForRelabel(params: {
   session_kind?: string | null;
   session_label?: string | null;
-}): DailySessionKind {
+}): DailySessionKind | null {
   if (String(params.session_kind ?? "").trim() === "tutorial") {
     return "tutorial";
   }
@@ -61,12 +64,16 @@ export function resolveSessionKindForRelabel(params: {
     return "tutorial";
   }
 
-  return "teaching";
+  if (/^L\d+/.test(label)) {
+    return "teaching";
+  }
+
+  return null;
 }
 
 /**
  * Keep each session's teaching/tutorial kind; renumber L1..Ln and T1..Tm by date.
- * Cancelled rows clear labels. Extra active rows stay labelled within their kind.
+ * Sessions with no kind/label stay backups (null). Cancelled rows clear labels.
  */
 export function buildPreserveKindLabelAssignments(params: {
   sessions: SessionKindForRelabel[];
@@ -82,8 +89,19 @@ export function buildPreserveKindLabelAssignments(params: {
   let sessionNumber = 0;
 
   for (const session of active) {
-    sessionNumber += 1;
     const kind = resolveSessionKindForRelabel(session);
+
+    if (!kind) {
+      results.push({
+        id: session.id,
+        session_label: null,
+        session_kind: null,
+        session_number: null,
+      });
+      continue;
+    }
+
+    sessionNumber += 1;
 
     if (kind === "tutorial") {
       tutorialNumber += 1;

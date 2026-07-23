@@ -306,6 +306,11 @@ export const zhHant = {
     "將 {label} 改為 Tutorial？系統會重新編號（L1… / T1…），並鎖定課節類型，之後自動重貼標籤會保留此組合。",
   dailySessionKindChanged: "已更新課節類型並重新編號。",
   dailySessionKindChangeFailed: "更改課節類型失敗。",
+  renumberDailyLabels: "重新編號 L/T",
+  renumberDailyLabelsConfirm:
+    "按 contact hours 依日期重新貼上 L/T？會補上缺少的 Lecture 編號，並可能把最早的 Backup 升為正常課。手動 L/T 鎖定會被清除。",
+  renumberDailyLabelsDone: "已按 contact hours 重新編號 L/T。",
+  renumberDailyLabelsFailed: "重新編號 L/T 失敗。",
   clearDailyLabelPlanLock: "解除 L/T 類型鎖定",
   clearDailyLabelPlanLockConfirm:
     "解除手動 Lecture/Tutorial 鎖定，並按 contact hours 規則重貼標籤？",

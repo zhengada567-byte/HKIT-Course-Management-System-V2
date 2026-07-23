@@ -515,7 +515,14 @@ export async function saveDailyTimetableModule(params: {
       updated_at: new Date().toISOString(),
     });
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === "23505") {
+        throw new Error(
+          "Cannot save: a session with the same date, time and room already exists. Choose another date/time/room, or delete the existing slot first."
+        );
+      }
+      throw error;
+    }
   }
 
   await applyDailyLabelsToTimetableModule(

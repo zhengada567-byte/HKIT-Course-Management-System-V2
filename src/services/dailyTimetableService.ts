@@ -15,6 +15,7 @@ import {
 } from "../lib/dailyTimetableLabelOverride";
 import {
   buildSessionLabelAssignments,
+  buildChronologicalLabelAssignments,
   formatCancelledRemark,
   isBackupTimetableSession,
   parseCancelledLabelFromRemark,
@@ -938,7 +939,8 @@ export async function applyDailyLabelsToTimetableModule(
   timetableModuleId: string,
   termWeeks: WeekRange[],
   termSummary: TermSummary,
-  excluded: Awaited<ReturnType<typeof buildExcludedIsoDatesForTerm>>
+  excluded: Awaited<ReturnType<typeof buildExcludedIsoDatesForTerm>>,
+  options?: { forceChronological?: boolean }
 ) {
   const { module, programmeType, teachingContactHours, tutorialContactHours } =
     await loadModuleCatalogContext(timetableModuleId);
@@ -949,8 +951,9 @@ export async function applyDailyLabelsToTimetableModule(
   );
 
   const override = parseDailyLabelPlanOverride(module.daily_label_plan_override);
+  const forceChronological = options?.forceChronological === true;
 
-  if (override?.strategy === "preserve_kinds") {
+  if (!forceChronological && override?.strategy === "preserve_kinds") {
     const assignments = buildPreserveKindLabelAssignments({
       sessions: studyWeekSessions.map((row) => ({
         id: row.id,
@@ -1006,35 +1009,38 @@ export async function applyDailyLabelsToTimetableModule(
     maxSlots: dateSlots.length,
   });
 
-  const existingLabels = new Map(
-    sessions.map((row) => [row.id, row.session_label ?? null])
-  );
+  const sessionTargets = studyWeekSessions.map((row) => ({
+    id: row.id,
+    status: row.status as TimetableSessionStatus,
+    session_date: normalizeSessionDate(row.session_date),
+    start_time: normalizeSessionTime(row.start_time),
+  }));
 
-  const assignments = buildSessionLabelAssignments({
-    labelSequence,
-    sessions: studyWeekSessions.map((row) => ({
-      id: row.id,
-      status: row.status as TimetableSessionStatus,
-      session_date: normalizeSessionDate(row.session_date),
-      start_time: normalizeSessionTime(row.start_time),
-    })),
-    existingLabelsById: existingLabels,
-  });
+  const assignments = forceChronological
+    ? buildChronologicalLabelAssignments({
+        labelSequence,
+        sessions: sessionTargets,
+      })
+    : buildSessionLabelAssignments({
+        labelSequence,
+        sessions: sessionTargets,
+        existingLabelsById: new Map(
+          sessions.map((row) => [row.id, row.session_label ?? null])
+        ),
+      });
 
   const now = new Date().toISOString();
   let updatedCount = 0;
 
   for (const assignment of assignments) {
-    const patch: Record<string, unknown> = {
-      session_label: assignment.session_label,
-      session_kind: assignment.session_kind,
-      session_number: assignment.session_number,
-      updated_at: now,
-    };
-
     const { error } = await supabase
       .from("timetable_sessions")
-      .update(patch)
+      .update({
+        session_label: assignment.session_label,
+        session_kind: assignment.session_kind,
+        session_number: assignment.session_number,
+        updated_at: now,
+      })
       .eq("id", assignment.id);
 
     if (error) throw error;
@@ -1889,8 +1895,36 @@ export async function clearDailyLabelPlanLock(params: {
     params.timetableModuleId,
     termWeeks,
     termSummary,
-    excluded
+    excluded,
+    { forceChronological: true }
   );
 
   return { timetableModuleId: params.timetableModuleId };
+}
+
+/**
+ * Re-apply contact-hour L/T labels by date order (fills L gaps / promotes earliest backups).
+ * Clears any preserve-kinds lock.
+ */
+export async function renumberDailyLabelsFromContactHours(params: {
+  timetableModuleId: string;
+  academicYear: string;
+  term: TimetableScheduleTerm;
+}) {
+  await setDailyLabelPlanOverride(params.timetableModuleId, null);
+
+  const { termWeeks, excluded, termSummary } = await loadTermCalendarContext({
+    academicYear: params.academicYear,
+    term: params.term,
+  });
+
+  const { updatedCount } = await applyDailyLabelsToTimetableModule(
+    params.timetableModuleId,
+    termWeeks,
+    termSummary,
+    excluded,
+    { forceChronological: true }
+  );
+
+  return { timetableModuleId: params.timetableModuleId, updatedCount };
 }

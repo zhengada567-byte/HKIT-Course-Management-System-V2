@@ -318,6 +318,11 @@ export const en = {
     "Change {label} to a Tutorial? Labels will be renumbered (L1… / T1…) and kinds will be locked so auto-relabel keeps this mix.",
   dailySessionKindChanged: "Session kind updated and labels renumbered.",
   dailySessionKindChangeFailed: "Failed to change session kind.",
+  renumberDailyLabels: "Renumber L/T",
+  renumberDailyLabelsConfirm:
+    "Re-apply L/T labels from contact hours by date order? This fills missing lecture numbers and may promote the earliest backup sessions into the normal list. Any manual kind lock will be cleared.",
+  renumberDailyLabelsDone: "L/T labels renumbered from contact hours.",
+  renumberDailyLabelsFailed: "Failed to renumber L/T labels.",
   clearDailyLabelPlanLock: "Unlock L/T kinds",
   clearDailyLabelPlanLockConfirm:
     "Clear the manual lecture/tutorial lock and restore labels from contact hours?",

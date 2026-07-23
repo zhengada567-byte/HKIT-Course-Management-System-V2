@@ -10,6 +10,7 @@ import {
   partitionDailyModuleEntries,
   changeDailySessionKind,
   clearDailyLabelPlanLock,
+  renumberDailyLabelsFromContactHours,
   type DailyTimetableBuildResult,
   type DailyTimetableEntry,
   type DailyTimetableModulePlan,
@@ -707,6 +708,30 @@ export function DailyModuleEditor({
     }
   }
 
+  async function handleRenumberLabels(plan: DailyTimetableModulePlan) {
+    if (!window.confirm(t.renumberDailyLabelsConfirm)) {
+      return;
+    }
+
+    setSavingModuleId(plan.timetableModuleId);
+
+    try {
+      await renumberDailyLabelsFromContactHours({
+        timetableModuleId: plan.timetableModuleId,
+        academicYear,
+        term,
+      });
+      await onRefreshPlan(plan.timetableModuleId);
+      onMessage(t.renumberDailyLabelsDone);
+    } catch (error) {
+      onMessage(
+        error instanceof Error ? error.message : t.renumberDailyLabelsFailed
+      );
+    } finally {
+      setSavingModuleId(null);
+    }
+  }
+
   const selectedDeletableCount = getSelectedDeletableItems().length;
 
   function renderSaveBar(plan: DailyTimetableModulePlan | null, allowSaveAll = false) {
@@ -735,6 +760,16 @@ export function DailyModuleEditor({
                 : t.dailyModuleNoChanges}
           </p>
           <div className="flex flex-wrap gap-2">
+            {plan ? (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={saving}
+                onClick={() => void handleRenumberLabels(plan)}
+              >
+                {t.renumberDailyLabels}
+              </button>
+            ) : null}
             {plan?.labelPlanLocked ? (
               <button
                 type="button"
@@ -1560,10 +1595,10 @@ function SessionEditRow({
   });
   const canChangeKind =
     !isPending &&
-    !row.isBackup &&
     draft.status !== "cancel" &&
     row.status !== "cancel" &&
     onChangeSessionKind;
+  const kindActionIsPromote = row.isBackup || isTutorial;
 
   return (
     <tr className={rowClass}>
@@ -1715,12 +1750,13 @@ function SessionEditRow({
               onClick={() =>
                 onChangeSessionKind!(
                   sessionId,
-                  row.sessionLabel,
-                  isTutorial ? "teaching" : "tutorial"
+                  row.sessionLabel?.trim() ||
+                    (row.isBackup ? "Backup" : "session"),
+                  kindActionIsPromote ? "teaching" : "tutorial"
                 )
               }
             >
-              {isTutorial
+              {kindActionIsPromote
                 ? t.promoteSessionToLecture
                 : t.demoteSessionToTutorial}
             </button>
