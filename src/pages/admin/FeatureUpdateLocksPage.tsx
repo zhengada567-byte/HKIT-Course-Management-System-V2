@@ -84,7 +84,7 @@ export function FeatureUpdateLocksPage() {
       await setFeatureUpdateLock({
         feature,
         locked,
-        updatedBy: user.username,
+        updatedBy: user.id,
       });
       await refreshLocks();
       setMessage(t.featureUpdateLocksSaved);
