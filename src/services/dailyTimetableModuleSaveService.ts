@@ -289,6 +289,34 @@ async function applySessionDraftUpdate(params: {
   const draftSessionDate = normalizeSessionDate(params.draft.session_date);
   const draftStartTime = normalizeSessionTime(params.draft.start_time);
   const draftEndTime = normalizeSessionTime(params.draft.end_time);
+  const draftRoom = String(params.draft.room_code).trim();
+  const draftTeacher =
+    String(params.draft.teacher_name ?? "").trim() || null;
+  const draftStatus = params.draft.status;
+  const draftRemark = params.draft.remark.trim() || null;
+
+  const existing = params.existingRow;
+  const existingDate = existing
+    ? normalizeSessionDate(existing.session_date)
+    : null;
+  const existingStart = existing
+    ? normalizeSessionTime(existing.start_time)
+    : null;
+  const existingEnd = existing ? normalizeSessionTime(existing.end_time) : null;
+  const existingRoom = existing ? String(existing.room_code ?? "").trim() : null;
+  const existingTeacher = existing
+    ? String(existing.teacher_name ?? "").trim() || null
+    : null;
+  const existingStatus = existing?.status ?? null;
+  const existingRemark = existing
+    ? String(existing.remark ?? "").trim() || null
+    : null;
+
+  const dateTimeChanged =
+    !existing ||
+    existingDate !== draftSessionDate ||
+    existingStart !== draftStartTime ||
+    existingEnd !== draftEndTime;
 
   const overlapping = findOverlappingTimeBreaks({
     sessionDate: draftSessionDate,
@@ -298,14 +326,7 @@ async function applySessionDraftUpdate(params: {
   });
 
   if (overlapping.length > 0) {
-    const existing = params.existingRow;
-    const dateTimeChanged =
-      !existing ||
-      normalizeSessionDate(existing.session_date) !== draftSessionDate ||
-      normalizeSessionTime(existing.start_time) !== draftStartTime ||
-      normalizeSessionTime(existing.end_time) !== draftEndTime;
-
-    // A: existing blocked sessions can remain, but PL cannot move a session into a blocked slot.
+    // Existing blocked sessions can remain, but cannot move into a blocked slot.
     if (dateTimeChanged) {
       const names = Array.from(
         new Set(overlapping.map((b) => b.breakName))
@@ -318,24 +339,46 @@ async function applySessionDraftUpdate(params: {
 
   const patch: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
-    session_date: normalizeSessionDate(params.draft.session_date),
-    start_time: normalizeSessionTime(params.draft.start_time),
-    end_time: normalizeSessionTime(params.draft.end_time),
-    room_code: String(params.draft.room_code).trim(),
-    teacher_name: String(params.draft.teacher_name ?? "").trim() || null,
-    status: params.draft.status,
   };
 
-  if (params.draft.status === "cancel") {
-    const label = String(params.existingRow?.session_label ?? params.label).trim();
+  if (!existing || existingDate !== draftSessionDate) {
+    patch.session_date = draftSessionDate;
+  }
+  if (!existing || existingStart !== draftStartTime) {
+    patch.start_time = draftStartTime;
+  }
+  if (!existing || existingEnd !== draftEndTime) {
+    patch.end_time = draftEndTime;
+  }
+  if (!existing || existingRoom !== draftRoom) {
+    patch.room_code = draftRoom;
+  }
+  if (!existing || existingTeacher !== draftTeacher) {
+    patch.teacher_name = draftTeacher;
+  }
+  if (!existing || existingStatus !== draftStatus) {
+    patch.status = draftStatus;
+  }
 
-    if (label) {
-      patch.remark = formatCancelledRemark(label, params.draft.remark);
-    } else {
-      patch.remark = params.draft.remark.trim() || null;
-    }
-  } else {
-    patch.remark = params.draft.remark.trim() || null;
+  let nextRemark = draftRemark;
+  if (draftStatus === "cancel") {
+    const label = String(
+      params.existingRow?.session_label ?? params.label
+    ).trim();
+    nextRemark = label
+      ? formatCancelledRemark(label, params.draft.remark)
+      : draftRemark;
+  }
+
+  if (!existing || existingRemark !== nextRemark) {
+    patch.remark = nextRemark;
+  }
+
+  // Only teacher/remark/etc. — avoid no-op updates that still touch updated_at alone
+  // when nothing actually changed (caller should have filtered these already).
+  const changedKeys = Object.keys(patch).filter((key) => key !== "updated_at");
+  if (changedKeys.length === 0) {
+    return;
   }
 
   const { error } = await supabase
@@ -525,12 +568,23 @@ export async function saveDailyTimetableModule(params: {
     }
   }
 
-  await applyDailyLabelsToTimetableModule(
-    params.plan.timetableModuleId,
-    termWeeks,
-    termSummary,
-    excluded
-  );
+  // Relabel only when session set / status changes. Teacher or one-off date/time
+  // edits must not reshuffle L/T across the module (and must not rewrite Weekly).
+  const statusChanged = [...cancelUpdates, ...otherUpdates].some((entry) => {
+    const draft = params.drafts[entry.sessionId!]!;
+    const existing = rowById.get(entry.sessionId!);
+    const beforeStatus = String(existing?.status ?? entry.status);
+    return draft.status !== beforeStatus;
+  });
+
+  if (pendingDeletes.size > 0 || pendingAdds.length > 0 || statusChanged) {
+    await applyDailyLabelsToTimetableModule(
+      params.plan.timetableModuleId,
+      termWeeks,
+      termSummary,
+      excluded
+    );
+  }
 
   const emailResult = await recordAndSendDailyTimetableNotification({
     academicYear: params.academicYear,

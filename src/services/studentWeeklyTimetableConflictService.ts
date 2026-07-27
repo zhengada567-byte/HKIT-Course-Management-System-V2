@@ -386,6 +386,15 @@ export async function detectStudentWeeklyTimetableConflicts(params: {
         const left = placedSlots[index]!;
         const right = placedSlots[other]!;
 
+        // Same class instance (e.g. L vs T, or Daily time variants of one weekly slot)
+        // is not a student timetable clash — only different enrolled classes count.
+        if (
+          left.moduleInstanceCode &&
+          left.moduleInstanceCode === right.moduleInstanceCode
+        ) {
+          continue;
+        }
+
         if (left.weekday !== right.weekday) continue;
         if (!overlaps(left, right)) continue;
 

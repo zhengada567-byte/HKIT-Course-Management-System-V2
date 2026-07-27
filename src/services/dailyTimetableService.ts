@@ -493,14 +493,23 @@ function materializeModuleDailyPlan(params: {
       usedSessionIds.add(matched.id);
     }
 
+    // Prefer the real session date/time from DB. Contact-plan dateSlots are only
+    // for unmatched planned rows — never overwrite an existing Weekly placement date.
+    const matchedDate = matched
+      ? normalizeSessionDate(matched.session_date)
+      : null;
     const sessionDate =
-      assignment.dateSlot?.sessionDate ??
-      (matched != null ? normalizeSessionDate(matched.session_date) : null);
+      matchedDate ?? assignment.dateSlot?.sessionDate ?? null;
 
     if (!sessionDate) continue;
 
+    const matchedWeekday = matchedDate
+      ? (parseIsoDate(matchedDate)?.getDay() ?? null)
+      : null;
     const entryWeekday =
-      assignment.dateSlot?.calendarWeekday ?? weekday;
+      matchedWeekday != null && matchedWeekday !== 0
+        ? matchedWeekday
+        : (assignment.dateSlot?.calendarWeekday ?? weekday);
     const durationHours = slot.durationHours ?? 4;
     const startTime = matched
       ? normalizeSessionTime(matched.start_time)
@@ -531,7 +540,7 @@ function materializeModuleDailyPlan(params: {
       startTime,
       endTime,
       roomCode: matched?.room_code ?? template.roomCode,
-      teacherName: matched?.teacher_name ?? template.teacherName,
+      teacherName: matched?.teacher_name ?? null,
       hasWeeklySession: Boolean(matched),
       sessionNumber: matched?.session_number ?? index + 1,
       isBackup: false,

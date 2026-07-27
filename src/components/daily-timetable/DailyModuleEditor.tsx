@@ -42,18 +42,15 @@ export type DailyModuleEditorProps = {
   onMessage: (message: string) => void;
 };
 
-function buildDraftFromEntry(
-  entry: DailyTimetableEntry,
-  moduleDefaultTeacher: string | null = null
-): DailySessionDraftInput {
-  const sessionTeacher = String(entry.teacherName ?? "").trim();
-
+function buildDraftFromEntry(entry: DailyTimetableEntry): DailySessionDraftInput {
   return {
     session_date: entry.sessionDate,
     start_time: entry.startTime.slice(0, 5),
     end_time: entry.endTime.slice(0, 5),
     room_code: entry.roomCode,
-    teacher_name: sessionTeacher || moduleDefaultTeacher || null,
+    // Keep the stored session teacher only — do not invent a module default here
+    // (that was marking whole modules dirty and rewriting Weekly dates on Save).
+    teacher_name: String(entry.teacherName ?? "").trim() || null,
     status: entry.status,
     remark: entry.remark ?? "",
   };
@@ -63,11 +60,9 @@ function initDraftsFromPlans(plans: DailyTimetableModulePlan[]) {
   const next: Record<string, DailySessionDraftInput> = {};
 
   for (const plan of plans) {
-    const moduleDefaultTeacher = resolveModuleDefaultTeacher(plan.entries);
-
     for (const entry of plan.entries) {
       if (!entry.sessionId) continue;
-      next[entry.sessionId] = buildDraftFromEntry(entry, moduleDefaultTeacher);
+      next[entry.sessionId] = buildDraftFromEntry(entry);
     }
   }
 
@@ -292,10 +287,7 @@ export function DailyModuleEditor({
         for (const plan of modulePlans) {
           const entry = plan.entries.find((row) => row.sessionId === sessionId);
           if (entry) {
-            base = buildDraftFromEntry(
-              entry,
-              moduleDefaultTeachersById.get(plan.timetableModuleId) ?? null
-            );
+            base = buildDraftFromEntry(entry);
             break;
           }
         }
@@ -320,16 +312,12 @@ export function DailyModuleEditor({
   }
 
   function resetModuleEditorState(moduleId: string, plan: DailyTimetableModulePlan) {
-    const moduleDefaultTeacher =
-      moduleDefaultTeachersById.get(moduleId) ??
-      resolveModuleDefaultTeacher(plan.entries);
-
     setDrafts((current) => {
       const next = { ...current };
 
       for (const entry of plan.entries) {
         if (!entry.sessionId) continue;
-        next[entry.sessionId] = buildDraftFromEntry(entry, moduleDefaultTeacher);
+        next[entry.sessionId] = buildDraftFromEntry(entry);
       }
 
       return next;
@@ -1424,20 +1412,14 @@ function SessionGroupTable({
                   />
                 ))
               : (rows as DailyTimetableEntry[]).map((row) => {
-                  const rowModuleDefaultTeacher =
-                    moduleDefaultTeachersById?.get(row.timetableModuleId) ??
-                    moduleDefaultTeacher ??
-                    null;
-
                   return (
                   <SessionEditRow
                     key={row.sessionId ?? `${row.moduleInstanceCode}-${row.sessionLabel}`}
                     row={row}
                     draft={
                       row.sessionId && drafts
-                        ? (drafts[row.sessionId] ??
-                            buildDraftFromEntry(row, rowModuleDefaultTeacher))
-                        : buildDraftFromEntry(row, rowModuleDefaultTeacher)
+                        ? (drafts[row.sessionId] ?? buildDraftFromEntry(row))
+                        : buildDraftFromEntry(row)
                     }
                     teachers={teachers}
                     showModule={showModule}

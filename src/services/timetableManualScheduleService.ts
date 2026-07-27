@@ -340,10 +340,6 @@ export function buildWeeklyTimetableGridFromSessions(params: {
   startTimeOptions: string[];
   combineMembersByGroupId?: Map<string, SchedulingCombineMember[]>;
 }): WeeklyGridState {
-  const collapsed = new Map<
-    string,
-    WeeklyGridItem & { weekday: number; start: string; end: string }
-  >();
   const sessionSlots: Array<{ start: string; end: string }> = [];
   const instanceByCode = new Map(
     params.timetableInstances.map((instance) => [
@@ -352,8 +348,24 @@ export function buildWeeklyTimetableGridFromSessions(params: {
     ])
   );
 
+  type PatternBucket = {
+    count: number;
+    weekday: number;
+    start: string;
+    end: string;
+    roomCode: string;
+    instanceCode: string;
+    timetableModule: TimetableModuleRow;
+  };
+
+  // Weekly layout is the recurring pattern only:
+  // - ignore cancel / make_up (Daily one-offs must not move Weekly chips)
+  // - keep patterns that are majority or appear at least twice
+  // - teacher always comes from instance (main teacher), not session substitutes
+  const patternsByInstance = new Map<string, Map<string, PatternBucket>>();
+
   for (const session of params.sessions) {
-    if (session.status === "cancel") continue;
+    if (session.status === "cancel" || session.status === "make_up") continue;
 
     const instanceCode = String(session.module_instance_code ?? "").trim();
     const timetableModule = params.moduleByInstanceCode.get(instanceCode);
@@ -377,33 +389,81 @@ export function buildWeeklyTimetableGridFromSessions(params: {
     if (!rawStart || !roomCode) continue;
 
     const start = normalizeWeeklySlotStart(rawStart, mode);
-    const slotKey = buildWeeklySlotKey(start, mode);
+    const end = weeklySlotDisplayEnd(start, mode);
+    const patternKey = [weekday, start, roomCode].join("|");
 
-    sessionSlots.push({ start, end: weeklySlotDisplayEnd(start, mode) });
+    let byPattern = patternsByInstance.get(instanceCode);
+    if (!byPattern) {
+      byPattern = new Map();
+      patternsByInstance.set(instanceCode, byPattern);
+    }
 
-    const key = [weekday, start, roomCode, instanceCode].join("|");
-    if (collapsed.has(key)) continue;
-
-    collapsed.set(key, {
-      weekday,
-      start,
-      end: weeklySlotDisplayEnd(start, mode),
-      ...buildWeeklyPlacementOccupant({
-        instance: {
-          module_instance_code: instanceCode,
-          module_code: String(session.module_code ?? "").trim(),
-          module_name: String(session.module_name ?? "").trim(),
-          instance_teacher_name: String(session.teacher_name ?? "").trim(),
-        } as TimetableModuleInstanceRow,
-        timetableModule,
+    const existing = byPattern.get(patternKey);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      byPattern.set(patternKey, {
+        count: 1,
+        weekday,
+        start,
+        end,
         roomCode,
-        moduleCode: String(session.module_code ?? "").trim(),
-        moduleName: String(session.module_name ?? "").trim(),
-        combineMembers: params.combineMembersByGroupId?.get(
-          String(timetableModule.combine_group_id ?? "").trim()
-        ),
-      }),
-    });
+        instanceCode,
+        timetableModule,
+      });
+    }
+  }
+
+  const collapsed = new Map<
+    string,
+    WeeklyGridItem & { weekday: number; start: string; end: string }
+  >();
+
+  for (const [instanceCode, byPattern] of patternsByInstance) {
+    const buckets = [...byPattern.values()];
+    if (buckets.length === 0) continue;
+
+    const maxCount = Math.max(...buckets.map((row) => row.count));
+    const kept = buckets.filter(
+      (row) => row.count === maxCount || row.count >= 2
+    );
+
+    const instance = instanceByCode.get(instanceCode);
+
+    for (const bucket of kept) {
+      sessionSlots.push({ start: bucket.start, end: bucket.end });
+
+      const key = [
+        bucket.weekday,
+        bucket.start,
+        bucket.roomCode,
+        instanceCode,
+      ].join("|");
+
+      if (collapsed.has(key)) continue;
+
+      collapsed.set(key, {
+        weekday: bucket.weekday,
+        start: bucket.start,
+        end: bucket.end,
+        ...buildWeeklyPlacementOccupant({
+          instance: (instance ?? {
+            module_instance_code: instanceCode,
+            module_code: bucket.timetableModule.base_module_code,
+            module_name: bucket.timetableModule.module_name,
+            instance_teacher_name: null,
+          }) as TimetableModuleInstanceRow,
+          timetableModule: bucket.timetableModule,
+          roomCode: bucket.roomCode,
+          moduleCode:
+            bucket.timetableModule.base_module_code ?? instanceCode,
+          moduleName: bucket.timetableModule.module_name,
+          combineMembers: params.combineMembersByGroupId?.get(
+            String(bucket.timetableModule.combine_group_id ?? "").trim()
+          ),
+        }),
+      });
+    }
   }
 
   const itemsBySlotAndWeekday: WeeklyGridState["itemsBySlotAndWeekday"] = {};
