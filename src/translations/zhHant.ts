@@ -38,8 +38,8 @@ export const zhHant = {
   teacherLoadingViewModules: "科目數量",
   teacherLoadingViewContactHours: "Contact hours",
   teacherContactHoursDescription:
-    "按每位教師名下已編號 L/T 課節的實際時長加總（以 Daily／Weekly session 老師為準）。Backup、已取消、以及空白／TBC 老師不計入。展開列可查看各科目明細。",
-  teacherContactHoursSearchHint: "選擇聘用身份（及可選學期）後按「搜尋」。",
+    "按每位教師名下已編號 L/T 課節的實際時長加總（以 Daily／Weekly session 老師為準）。FT／PT 篩選以「此科教學身份」為準，不是教師名册聘用身份。Backup、已取消、以及空白／TBC 老師不計入。",
+  teacherContactHoursSearchHint: "選擇此科教學身份（及可選學期）後按「搜尋」。",
   teacherContactHoursTermAll: "全部學期",
   teacherContactHoursSessions: "課節數",
   teacherContactHoursLecture: "Lecture 時數",

@@ -62,7 +62,7 @@ export function TeacherLoadingPage() {
       } else {
         const data = await getTeacherContactHoursSummary({
           academicYear,
-          employmentType,
+          teachingStatus: employmentType,
           term: termFilter,
         });
         setHoursRows(data);
@@ -100,7 +100,7 @@ export function TeacherLoadingPage() {
     downloadTeacherContactHoursCsv({
       rows: hoursRows,
       academicYear,
-      employmentType,
+      teachingStatus: employmentType,
       term: termFilter,
     });
   }
@@ -197,7 +197,11 @@ export function TeacherLoadingPage() {
             </div>
 
             <div>
-              <label className="form-label">{t.teacherEmploymentStatus}</label>
+              <label className="form-label">
+                {view === "contactHours"
+                  ? t.teachingStatusForThisModule
+                  : t.teacherEmploymentStatus}
+              </label>
               <select
                 className="form-select"
                 value={employmentType}
@@ -300,6 +304,7 @@ export function TeacherLoadingPage() {
                 <th className="w-10" />
                 <th>{t.teacherName}</th>
                 <th>{t.teacherEmploymentStatus}</th>
+                <th>{t.teachingStatusForThisModule}</th>
                 <th>{t.teacherContactHoursSessions}</th>
                 <th>{t.teacherContactHoursLecture}</th>
                 <th>{t.teacherContactHoursTutorial}</th>
@@ -325,6 +330,7 @@ export function TeacherLoadingPage() {
                       </td>
                       <td>{row.teacher_name}</td>
                       <td>{row.teacher_employment_type ?? "-"}</td>
+                      <td>{row.teaching_status}</td>
                       <td>{row.session_count}</td>
                       <td>{formatContactHoursDisplay(row.lecture_hours)}</td>
                       <td>{formatContactHoursDisplay(row.tutorial_hours)}</td>
@@ -352,6 +358,7 @@ export function TeacherLoadingPage() {
                                   {[
                                     module.programme_code,
                                     module.module_term,
+                                    module.teaching_status,
                                     module.module_code !==
                                     module.module_instance_code
                                       ? module.module_code
@@ -362,6 +369,7 @@ export function TeacherLoadingPage() {
                                 </div>
                               </div>
                             </td>
+                            <td>{module.teaching_status}</td>
                             <td>{module.session_count}</td>
                             <td>
                               {formatContactHoursDisplay(module.lecture_hours)}

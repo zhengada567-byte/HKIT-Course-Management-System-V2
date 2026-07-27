@@ -1,11 +1,22 @@
-import { isTBC } from "../lib/utils";
-import type { EmploymentType, ModuleTerm, TeacherRow } from "../types";
 import { saveAs } from "file-saver";
+import { supabase } from "../lib/supabase";
+import { isTBC, normalizeStream } from "../lib/utils";
+import type {
+  EmploymentType,
+  ModuleTerm,
+  TeacherRow,
+  TeachingStatus,
+  TimetableModuleRow,
+} from "../types";
 import {
   canonicalizeTeacherNameForLoading,
   listTeachers,
   resolveTeacherEmploymentFromCatalog,
 } from "./teacherService";
+import {
+  normalizeDefaultAssignmentStream,
+  normalizeTeachingStatus,
+} from "./moduleDefaultAssignmentService";
 import {
   listTimetableSessions,
   type TimetableSessionRow,
@@ -21,6 +32,7 @@ export interface TeacherContactHoursModuleRow {
   module_name: string | null;
   programme_code: string;
   module_term: ModuleTerm;
+  teaching_status: TeachingStatus;
   session_count: number;
   total_hours: number;
   lecture_hours: number;
@@ -29,7 +41,10 @@ export interface TeacherContactHoursModuleRow {
 
 export interface TeacherContactHoursRow {
   teacher_name: string;
+  /** Catalogue employment (FT/PT staff identity) — display only. */
   teacher_employment_type: EmploymentType | null;
+  /** Teaching status bucket used for this report (此科教學身份). */
+  teaching_status: TeachingStatus;
   session_count: number;
   total_hours: number;
   lecture_hours: number;
@@ -105,27 +120,150 @@ export function formatContactHoursDisplay(value: number) {
   return rounded.toFixed(2).replace(/\.?0+$/, "");
 }
 
-function matchesEmploymentFilter(
-  teacherName: string,
-  employmentType: EmploymentType,
-  teachers: TeacherRow[]
-) {
-  const catalogEmployment = resolveTeacherEmploymentFromCatalog(
-    teacherName,
-    teachers
-  );
+function defaultLookupKey(params: {
+  moduleCode: string;
+  programmeCode: string;
+  streamCode: string;
+  moduleTerm: string;
+}) {
+  return [
+    normalizeText(params.moduleCode).toUpperCase(),
+    normalizeText(params.programmeCode).toUpperCase(),
+    normalizeDefaultAssignmentStream(params.streamCode).toUpperCase(),
+    normalizeModuleTerm(params.moduleTerm),
+  ].join("|");
+}
 
-  return catalogEmployment === employmentType;
+/**
+ * Resolve 此科教學身份 per timetable module:
+ * teaching_assignments → module_default_assignments.
+ * Does not infer from Day/Night mode.
+ */
+async function loadTeachingStatusByModuleId(params: {
+  academicYear: string;
+  modules: TimetableModuleRow[];
+}): Promise<Map<string, TeachingStatus>> {
+  const result = new Map<string, TeachingStatus>();
+
+  const [{ data: assignmentData, error: assignmentError }, { data: defaultData, error: defaultError }] =
+    await Promise.all([
+      supabase
+        .from("teaching_assignments")
+        .select(
+          "timetable_module_id, teaching_status, confirmed, assignment_version, updated_at"
+        )
+        .eq("academic_year", params.academicYear),
+      supabase
+        .from("module_default_assignments")
+        .select(
+          "module_code, programme_code, stream_code, module_term, teaching_status"
+        )
+        .eq("academic_year", params.academicYear),
+    ]);
+
+  if (assignmentError) throw assignmentError;
+  if (defaultError) throw defaultError;
+
+  type AssignmentPick = {
+    timetable_module_id: string;
+    teaching_status: string | null;
+    confirmed: boolean | null;
+    assignment_version: number | null;
+    updated_at: string | null;
+  };
+
+  const bestAssignment = new Map<string, AssignmentPick>();
+
+  for (const row of (assignmentData ?? []) as AssignmentPick[]) {
+    const moduleId = normalizeText(row.timetable_module_id);
+    const status = normalizeTeachingStatus(row.teaching_status);
+    if (!moduleId || !status) continue;
+
+    const existing = bestAssignment.get(moduleId);
+    if (!existing) {
+      bestAssignment.set(moduleId, row);
+      continue;
+    }
+
+    const existingConfirmed = Boolean(existing.confirmed);
+    const nextConfirmed = Boolean(row.confirmed);
+    if (nextConfirmed && !existingConfirmed) {
+      bestAssignment.set(moduleId, row);
+      continue;
+    }
+    if (existingConfirmed && !nextConfirmed) continue;
+
+    const existingVersion = Number(existing.assignment_version ?? 0);
+    const nextVersion = Number(row.assignment_version ?? 0);
+    if (nextVersion > existingVersion) {
+      bestAssignment.set(moduleId, row);
+      continue;
+    }
+    if (nextVersion < existingVersion) continue;
+
+    if (
+      String(row.updated_at ?? "").localeCompare(String(existing.updated_at ?? "")) >
+      0
+    ) {
+      bestAssignment.set(moduleId, row);
+    }
+  }
+
+  for (const [moduleId, row] of bestAssignment) {
+    const status = normalizeTeachingStatus(row.teaching_status);
+    if (status) result.set(moduleId, status);
+  }
+
+  const defaultsByKey = new Map<string, TeachingStatus>();
+  for (const row of defaultData ?? []) {
+    const status = normalizeTeachingStatus(
+      (row as { teaching_status?: string | null }).teaching_status
+    );
+    if (!status) continue;
+
+    defaultsByKey.set(
+      defaultLookupKey({
+        moduleCode: String((row as { module_code?: string }).module_code ?? ""),
+        programmeCode: String(
+          (row as { programme_code?: string }).programme_code ?? ""
+        ),
+        streamCode: String((row as { stream_code?: string }).stream_code ?? ""),
+        moduleTerm: String((row as { module_term?: string }).module_term ?? ""),
+      }),
+      status
+    );
+  }
+
+  for (const module of params.modules) {
+    if (result.has(module.id)) continue;
+
+    const baseCode =
+      normalizeText(module.base_module_code) ||
+      normalizeText(module.module_instance_code);
+    const status = defaultsByKey.get(
+      defaultLookupKey({
+        moduleCode: baseCode,
+        programmeCode: module.programme_code,
+        streamCode: normalizeStream(module.stream_code),
+        moduleTerm: module.module_term,
+      })
+    );
+
+    if (status) {
+      result.set(module.id, status);
+    }
+  }
+
+  return result;
 }
 
 /**
  * Sum actual session durations for numbered L/T sessions under each teacher.
- * - Cancel / backup (no L|T number) / empty|TBC teacher → excluded
- * - Attribution is per session.teacher_name (no assignment fallback)
+ * FT/PT filter uses 此科教學身份 (teaching_status), not catalogue employment.
  */
 export async function getTeacherContactHoursSummary(params: {
   academicYear: string;
-  employmentType: EmploymentType;
+  teachingStatus: TeachingStatus;
   term?: TeacherContactHoursTermFilter;
 }): Promise<TeacherContactHoursRow[]> {
   const termFilter = params.term ?? "All";
@@ -136,6 +274,11 @@ export async function getTeacherContactHoursSummary(params: {
     listTeachers(params.academicYear),
   ]);
 
+  const teachingStatusByModuleId = await loadTeachingStatusByModuleId({
+    academicYear: params.academicYear,
+    modules,
+  });
+
   const moduleById = new Map(
     modules.map((module) => [module.id, module] as const)
   );
@@ -144,6 +287,7 @@ export async function getTeacherContactHoursSummary(params: {
   type AccTeacher = {
     teacher_name: string;
     teacher_employment_type: EmploymentType | null;
+    teaching_status: TeachingStatus;
     session_count: number;
     total_hours: number;
     lecture_hours: number;
@@ -162,14 +306,18 @@ export async function getTeacherContactHoursSummary(params: {
 
     const teacherName = canonicalizeTeacherNameForLoading(rawTeacher, teachers);
     if (!teacherName || isTBC(teacherName)) continue;
-    if (!matchesEmploymentFilter(teacherName, params.employmentType, teachers)) {
+
+    const module = moduleById.get(session.timetable_module_id);
+    const teachingStatus = teachingStatusByModuleId.get(
+      session.timetable_module_id
+    );
+
+    // Only count sessions whose module teaching status matches the filter.
+    if (!teachingStatus || teachingStatus !== params.teachingStatus) {
       continue;
     }
 
-    const module = moduleById.get(session.timetable_module_id);
-    const moduleTerm = normalizeModuleTerm(
-      module?.module_term ?? null
-    );
+    const moduleTerm = normalizeModuleTerm(module?.module_term ?? null);
 
     if (termFilter !== "All" && moduleTerm !== termFilter) {
       continue;
@@ -191,6 +339,7 @@ export async function getTeacherContactHoursSummary(params: {
           teacherName,
           teachers
         ),
+        teaching_status: params.teachingStatus,
         session_count: 0,
         total_hours: 0,
         lecture_hours: 0,
@@ -223,6 +372,7 @@ export async function getTeacherContactHoursSummary(params: {
         module_name: module?.module_name ?? session.module_name,
         programme_code: normalizeText(module?.programme_code),
         module_term: moduleTerm,
+        teaching_status: teachingStatus,
         session_count: 0,
         total_hours: 0,
         lecture_hours: 0,
@@ -244,6 +394,7 @@ export async function getTeacherContactHoursSummary(params: {
     .map((teacher) => ({
       teacher_name: teacher.teacher_name,
       teacher_employment_type: teacher.teacher_employment_type,
+      teaching_status: teacher.teaching_status,
       session_count: teacher.session_count,
       total_hours: roundHours(teacher.total_hours),
       lecture_hours: roundHours(teacher.lecture_hours),
@@ -283,22 +434,25 @@ function rowsToCsv(headers: string[], rows: string[][]) {
 }
 
 function sanitizeFilePart(value: string) {
-  return String(value ?? "")
-    .trim()
-    .replace(/[^\w.-]+/g, "_")
-    .replace(/^_+|_+$/g, "") || "export";
+  return (
+    String(value ?? "")
+      .trim()
+      .replace(/[^\w.-]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "export"
+  );
 }
 
 /** Download contact-hours detail CSV (one row per teacher × module). */
 export function downloadTeacherContactHoursCsv(params: {
   rows: TeacherContactHoursRow[];
   academicYear: string;
-  employmentType: EmploymentType;
+  teachingStatus: TeachingStatus;
   term: TeacherContactHoursTermFilter;
 }) {
   const headers = [
     "Teacher",
-    "Employment",
+    "Catalogue Employment",
+    "Teaching Status",
     "Term",
     "Programme",
     "Module Instance",
@@ -318,6 +472,7 @@ export function downloadTeacherContactHoursCsv(params: {
       csvRows.push([
         teacher.teacher_name,
         teacher.teacher_employment_type ?? "",
+        module.teaching_status,
         module.module_term,
         module.programme_code,
         module.module_instance_code,
@@ -333,13 +488,14 @@ export function downloadTeacherContactHoursCsv(params: {
   }
 
   const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const fileName = [
-    "teacher_contact_hours",
-    sanitizeFilePart(params.academicYear),
-    params.employmentType,
-    sanitizeFilePart(params.term),
-    dateStamp,
-  ].join("_") + ".csv";
+  const fileName =
+    [
+      "teacher_contact_hours",
+      sanitizeFilePart(params.academicYear),
+      params.teachingStatus,
+      sanitizeFilePart(params.term),
+      dateStamp,
+    ].join("_") + ".csv";
 
   saveAs(
     new Blob(["\uFEFF" + rowsToCsv(headers, csvRows)], {

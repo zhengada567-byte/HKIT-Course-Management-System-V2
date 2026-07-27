@@ -43,9 +43,9 @@ export const en = {
   teacherLoadingViewModules: "Module counts",
   teacherLoadingViewContactHours: "Contact hours",
   teacherContactHoursDescription:
-    "Sums actual duration of numbered L/T sessions under each teacher (from Daily/Weekly session teacher). Backups, cancelled, and empty/TBC teachers are excluded. Expand a row to see modules.",
+    "Sums actual duration of numbered L/T sessions under each teacher (from Daily/Weekly session teacher). FT/PT filter uses teaching status for each module (此科教學身份), not catalogue employment. Backups, cancelled, and empty/TBC teachers are excluded.",
   teacherContactHoursSearchHint:
-    "Select employment type (and optional term), then click Search.",
+    "Select teaching status for this module (and optional term), then click Search.",
   teacherContactHoursTermAll: "All terms",
   teacherContactHoursSessions: "Sessions",
   teacherContactHoursLecture: "Lecture hours",
