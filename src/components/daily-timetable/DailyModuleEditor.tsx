@@ -858,7 +858,9 @@ export function DailyModuleEditor({
                 <option value="">—</option>
                 {modulePlans.map((plan) => (
                   <option key={plan.timetableModuleId} value={plan.timetableModuleId}>
-                    {plan.moduleInstanceCode} ({plan.programmeCode})
+                    {plan.moduleInstanceCode}
+                    {plan.moduleName ? ` — ${plan.moduleName}` : ""} (
+                    {plan.programmeCode})
                   </option>
                 ))}
               </select>
@@ -957,6 +959,7 @@ export function DailyModuleEditor({
                 {modulePlans.map((plan) => (
                   <option key={plan.timetableModuleId} value={plan.timetableModuleId}>
                     {plan.moduleInstanceCode}
+                    {plan.moduleName ? ` — ${plan.moduleName}` : ""}
                   </option>
                 ))}
               </select>
@@ -1004,6 +1007,9 @@ function ModulePlanSummary({ plan }: { plan: DailyTimetableModulePlan }) {
   return (
     <div className="space-y-1 text-xs text-slate-600">
       <p className="font-medium text-slate-800">{plan.moduleInstanceCode}</p>
+      {plan.moduleName ? (
+        <p className="text-slate-700">{plan.moduleName}</p>
+      ) : null}
       <p>
         {displayStream(plan.streamCode)} · {plan.weekdayLabel} ·{" "}
         {plan.isHd ? "HD" : "Degree"}

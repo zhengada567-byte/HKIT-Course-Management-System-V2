@@ -690,7 +690,9 @@ export function DailyTimetablePage() {
                   <option value="">—</option>
                   {schedulableModulesForStep4.map((row) => (
                     <option key={row.id} value={row.id}>
-                      {row.module_instance_code} ({row.programme_code})
+                      {row.module_instance_code}
+                      {row.module_name ? ` — ${row.module_name}` : ""} (
+                      {row.programme_code})
                     </option>
                   ))}
                 </select>
