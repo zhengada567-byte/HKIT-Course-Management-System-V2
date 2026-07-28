@@ -259,6 +259,11 @@ export function getEarliestStudyTerm(
   return terms[0];
 }
 
+/**
+ * Latest planned programme-stage study term (graduate term).
+ * Bridging modules are excluded — Degree graduate_term must reflect Degree
+ * programme modules only.
+ */
 export function getLatestStudyTerm(
   modules: StudyPlanModule[]
 ): string | undefined {

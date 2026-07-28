@@ -2640,6 +2640,32 @@ export async function saveStudyPlanModules(
     { isDegreeProgramme: options?.batch?.isDegreeProgramme }
   );
 
+  // Recompute after reconcile so Degree graduate_term uses programme-stage
+  // modules only (not bridging), matching post-save module stages.
+  const finalIntakeTerm =
+    String(studentInput.intakeTerm ?? "").trim() ||
+    getEarliestStudyTerm(modulesReadyToSave);
+  const finalGraduateTerm = getLatestStudyTerm(modulesReadyToSave);
+  const finalStudentStatus = calculateStudentStatus(
+    modulesReadyToSave,
+    settings.currentStudyTerm,
+    studentWithType.programmeType
+  );
+
+  const refreshedStudent = await upsertStudyPlanStudent({
+    ...studentWithType,
+    id: savedStudentId,
+    intakeYear: deriveIntakeYearFromTerm(finalIntakeTerm),
+    intakeLevel: getDefaultIntakeLevel(
+      studentWithType.programmeCode,
+      studentWithType.intakeLevel,
+      studentWithType.programmeType
+    ),
+    intakeTerm: finalIntakeTerm,
+    graduateTerm: finalGraduateTerm,
+    studentStatus: finalStudentStatus,
+  });
+
   if (!options?.skipPostSync) {
     try {
       await recalculateActualStudentNumbers();
@@ -2654,7 +2680,7 @@ export async function saveStudyPlanModules(
     }
   }
 
-  return savedStudent;
+  return refreshedStudent;
 }
 
 /** Saves profile + modules (bulk upload and legacy callers). */
@@ -3178,11 +3204,13 @@ export async function recalculateAllStudentStatuses(
       String(student.programme_code ?? "").trim().toUpperCase()
     );
     const studentStatus = calculateStudentStatus(modules, term, programmeType);
+    const graduateTerm = getLatestStudyTerm(modules) ?? null;
 
     return supabase
       .from("study_plan_students")
       .update({
         student_status: studentStatus,
+        graduate_term: graduateTerm,
         updated_at: new Date().toISOString(),
       })
       .eq("id", student.id);
