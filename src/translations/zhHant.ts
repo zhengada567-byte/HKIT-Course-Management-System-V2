@@ -441,6 +441,11 @@ export const zhHant = {
   academicYearTermSaved: "已儲存。",
   academicYearTermSavedWithStatusRecalc:
     "已儲存，並已重新計算所有學生狀態。",
+  academicYearRecalculateStatuses: "重算學生狀態／畢業學期",
+  academicYearRecalculateStatusesHint:
+    "只根據學習計劃科目重算 student_status 與 graduate_term，不會改已儲存的學年或 Current Term。Degree 的 graduate_term 只取 programme 科目（不含 bridging）。",
+  academicYearStatusRecalcDone: "已重算學生狀態與畢業學期。",
+  academicYearStatusRecalcFailed: "重算學生狀態失敗",
   dateBasedSettings: "依今天日期推算",
   dateBasedSettingsDescription:
     "根據今天日期及下方學期日曆規則自動推算，僅供參考。",

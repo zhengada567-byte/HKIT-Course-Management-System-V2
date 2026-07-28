@@ -460,6 +460,12 @@ export const en = {
   academicYearTermSaved: "Saved.",
   academicYearTermSavedWithStatusRecalc:
     "Saved. All student statuses have been recalculated.",
+  academicYearRecalculateStatuses: "Recalculate student status / graduate term",
+  academicYearRecalculateStatusesHint:
+    "Updates student_status and graduate_term from study-plan modules without changing the saved academic year or current term. Degree graduate_term uses programme modules only (not bridging).",
+  academicYearStatusRecalcDone:
+    "Student statuses and graduate terms have been recalculated.",
+  academicYearStatusRecalcFailed: "Status recalculation failed",
   dateBasedSettings: "Date-based default",
   dateBasedSettingsDescription:
     "Inferred from today's date using the calendar term rules below.",

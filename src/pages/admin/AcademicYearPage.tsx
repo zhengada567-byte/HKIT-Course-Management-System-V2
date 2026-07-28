@@ -28,6 +28,34 @@ function formatTodayDate(date: Date) {
   });
 }
 
+function formatUnknownError(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object") {
+    const err = error as {
+      message?: string;
+      details?: string;
+      hint?: string;
+      code?: string;
+    };
+    const parts = [err.message, err.details, err.hint, err.code]
+      .map((part) => String(part ?? "").trim())
+      .filter(Boolean);
+
+    if (parts.length > 0) {
+      return parts.join(" — ");
+    }
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+
+  return fallback;
+}
+
 export function AcademicYearPage() {
   const { user } = useAuth();
   const {
@@ -68,6 +96,7 @@ export function AcademicYearPage() {
   );
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
 
   const previewAcademicYear = formatAcademicYear(Number(startYear) || 2026);
 
@@ -142,18 +171,43 @@ export function AcademicYearPage() {
       await refreshAcademicYear();
 
       if (termChanged || yearChanged) {
-        await recalculateAllStudentStatuses(previewStudyTerm);
+        try {
+          await recalculateAllStudentStatuses(previewStudyTerm);
+          setMessage(t.academicYearTermSavedWithStatusRecalc);
+        } catch (recalcError) {
+          setMessage(
+            `${t.academicYearTermSaved} ${t.academicYearStatusRecalcFailed}: ${formatUnknownError(
+              recalcError,
+              "Unknown error"
+            )}`
+          );
+        }
+      } else {
+        setMessage(t.academicYearTermSaved);
       }
-
-      setMessage(
-        termChanged || yearChanged
-          ? t.academicYearTermSavedWithStatusRecalc
-          : t.academicYearTermSaved
-      );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Save failed");
+      setMessage(formatUnknownError(error, "Save failed"));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleRecalculateStatuses() {
+    setRecalculating(true);
+    setMessage("");
+
+    try {
+      await recalculateAllStudentStatuses(currentStudyTerm);
+      setMessage(t.academicYearStatusRecalcDone);
+    } catch (error) {
+      setMessage(
+        `${t.academicYearStatusRecalcFailed}: ${formatUnknownError(
+          error,
+          "Unknown error"
+        )}`
+      );
+    } finally {
+      setRecalculating(false);
     }
   }
 
@@ -321,16 +375,29 @@ export function AcademicYearPage() {
               <button
                 className="btn btn-primary"
                 type="button"
-                onClick={handleSave}
-                disabled={saving}
+                onClick={() => void handleSave()}
+                disabled={saving || recalculating}
               >
                 {saving ? t.loading : t.save}
               </button>
+
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={() => void handleRecalculateStatuses()}
+                disabled={saving || recalculating}
+              >
+                {recalculating ? t.loading : t.academicYearRecalculateStatuses}
+              </button>
             </div>
+
+            <p className="text-xs text-slate-500">
+              {t.academicYearRecalculateStatusesHint}
+            </p>
           </div>
 
           {message && (
-            <div className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">
+            <div className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700 whitespace-pre-wrap">
               {message}
             </div>
           )}

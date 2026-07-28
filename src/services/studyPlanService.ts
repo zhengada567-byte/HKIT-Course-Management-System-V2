@@ -3198,7 +3198,7 @@ export async function recalculateAllStudentStatuses(
     modulesByStudent.set(profileId, existing);
   }
 
-  const updates = (students ?? []).map((student) => {
+  const updates = (students ?? []).map(async (student) => {
     const modules = modulesByStudent.get(student.id) ?? [];
     const programmeType = programmeTypeByCode.get(
       String(student.programme_code ?? "").trim().toUpperCase()
@@ -3206,7 +3206,7 @@ export async function recalculateAllStudentStatuses(
     const studentStatus = calculateStudentStatus(modules, term, programmeType);
     const graduateTerm = getLatestStudyTerm(modules) ?? null;
 
-    return supabase
+    const { error } = await supabase
       .from("study_plan_students")
       .update({
         student_status: studentStatus,
@@ -3214,9 +3214,29 @@ export async function recalculateAllStudentStatuses(
         updated_at: new Date().toISOString(),
       })
       .eq("id", student.id);
+
+    if (error) {
+      throw error;
+    }
   });
 
-  await Promise.all(updates);
+  const settled = await Promise.allSettled(updates);
+  const failures = settled.filter(
+    (result): result is PromiseRejectedResult => result.status === "rejected"
+  );
+
+  if (failures.length > 0) {
+    const first = failures[0]!.reason;
+    const detail =
+      first && typeof first === "object" && "message" in first
+        ? String((first as { message?: string }).message ?? "")
+        : String(first ?? "");
+    throw new Error(
+      `Failed to update ${failures.length} of ${settled.length} student profile(s).${
+        detail ? ` First error: ${detail}` : ""
+      }`
+    );
+  }
 }
 
 export async function recalculateActualStudentNumbers() {
