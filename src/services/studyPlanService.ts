@@ -3136,17 +3136,24 @@ export async function recalculateAllStudentStatuses(
 ) {
   const term = currentStudyTerm ?? (await getCurrentStudyTerm());
 
-  const { data: students, error: studentError } = await supabase
-    .from("study_plan_students")
-    .select("id, programme_code");
-
-  if (studentError) throw studentError;
+  const students = await fetchAllPaginatedRows<{
+    id: string;
+    programme_code: string | null;
+    graduate_term: string | null;
+  }>({
+    fetchPage: ({ from, to }) =>
+      supabase
+        .from("study_plan_students")
+        .select("id, programme_code, graduate_term")
+        .order("id", { ascending: true })
+        .range(from, to),
+  });
 
   const programmeTypeByCode = new Map<string, string>();
 
   const programmeCodes = Array.from(
     new Set(
-      (students ?? [])
+      students
         .map((row) => String(row.programme_code ?? "").trim())
         .filter(Boolean)
     )
@@ -3174,15 +3181,26 @@ export async function recalculateAllStudentStatuses(
     }
   }
 
-  const { data: moduleRows, error: moduleError } = await supabase
-    .from("study_plan_modules")
-    .select("student_profile_id, plan_stage, status, study_term");
-
-  if (moduleError) throw moduleError;
+  // Must page — PostgREST defaults to ~1000 rows; a truncated module set
+  // previously cleared graduate_term for most students.
+  const moduleRows = await fetchAllPaginatedRows<{
+    id: string;
+    student_profile_id: string | null;
+    plan_stage: string | null;
+    status: string | null;
+    study_term: string | null;
+  }>({
+    fetchPage: ({ from, to }) =>
+      supabase
+        .from("study_plan_modules")
+        .select("id, student_profile_id, plan_stage, status, study_term")
+        .order("id", { ascending: true })
+        .range(from, to),
+  });
 
   const modulesByStudent = new Map<string, StudyPlanModule[]>();
 
-  for (const row of moduleRows ?? []) {
+  for (const row of moduleRows) {
     const profileId = String(row.student_profile_id ?? "").trim();
 
     if (!profileId) continue;
@@ -3198,43 +3216,62 @@ export async function recalculateAllStudentStatuses(
     modulesByStudent.set(profileId, existing);
   }
 
-  const updates = (students ?? []).map(async (student) => {
-    const modules = modulesByStudent.get(student.id) ?? [];
-    const programmeType = programmeTypeByCode.get(
-      String(student.programme_code ?? "").trim().toUpperCase()
-    );
-    const studentStatus = calculateStudentStatus(modules, term, programmeType);
-    const graduateTerm = getLatestStudyTerm(modules) ?? null;
+  const chunkSize = 50;
+  const failures: string[] = [];
 
-    const { error } = await supabase
-      .from("study_plan_students")
-      .update({
-        student_status: studentStatus,
-        graduate_term: graduateTerm,
-        updated_at: new Date().toISOString(),
+  for (let offset = 0; offset < students.length; offset += chunkSize) {
+    const chunk = students.slice(offset, offset + chunkSize);
+
+    const settled = await Promise.allSettled(
+      chunk.map(async (student) => {
+        const hasModuleRows = modulesByStudent.has(student.id);
+        const modules = modulesByStudent.get(student.id) ?? [];
+        const programmeType = programmeTypeByCode.get(
+          String(student.programme_code ?? "").trim().toUpperCase()
+        );
+        const studentStatus = calculateStudentStatus(
+          modules,
+          term,
+          programmeType
+        );
+        const computedGraduateTerm = getLatestStudyTerm(modules);
+        // If this profile had no module rows at all, keep existing graduate_term
+        // (avoids wiping when a fetch was incomplete). Profiles with only
+        // bridging / no planned programme correctly clear to null.
+        const graduateTerm = hasModuleRows
+          ? (computedGraduateTerm ?? null)
+          : (computedGraduateTerm ?? student.graduate_term ?? null);
+
+        const { error } = await supabase
+          .from("study_plan_students")
+          .update({
+            student_status: studentStatus,
+            graduate_term: graduateTerm,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", student.id);
+
+        if (error) {
+          throw error;
+        }
       })
-      .eq("id", student.id);
+    );
 
-    if (error) {
-      throw error;
+    for (const result of settled) {
+      if (result.status === "rejected") {
+        const first = result.reason;
+        const detail =
+          first && typeof first === "object" && "message" in first
+            ? String((first as { message?: string }).message ?? "")
+            : String(first ?? "");
+        failures.push(detail || "Unknown update error");
+      }
     }
-  });
-
-  const settled = await Promise.allSettled(updates);
-  const failures = settled.filter(
-    (result): result is PromiseRejectedResult => result.status === "rejected"
-  );
+  }
 
   if (failures.length > 0) {
-    const first = failures[0]!.reason;
-    const detail =
-      first && typeof first === "object" && "message" in first
-        ? String((first as { message?: string }).message ?? "")
-        : String(first ?? "");
     throw new Error(
-      `Failed to update ${failures.length} of ${settled.length} student profile(s).${
-        detail ? ` First error: ${detail}` : ""
-      }`
+      `Failed to update ${failures.length} student profile(s). First error: ${failures[0]}`
     );
   }
 }
