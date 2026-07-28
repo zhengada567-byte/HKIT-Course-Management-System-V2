@@ -259,6 +259,73 @@ export function getEarliestStudyTerm(
   return terms[0];
 }
 
+/** Old CFI degree path (UWLCFI): CM6HK* modules are degree, not bridging. */
+export const OLD_CFI_DEGREE_PROGRAMME_CODE = "UWLCFI";
+export const OLD_CFI_DEGREE_MODULE_PREFIX = "CM6HK";
+export const OLD_CFI_DEGREE_REQUIRED_MODULE_COUNT = 6;
+
+export function normalizeProgrammeCodeKey(
+  programmeCode?: string | null
+): string {
+  return String(programmeCode ?? "").trim().toUpperCase();
+}
+
+export function isOldCfiDegreeProgrammeCode(
+  programmeCode?: string | null
+): boolean {
+  return (
+    normalizeProgrammeCodeKey(programmeCode) === OLD_CFI_DEGREE_PROGRAMME_CODE
+  );
+}
+
+export function isOldCfiDegreeModuleCode(moduleCode?: string | null): boolean {
+  return String(moduleCode ?? "")
+    .trim()
+    .toUpperCase()
+    .startsWith(OLD_CFI_DEGREE_MODULE_PREFIX);
+}
+
+/**
+ * Planned CM6HK* modules with a study term (no exemption path for degree).
+ * plan_stage is ignored — historical rows may be mis-tagged as bridging.
+ */
+export function listOldCfiDegreePlannedModules(
+  modules: StudyPlanModule[]
+): StudyPlanModule[] {
+  return modules.filter(
+    (module) =>
+      isOldCfiDegreeModuleCode(module.moduleCode) &&
+      module.status === "planned" &&
+      Boolean(String(module.studyTerm ?? "").trim())
+  );
+}
+
+/** UWLCFI student has finished the old CFI degree (≥ 6 planned CM6HK*). */
+export function hasCompletedOldCfiDegree(
+  modules: StudyPlanModule[],
+  programmeCode?: string | null
+): boolean {
+  if (!isOldCfiDegreeProgrammeCode(programmeCode)) {
+    return false;
+  }
+
+  return (
+    listOldCfiDegreePlannedModules(modules).length >=
+    OLD_CFI_DEGREE_REQUIRED_MODULE_COUNT
+  );
+}
+
+export function getOldCfiDegreeGraduateTerm(
+  modules: StudyPlanModule[]
+): string | undefined {
+  const terms = listOldCfiDegreePlannedModules(modules)
+    .map((module) => String(module.studyTerm).trim())
+    .filter(Boolean)
+    .sort(compareStudyTerm);
+
+  return terms[terms.length - 1];
+}
+
 /**
  * Latest planned programme-stage study term (graduate term).
  * Bridging modules are excluded — Degree graduate_term must reflect Degree
@@ -277,11 +344,27 @@ export function getLatestStudyTerm(
   return terms[terms.length - 1];
 }
 
+/**
+ * Graduate term for a student profile.
+ * UWLCFI with ≥6 planned CM6HK* uses the latest CM6HK term (old CFI degree).
+ */
+export function resolveGraduateTerm(
+  modules: StudyPlanModule[],
+  programmeCode?: string | null
+): string | undefined {
+  if (hasCompletedOldCfiDegree(modules, programmeCode)) {
+    return getOldCfiDegreeGraduateTerm(modules);
+  }
+
+  return getLatestStudyTerm(modules);
+}
+
 export function getLatestBridgingStudyTerm(
   modules: StudyPlanModule[]
 ): string | undefined {
   const terms = modules
     .filter((m) => m.planStage === "bridging")
+    .filter((m) => !isOldCfiDegreeModuleCode(m.moduleCode))
     .filter((m) => m.status === "planned")
     .filter((m) => !!m.studyTerm)
     .map((m) => m.studyTerm as string)
@@ -297,6 +380,7 @@ function normalizeStudyTermKey(term: string): string {
 /**
  * Degree students studying planned bridging modules in the given study term.
  * Exempted / failed bridging modules are ignored.
+ * CM6HK* (old CFI degree) never counts as bridging.
  */
 export function isStudyingBridgingInCurrentTerm(
   modules: StudyPlanModule[],
@@ -313,15 +397,43 @@ export function isStudyingBridgingInCurrentTerm(
       return false;
     }
 
+    if (isOldCfiDegreeModuleCode(module.moduleCode)) {
+      return false;
+    }
+
     return normalizeStudyTermKey(String(module.studyTerm ?? "")) === normalizedCurrent;
   });
+}
+
+function statusFromPlannedTerms(
+  plannedTerms: string[],
+  currentTerm: string
+): StudentStatus {
+  if (plannedTerms.length === 0) return "potential";
+
+  const sortedTerms = [...plannedTerms].sort(compareStudyTerm);
+  const earliest = sortedTerms[0];
+  const latest = sortedTerms[sortedTerms.length - 1];
+
+  if (compareStudyTerm(latest, currentTerm) < 0) return "graduated";
+  if (compareStudyTerm(earliest, currentTerm) > 0) return "potential";
+
+  return "in_progress";
 }
 
 export function calculateStudentStatus(
   modules: StudyPlanModule[],
   currentTerm: string,
-  programmeType?: string | null
+  programmeType?: string | null,
+  programmeCode?: string | null
 ): StudentStatus {
+  if (hasCompletedOldCfiDegree(modules, programmeCode)) {
+    const plannedTerms = listOldCfiDegreePlannedModules(modules).map(
+      (module) => String(module.studyTerm).trim()
+    );
+    return statusFromPlannedTerms(plannedTerms, currentTerm);
+  }
+
   if (isDegreeProgrammeType(programmeType)) {
     const bridgingTerm = inferCurrentStudyTermFromDate();
 
@@ -336,16 +448,7 @@ export function calculateStudentStatus(
     .filter((m) => !!m.studyTerm)
     .map((m) => m.studyTerm as string);
 
-  if (plannedTerms.length === 0) return "potential";
-
-  const sortedTerms = [...plannedTerms].sort(compareStudyTerm);
-  const earliest = sortedTerms[0];
-  const latest = sortedTerms[sortedTerms.length - 1];
-
-  if (compareStudyTerm(latest, currentTerm) < 0) return "graduated";
-  if (compareStudyTerm(earliest, currentTerm) > 0) return "potential";
-
-  return "in_progress";
+  return statusFromPlannedTerms(plannedTerms, currentTerm);
 }
 
 export function normalizeProgrammeType(value?: string | null): string {

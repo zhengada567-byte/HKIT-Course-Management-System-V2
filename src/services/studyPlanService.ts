@@ -27,8 +27,8 @@ import {
   calculateStudentStatus,
   getDefaultIntakeLevel,
   getEarliestStudyTerm,
-  getLatestStudyTerm,
   getLatestBridgingStudyTerm,
+  resolveGraduateTerm,
   getTermIndex,
   intakeTermToIntakeYear,
   isDegreeProgramme,
@@ -1785,7 +1785,7 @@ export async function searchGraduatingStudents(
     }
 
     const modules = modulesByProfile.get(student.id) ?? [];
-    const latestTerm = getLatestStudyTerm(modules);
+    const latestTerm = resolveGraduateTerm(modules, student.programmeCode);
 
     if (!latestTerm || normalizeStudyTermKey(latestTerm) !== studyTerm) {
       continue;
@@ -2378,11 +2378,13 @@ export async function saveStudyPlanStudentProfile(
   let studentStatus = studentInput.studentStatus ?? "potential";
 
   if (dbModules.length > 0) {
-    graduateTerm = getLatestStudyTerm(dbModules) ?? graduateTerm;
+    graduateTerm =
+      resolveGraduateTerm(dbModules, studentInput.programmeCode) ?? graduateTerm;
     studentStatus = calculateStudentStatus(
       dbModules,
       settings.currentStudyTerm,
-      studentInput.programmeType
+      studentInput.programmeType,
+      studentInput.programmeCode
     );
   }
 
@@ -2540,12 +2542,16 @@ export async function saveStudyPlanModules(
   const intakeTerm = studentInput.intakeTerm || getEarliestStudyTerm(modules);
   const intakeYear = deriveIntakeYearFromTerm(intakeTerm);
 
-  const graduateTerm = getLatestStudyTerm(modules);
+  const graduateTerm = resolveGraduateTerm(
+    modules,
+    studentInput.programmeCode
+  );
 
   const studentStatus = calculateStudentStatus(
     modules,
     settings.currentStudyTerm,
-    studentInput.programmeType
+    studentInput.programmeType,
+    studentInput.programmeCode
   );
 
   const savedStudent = await upsertStudyPlanStudent({
@@ -2642,14 +2648,19 @@ export async function saveStudyPlanModules(
 
   // Recompute after reconcile so Degree graduate_term uses programme-stage
   // modules only (not bridging), matching post-save module stages.
+  // UWLCFI ≥6 CM6HK* uses old CFI degree graduate term instead.
   const finalIntakeTerm =
     String(studentInput.intakeTerm ?? "").trim() ||
     getEarliestStudyTerm(modulesReadyToSave);
-  const finalGraduateTerm = getLatestStudyTerm(modulesReadyToSave);
+  const finalGraduateTerm = resolveGraduateTerm(
+    modulesReadyToSave,
+    studentWithType.programmeCode
+  );
   const finalStudentStatus = calculateStudentStatus(
     modulesReadyToSave,
     settings.currentStudyTerm,
-    studentWithType.programmeType
+    studentWithType.programmeType,
+    studentWithType.programmeCode
   );
 
   const refreshedStudent = await upsertStudyPlanStudent({
@@ -3186,6 +3197,7 @@ export async function recalculateAllStudentStatuses(
   const moduleRows = await fetchAllPaginatedRows<{
     id: string;
     student_profile_id: string | null;
+    module_code: string | null;
     plan_stage: string | null;
     status: string | null;
     study_term: string | null;
@@ -3193,7 +3205,9 @@ export async function recalculateAllStudentStatuses(
     fetchPage: ({ from, to }) =>
       supabase
         .from("study_plan_modules")
-        .select("id, student_profile_id, plan_stage, status, study_term")
+        .select(
+          "id, student_profile_id, module_code, plan_stage, status, study_term"
+        )
         .order("id", { ascending: true })
         .range(from, to),
   });
@@ -3208,6 +3222,7 @@ export async function recalculateAllStudentStatuses(
     const existing = modulesByStudent.get(profileId) ?? [];
 
     existing.push({
+      moduleCode: row.module_code ?? "",
       planStage: row.plan_stage,
       status: row.status,
       studyTerm: row.study_term,
@@ -3229,12 +3244,17 @@ export async function recalculateAllStudentStatuses(
         const programmeType = programmeTypeByCode.get(
           String(student.programme_code ?? "").trim().toUpperCase()
         );
+        const programmeCode = String(student.programme_code ?? "").trim();
         const studentStatus = calculateStudentStatus(
           modules,
           term,
-          programmeType
+          programmeType,
+          programmeCode
         );
-        const computedGraduateTerm = getLatestStudyTerm(modules);
+        const computedGraduateTerm = resolveGraduateTerm(
+          modules,
+          programmeCode
+        );
         // If this profile had no module rows at all, keep existing graduate_term
         // (avoids wiping when a fetch was incomplete). Profiles with only
         // bridging / no planned programme correctly clear to null.

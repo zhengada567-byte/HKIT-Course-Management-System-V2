@@ -10,10 +10,13 @@ import {
   compareStudyTerm,
   getPreDegreeFebIntakeGraduateTerm,
   getPreDegreeSepIntakeGraduateTerms,
+  hasCompletedOldCfiDegree,
   isDegreeProgrammeType,
   isHDProgrammeType,
+  isOldCfiDegreeModuleCode,
   normalizeStream,
 } from "../pages/programme-leader/make-study-plan/helpers";
+import type { StudyPlanModule } from "../pages/programme-leader/make-study-plan/types";
 import { fetchAllPaginatedRows } from "../lib/supabasePagination";
 import {
   getProgrammeTypeByCode,
@@ -228,6 +231,9 @@ function resolveLatestBridgingTerm(moduleRows: any[]): string | undefined {
   for (const m of moduleRows) {
     const planStage = String(m?.plan_stage ?? "").trim();
     const status = String(m?.status ?? "").trim();
+    const moduleCode = String(m?.module_code ?? "").trim();
+    // CM6HK* is old CFI degree, never a New Intake bridging feeder.
+    if (isOldCfiDegreeModuleCode(moduleCode)) continue;
     if (planStage !== "bridging" || status !== "planned") continue;
     const term = normalizeKey(m?.study_term);
     if (!term) continue;
@@ -236,6 +242,20 @@ function resolveLatestBridgingTerm(moduleRows: any[]): string | undefined {
     }
   }
   return latest;
+}
+
+function toStudyPlanModulesForOldCfiCheck(
+  moduleRows: any[]
+): StudyPlanModule[] {
+  return moduleRows.map(
+    (m) =>
+      ({
+        moduleCode: String(m?.module_code ?? "").trim(),
+        status: String(m?.status ?? "").trim(),
+        studyTerm: String(m?.study_term ?? "").trim() || undefined,
+        planStage: String(m?.plan_stage ?? "").trim() || undefined,
+      }) as StudyPlanModule
+  );
 }
 
 async function computeNewIntake(params: {
@@ -570,6 +590,7 @@ async function computeNewIntake(params: {
   for (const chunk of chunkValues(degreeProfileIds, 100)) {
     const moduleRows = await fetchAllPaginatedRows<{
       student_profile_id: string;
+      module_code: string | null;
       plan_stage: string | null;
       status: string | null;
       study_term: string | null;
@@ -577,7 +598,7 @@ async function computeNewIntake(params: {
       fetchPage: ({ from, to }) =>
         supabase
           .from("study_plan_modules")
-          .select("student_profile_id,plan_stage,status,study_term")
+          .select("student_profile_id,module_code,plan_stage,status,study_term")
           .in("student_profile_id", chunk)
           .order("id", { ascending: true })
           .range(from, to),
@@ -596,9 +617,19 @@ async function computeNewIntake(params: {
       const student = degreeStudentsById.get(profileId);
       if (!student) continue;
 
-      const latestBridging = resolveLatestBridgingTerm(
-        modulesByProfileId.get(profileId) ?? []
-      );
+      const profileModules = modulesByProfileId.get(profileId) ?? [];
+
+      // Old CFI degree complete (UWLCFI ≥6 CM6HK*): endpoint, not New Intake feeder.
+      if (
+        hasCompletedOldCfiDegree(
+          toStudyPlanModulesForOldCfiCheck(profileModules),
+          programmeCode
+        )
+      ) {
+        continue;
+      }
+
+      const latestBridging = resolveLatestBridgingTerm(profileModules);
       if (!latestBridging) continue;
 
       const identity = studentIdentityKey({
