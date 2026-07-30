@@ -4163,22 +4163,26 @@ export async function listProfileIdsWithProgrammePlan(
   }
 
   const withPlan = new Set<string>();
-  const chunkSize = 100;
+  // Keep chunks small enough that one page of modules is unlikely to hit the
+  // PostgREST row cap, and still page within each chunk as a safeguard.
+  const chunkSize = 40;
 
   for (let index = 0; index < unique.length; index += chunkSize) {
     const chunk = unique.slice(index, index + chunkSize);
 
-    const { data, error } = await supabase
-      .from("study_plan_modules")
-      .select("student_profile_id")
-      .eq("plan_stage", "programme")
-      .in("student_profile_id", chunk);
+    const rows = await fetchAllPaginatedRows<{ student_profile_id: string }>({
+      pageSize: SUPABASE_DEFAULT_PAGE_SIZE,
+      fetchPage: ({ from, to }) =>
+        supabase
+          .from("study_plan_modules")
+          .select("student_profile_id")
+          .eq("plan_stage", "programme")
+          .in("student_profile_id", chunk)
+          .order("student_profile_id", { ascending: true })
+          .range(from, to),
+    });
 
-    if (error) {
-      throw error;
-    }
-
-    for (const row of data ?? []) {
+    for (const row of rows) {
       const profileId = String(row.student_profile_id ?? "").trim();
 
       if (profileId) {
