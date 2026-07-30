@@ -88,6 +88,14 @@ function resolveMode(
     : fallback;
 }
 
+/** Split classes keep their own Mode; Basic Settings Mode is seed-only for them. */
+export function isSplitTimetableModule(module: {
+  split_group_size?: number | null;
+}): boolean {
+  const size = Number(module.split_group_size ?? 1);
+  return Number.isFinite(size) && size > 1;
+}
+
 async function listTimetableModulesForYear(academicYear: string) {
   const { data, error } = await supabase
     .from("timetable_modules")
@@ -233,15 +241,21 @@ export async function applyTeacherToTimetableModuleInstance(params: {
     if (error) throw error;
   }
 
-  const { error: modeError } = await supabase
-    .from("timetable_modules")
-    .update({
-      mode: params.target.mode,
-      updated_at: now,
-    })
-    .eq("id", params.target.timetableModule.id);
+  const preserveInstanceMode = isSplitTimetableModule(
+    params.target.timetableModule
+  );
 
-  if (modeError) throw modeError;
+  if (!preserveInstanceMode) {
+    const { error: modeError } = await supabase
+      .from("timetable_modules")
+      .update({
+        mode: params.target.mode,
+        updated_at: now,
+      })
+      .eq("id", params.target.timetableModule.id);
+
+    if (modeError) throw modeError;
+  }
 
   const instanceCode = normalizeText(
     params.target.timetableModule.module_instance_code
@@ -250,13 +264,22 @@ export async function applyTeacherToTimetableModuleInstance(params: {
   let instanceUpdatedCount = 0;
 
   if (instanceCode) {
+    const instancePatch: {
+      instance_teacher_name: string;
+      updated_at: string;
+      instance_mode?: TeachingMode;
+    } = {
+      instance_teacher_name: teacherName,
+      updated_at: now,
+    };
+
+    if (!preserveInstanceMode) {
+      instancePatch.instance_mode = params.target.mode;
+    }
+
     const { data, error } = await supabase
       .from("timetable_module_instances")
-      .update({
-        instance_teacher_name: teacherName,
-        instance_mode: params.target.mode,
-        updated_at: now,
-      })
+      .update(instancePatch)
       .in("academic_year", yearVariants)
       .eq("module_instance_code", instanceCode)
       .select("id");
@@ -352,6 +375,7 @@ async function updateSessionsTeacherName(params: {
 /**
  * After module basic settings save: push teacher (and mode/status) to
  * teaching_assignments → timetable_module_instances → timetable_sessions.
+ * Mode is applied only to unsplit modules; split classes keep their own Mode.
  */
 export async function syncTeachersFromModuleDefaultsToTimetable(params: {
   academicYear: string;

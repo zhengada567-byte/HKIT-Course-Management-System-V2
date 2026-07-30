@@ -68,12 +68,12 @@ export const en = {
   moduleTeacherAssignment: "Module Teacher Assignment",
   moduleBasicSettings: "Module Basic Settings",
   moduleBasicSettingsDescription:
-    "Set proposed teachers, teaching status, default mode (Day / Night / Sat), and whether each module is offered this year.",
+    "Set proposed teachers, teaching status, default mode (Day / Night / Sat), and whether each module is offered this year. Default mode seeds new classes and updates unsplit modules; after a module is split, set each class mode in the Split step.",
   moduleBasicSettingsSaved:
     "Saved proposed teachers and offering for {count} module(s).",
   moduleBasicSettingsUpdateTimetable: "Update Timetable",
   moduleBasicSettingsUpdateTimetableHint:
-    "Push the teachers shown below to weekly/daily timetable (assignments, instances, and sessions).",
+    "Push teachers (and mode for unsplit modules only) to weekly/daily timetable. Split class modes are not overwritten — edit them in the Split step.",
   moduleBasicSettingsTimetableUpdated:
     "Updated timetable teachers for {modules} module(s): {assignments} assignment(s), {instances} instance(s), {sessions} session(s).",
   moduleBasicSettingsTimetableSkipped:

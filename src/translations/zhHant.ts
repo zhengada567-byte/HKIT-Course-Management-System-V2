@@ -62,11 +62,11 @@ export const zhHant = {
   moduleTeacherAssignment: "科目教師設定",
   moduleBasicSettings: "科目基本設定",
   moduleBasicSettingsDescription:
-    "設定各科目的建議教師、任教狀態、預設 Mode（Day / Night / Sat），以及本年度是否開課。",
+    "設定各科目的建議教師、任教狀態、預設 Mode（Day / Night / Sat），以及本年度是否開課。預設 Mode 用於新班與不分班科目；科目分班後，各班 Mode 請在 Split 步驟分別設定。",
   moduleBasicSettingsSaved: "已儲存 {count} 個科目的建議教師及開課設定。",
   moduleBasicSettingsUpdateTimetable: "更新 Timetable",
   moduleBasicSettingsUpdateTimetableHint:
-    "將下方顯示的教師推送到週/日時間表（指派、班別與課堂）。",
+    "將教師推送到週/日時間表；Mode 只更新不分班科目。已分班的 Mode 不會被覆蓋，請在 Split 步驟修改。",
   moduleBasicSettingsTimetableUpdated:
     "已更新 {modules} 個時間表科目的教師：{assignments} 項指派、{instances} 個班別、{sessions} 節課堂。",
   moduleBasicSettingsTimetableSkipped:
