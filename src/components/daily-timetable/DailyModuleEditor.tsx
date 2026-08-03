@@ -26,6 +26,8 @@ import { listTeachers } from "../../services/teacherService";
 import type { TimetableClassroomRow, TimetableScheduleTerm } from "../../services/timetableScheduleService";
 import type { TeacherRow } from "../../types";
 import { displayStream } from "../../pages/programme-leader/make-timetable/helpers";
+import { computeModuleOutstandingHours } from "../../lib/dailyTimetableOutstandingHours";
+import { formatContactHoursDisplay } from "../../services/teacherContactHoursService";
 
 type ViewMode = "module" | "date";
 
@@ -876,6 +878,7 @@ export function DailyModuleEditor({
                     <Plus className="mr-1 inline h-4 w-4" />
                     {t.addSession}
                   </button>
+                  <ModuleOutstandingHoursSummaryCard plan={selectedPlan} />
                 </>
               ) : null}
             </div>
@@ -1029,6 +1032,128 @@ function ModulePlanSummary({ plan }: { plan: DailyTimetableModulePlan }) {
           .map((row) => row.sessionLabel)
           .join(" → ")}
       </p>
+    </div>
+  );
+}
+
+function ModuleOutstandingHoursSummaryCard({
+  plan,
+}: {
+  plan: DailyTimetableModulePlan;
+}) {
+  const { t } = useLanguage();
+  const summary = useMemo(
+    () =>
+      computeModuleOutstandingHours({
+        teachingContactHours: plan.teachingContactHours,
+        tutorialContactHours: plan.tutorialContactHours,
+        entries: plan.entries,
+      }),
+    [plan.entries, plan.teachingContactHours, plan.tutorialContactHours]
+  );
+
+  const teachingOver =
+    summary.teachingScheduled > summary.teachingRequired
+      ? roundDisplayHours(summary.teachingScheduled - summary.teachingRequired)
+      : 0;
+  const tutorialOver =
+    summary.tutorialScheduled > summary.tutorialRequired
+      ? roundDisplayHours(summary.tutorialScheduled - summary.tutorialRequired)
+      : 0;
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+      <p className="mb-1.5 font-semibold text-slate-800">
+        {t.dailyOutstandingHoursTitle}
+      </p>
+      <div className="space-y-1.5">
+        <OutstandingHoursRow
+          label={t.dailyOutstandingHoursTeaching}
+          required={summary.teachingRequired}
+          scheduled={summary.teachingScheduled}
+          outstanding={summary.teachingOutstanding}
+          over={teachingOver}
+          requiredLabel={t.dailyOutstandingHoursRequired}
+          scheduledLabel={t.dailyOutstandingHoursScheduled}
+          outstandingLabel={t.dailyOutstandingHoursOutstanding}
+          overLabel={t.dailyOutstandingHoursOver}
+        />
+        <OutstandingHoursRow
+          label={t.dailyOutstandingHoursTutorial}
+          required={summary.tutorialRequired}
+          scheduled={summary.tutorialScheduled}
+          outstanding={summary.tutorialOutstanding}
+          over={tutorialOver}
+          requiredLabel={t.dailyOutstandingHoursRequired}
+          scheduledLabel={t.dailyOutstandingHoursScheduled}
+          outstandingLabel={t.dailyOutstandingHoursOutstanding}
+          overLabel={t.dailyOutstandingHoursOver}
+          emptyHint={
+            summary.tutorialRequired <= 0
+              ? t.dailyOutstandingHoursNoTutorial
+              : undefined
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
+function roundDisplayHours(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function OutstandingHoursRow({
+  label,
+  required,
+  scheduled,
+  outstanding,
+  over,
+  requiredLabel,
+  scheduledLabel,
+  outstandingLabel,
+  overLabel,
+  emptyHint,
+}: {
+  label: string;
+  required: number;
+  scheduled: number;
+  outstanding: number;
+  over: number;
+  requiredLabel: string;
+  scheduledLabel: string;
+  outstandingLabel: string;
+  overLabel: string;
+  emptyHint?: string;
+}) {
+  return (
+    <div>
+      <p className="font-medium text-slate-800">{label}</p>
+      {emptyHint ? (
+        <p className="text-slate-500">{emptyHint}</p>
+      ) : (
+        <p className="leading-snug text-slate-600">
+          {requiredLabel} {formatContactHoursDisplay(required)}
+          {" · "}
+          {scheduledLabel} {formatContactHoursDisplay(scheduled)}
+          {" · "}
+          <span
+            className={
+              outstanding > 0 ? "font-medium text-amber-800" : "text-slate-600"
+            }
+          >
+            {outstandingLabel} {formatContactHoursDisplay(outstanding)}
+          </span>
+          {over > 0 ? (
+            <>
+              {" · "}
+              <span className="font-medium text-rose-700">
+                {overLabel} {formatContactHoursDisplay(over)}
+              </span>
+            </>
+          ) : null}
+        </p>
+      )}
     </div>
   );
 }
