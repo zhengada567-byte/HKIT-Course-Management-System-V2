@@ -15,6 +15,12 @@ import {
   type DailyTimetableEntry,
   type DailyTimetableModulePlan,
 } from "../../services/dailyTimetableService";
+import {
+  normalizeSessionDeliveryMode,
+  supportsSessionDeliveryMode,
+  SESSION_DELIVERY_MODE_OPTIONS,
+  type SessionDeliveryMode,
+} from "../../lib/dailyTimetable";
 import { isTutorialTimetableSession } from "../../lib/dailyTimetable";
 import {
   moduleEditorIsDirty,
@@ -53,6 +59,7 @@ function buildDraftFromEntry(entry: DailyTimetableEntry): DailySessionDraftInput
     // Keep the stored session teacher only — do not invent a module default here
     // (that was marking whole modules dirty and rewriting Weekly dates on Save).
     teacher_name: String(entry.teacherName ?? "").trim() || null,
+    delivery_mode: normalizeSessionDeliveryMode(entry.deliveryMode),
     status: entry.status,
     remark: entry.remark ?? "",
   };
@@ -109,6 +116,7 @@ export function DailyModuleEditor({
     end_time: "13:00",
     room_code: "",
     teacher_name: null,
+    delivery_mode: "F2F",
     status: "normal",
     remark: "",
   });
@@ -203,6 +211,13 @@ export function DailyModuleEditor({
   const selectedModuleDefaultTeacher = selectedPlan
     ? (moduleDefaultTeachersById.get(selectedPlan.timetableModuleId) ?? null)
     : null;
+
+  const selectedPlanSupportsDeliveryMode = selectedPlan
+    ? supportsSessionDeliveryMode({
+        programmeCode: selectedPlan.programmeCode,
+        isHd: selectedPlan.isHd,
+      })
+    : false;
 
   const selectedPendingAdds = pendingAddsByModule[selectedModuleId] ?? [];
   const selectedPendingDeletes =
@@ -304,6 +319,7 @@ export function DailyModuleEditor({
             end_time: "13:00",
             room_code: "",
             teacher_name: null,
+            delivery_mode: "F2F" as SessionDeliveryMode,
             status: "normal" as TimetableSessionStatus,
             remark: "",
           }),
@@ -461,6 +477,7 @@ export function DailyModuleEditor({
       end_time: defaults.end_time,
       room_code: defaults.room_code,
       teacher_name: defaults.teacherName,
+      delivery_mode: "F2F",
       status: defaults.status,
       remark: defaults.remark,
     });
@@ -480,6 +497,7 @@ export function DailyModuleEditor({
       end_time: newSession.end_time,
       room_code: newSession.room_code,
       teacher_name: newSession.teacher_name,
+      delivery_mode: normalizeSessionDeliveryMode(newSession.delivery_mode),
       status: newSession.status,
       remark: newSession.remark,
     };
@@ -893,6 +911,7 @@ export function DailyModuleEditor({
                     newSession={newSession}
                     teachers={teachers}
                     classrooms={classrooms}
+                    showDeliveryMode={selectedPlanSupportsDeliveryMode}
                     onChange={setNewSession}
                     onCancel={() => setShowAddForm(false)}
                     onAdd={() => handleQueueAddSession(selectedPlan)}
@@ -907,6 +926,7 @@ export function DailyModuleEditor({
                   teachers={teachers}
                   moduleDefaultTeacher={selectedModuleDefaultTeacher}
                   classrooms={classrooms}
+                  showDeliveryMode={selectedPlanSupportsDeliveryMode}
                   selectedSessionIds={selectedSessionIds}
                   onToggleSessionSelection={toggleSessionSelection}
                   onToggleGroupSelection={toggleGroupSelection}
@@ -1162,6 +1182,7 @@ function AddSessionCard({
   newSession,
   teachers,
   classrooms,
+  showDeliveryMode = false,
   onChange,
   onCancel,
   onAdd,
@@ -1169,6 +1190,7 @@ function AddSessionCard({
   newSession: DailySessionDraftInput;
   teachers: TeacherRow[];
   classrooms: TimetableClassroomRow[];
+  showDeliveryMode?: boolean;
   onChange: (value: DailySessionDraftInput) => void;
   onCancel: () => void;
   onAdd: () => void;
@@ -1188,7 +1210,9 @@ function AddSessionCard({
           </button>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-7">
+        <div
+          className={`grid gap-3 ${showDeliveryMode ? "md:grid-cols-8" : "md:grid-cols-7"}`}
+        >
           <div>
             <label className="form-label">{t.selectDate}</label>
             <input
@@ -1249,6 +1273,30 @@ function AddSessionCard({
               }
             />
           </div>
+          {showDeliveryMode ? (
+            <div>
+              <label className="form-label">{t.sessionDeliveryMode}</label>
+              <select
+                className="form-select"
+                value={normalizeSessionDeliveryMode(newSession.delivery_mode)}
+                title={t.sessionDeliveryMode}
+                onChange={(event) =>
+                  onChange({
+                    ...newSession,
+                    delivery_mode: normalizeSessionDeliveryMode(
+                      event.target.value
+                    ),
+                  })
+                }
+              >
+                {SESSION_DELIVERY_MODE_OPTIONS.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <div>
             <label className="form-label">{t.sessionStatus}</label>
             <select
@@ -1289,6 +1337,7 @@ function EditableDailyModuleSessions({
   moduleDefaultTeacher,
   classrooms,
   showModule = false,
+  showDeliveryMode = false,
   selectedSessionIds,
   onToggleSessionSelection,
   onToggleGroupSelection,
@@ -1308,6 +1357,7 @@ function EditableDailyModuleSessions({
   moduleDefaultTeacher: string | null;
   classrooms: TimetableClassroomRow[];
   showModule?: boolean;
+  showDeliveryMode?: boolean;
   selectedSessionIds: Set<string>;
   onToggleSessionSelection: (sessionId: string, checked: boolean) => void;
   onToggleGroupSelection: (rows: DailyTimetableEntry[], checked: boolean) => void;
@@ -1343,6 +1393,7 @@ function EditableDailyModuleSessions({
           teachers={teachers}
           classrooms={classrooms}
           showModule={showModule}
+          showDeliveryMode={showDeliveryMode}
         />
       ) : null}
 
@@ -1354,6 +1405,7 @@ function EditableDailyModuleSessions({
         moduleDefaultTeacher={moduleDefaultTeacher}
         classrooms={classrooms}
         showModule={showModule}
+        showDeliveryMode={showDeliveryMode}
         backupOptions={backup}
         selectedSessionIds={selectedSessionIds}
         onToggleSessionSelection={onToggleSessionSelection}
@@ -1374,6 +1426,7 @@ function EditableDailyModuleSessions({
           moduleDefaultTeacher={moduleDefaultTeacher}
           classrooms={classrooms}
           showModule={showModule}
+          showDeliveryMode={showDeliveryMode}
           highlightBackup
           selectedSessionIds={selectedSessionIds}
           onToggleSessionSelection={onToggleSessionSelection}
@@ -1394,6 +1447,7 @@ function EditableDailyModuleSessions({
           moduleDefaultTeacher={moduleDefaultTeacher}
           classrooms={classrooms}
           showModule={showModule}
+          showDeliveryMode={showDeliveryMode}
           backupOptions={backup}
           selectedSessionIds={selectedSessionIds}
           onToggleSessionSelection={onToggleSessionSelection}
@@ -1426,6 +1480,7 @@ function SessionGroupTable({
   moduleDefaultTeachersById,
   classrooms,
   showModule = false,
+  showDeliveryMode = false,
   highlightBackup = false,
   backupOptions = [],
   mode = "existing",
@@ -1447,6 +1502,7 @@ function SessionGroupTable({
   moduleDefaultTeachersById?: Map<string, string | null>;
   classrooms: TimetableClassroomRow[];
   showModule?: boolean;
+  showDeliveryMode?: boolean;
   highlightBackup?: boolean;
   backupOptions?: DailyTimetableEntry[];
   mode?: "existing" | "pending";
@@ -1527,6 +1583,9 @@ function SessionGroupTable({
               <th className="px-3 py-2 text-left">Time</th>
               <th className="px-3 py-2 text-left">Room</th>
               <th className="px-3 py-2 text-left">{t.teacherName}</th>
+              {showDeliveryMode ? (
+                <th className="px-3 py-2 text-left">{t.sessionDeliveryMode}</th>
+              ) : null}
               <th className="px-3 py-2 text-left">{t.sessionStatus}</th>
               <th className="px-3 py-2 text-left">{t.remark}</th>
               <th className="px-3 py-2 text-left">{t.actions}</th>
@@ -1540,6 +1599,7 @@ function SessionGroupTable({
                     row={row}
                     teachers={teachers}
                     classrooms={classrooms}
+                    showDeliveryMode={showDeliveryMode}
                   />
                 ))
               : (rows as DailyTimetableEntry[]).map((row) => {
@@ -1554,6 +1614,7 @@ function SessionGroupTable({
                     }
                     teachers={teachers}
                     showModule={showModule}
+                    showDeliveryMode={showDeliveryMode}
                     highlightBackup={highlightBackup}
                     backupOptions={backupOptions}
                     classrooms={classrooms}
@@ -1587,10 +1648,12 @@ function PendingSessionRow({
   row,
   teachers,
   classrooms,
+  showDeliveryMode = false,
 }: {
   row: PendingRow;
   teachers: TeacherRow[];
   classrooms: TimetableClassroomRow[];
+  showDeliveryMode?: boolean;
 }) {
   const { t } = useLanguage();
 
@@ -1611,6 +1674,11 @@ function PendingSessionRow({
           onChange={() => {}}
         />
       </td>
+      {showDeliveryMode ? (
+        <td className="px-3 py-2">
+          {normalizeSessionDeliveryMode(row.draft.delivery_mode)}
+        </td>
+      ) : null}
       <td className="px-3 py-2">{statusLabel(row.draft.status, t)}</td>
       <td className="px-3 py-2">{row.draft.remark || "—"}</td>
       <td className="px-3 py-2">
@@ -1631,6 +1699,7 @@ function SessionEditRow({
   draft,
   teachers,
   showModule,
+  showDeliveryMode,
   highlightBackup,
   backupOptions,
   classrooms,
@@ -1646,6 +1715,7 @@ function SessionEditRow({
   draft: DailySessionDraftInput;
   teachers: TeacherRow[];
   showModule?: boolean;
+  showDeliveryMode?: boolean;
   highlightBackup?: boolean;
   backupOptions?: DailyTimetableEntry[];
   classrooms: TimetableClassroomRow[];
@@ -1667,12 +1737,19 @@ function SessionEditRow({
   const { t } = useLanguage();
   const [selectedBackupId, setSelectedBackupId] = useState("");
   const isPending = row.sessionId?.startsWith("pending:") ?? false;
+  const rowSupportsDeliveryMode = supportsSessionDeliveryMode({
+    programmeCode: row.programmeCode,
+    isHd: row.isHd,
+  });
+  const showDeliveryModeColumn = Boolean(showDeliveryMode);
 
   if (!row.sessionId) {
     return (
       <tr className="border-t">
         <td
-          colSpan={showModule ? 11 : 9}
+          colSpan={
+            (showModule ? 11 : 9) + (showDeliveryModeColumn ? 1 : 0)
+          }
           className="px-3 py-2 text-slate-500"
         >
           {row.sessionLabel} — not linked to a saved session
@@ -1799,6 +1876,32 @@ function SessionEditRow({
           }
         />
       </td>
+      {showDeliveryModeColumn ? (
+        <td className="px-3 py-2">
+          {rowSupportsDeliveryMode ? (
+            <select
+              className="form-select min-w-24"
+              value={normalizeSessionDeliveryMode(draft.delivery_mode)}
+              title={t.sessionDeliveryMode}
+              onChange={(event) =>
+                onDraftChange(sessionId, {
+                  delivery_mode: normalizeSessionDeliveryMode(
+                    event.target.value
+                  ),
+                })
+              }
+            >
+              {SESSION_DELIVERY_MODE_OPTIONS.map((mode) => (
+                <option key={mode} value={mode}>
+                  {mode}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-xs text-slate-400">—</span>
+          )}
+        </td>
+      ) : null}
       <td className="px-3 py-2">
         <select
           className="form-select min-w-28"
@@ -1927,6 +2030,12 @@ function EditableDailyTable({
   kindBusySessionId?: string | null;
 }) {
   const { scheduled, backup, cancelled } = partitionDailyModuleEntries(rows, drafts);
+  const showDeliveryMode = rows.some((row) =>
+    supportsSessionDeliveryMode({
+      programmeCode: row.programmeCode,
+      isHd: row.isHd,
+    })
+  );
 
   return (
     <div className="space-y-4">
@@ -1938,6 +2047,7 @@ function EditableDailyTable({
         moduleDefaultTeachersById={moduleDefaultTeachersById}
         classrooms={classrooms}
         showModule={showModule}
+        showDeliveryMode={showDeliveryMode}
         backupOptions={backup}
         selectedSessionIds={selectedSessionIds}
         onToggleSessionSelection={onToggleSessionSelection}
@@ -1960,6 +2070,7 @@ function EditableDailyTable({
           moduleDefaultTeachersById={moduleDefaultTeachersById}
           classrooms={classrooms}
           showModule={showModule}
+          showDeliveryMode={showDeliveryMode}
           highlightBackup
           selectedSessionIds={selectedSessionIds}
           onToggleSessionSelection={onToggleSessionSelection}

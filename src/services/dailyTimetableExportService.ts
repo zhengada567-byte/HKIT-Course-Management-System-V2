@@ -2,7 +2,11 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 
 import { parseIsoDate } from "../lib/academicCalendar";
-import { weekdayLabel } from "../lib/dailyTimetable";
+import {
+  normalizeSessionDeliveryMode,
+  supportsSessionDeliveryMode,
+  weekdayLabel,
+} from "../lib/dailyTimetable";
 import { dailyEntryLabelSortKey } from "../lib/dailyTimetableEntrySort";
 import { dedupeJoinedModuleName } from "../lib/moduleDisplay";
 import { buildDayClassStartTimeOptions } from "../lib/timetableStartTimeOptions";
@@ -10,6 +14,7 @@ import { isBackupTimetableSession } from "../lib/dailyTimetableSessionLabels";
 import { normalizeAcademicYear, sanitizeAcademicYearForFilename } from "../lib/utils";
 import type { TimetableModuleRow } from "../types";
 import { logExport } from "./exportService";
+import { listProgrammes } from "./programmeService";
 import { listTimetableModuleInstances } from "./timetableModuleInstanceService";
 import {
   buildWeeklyTimetableGridFromSessions,
@@ -149,7 +154,8 @@ function compareDailySessions(
 function buildDailyTimetableSheetRows(
   dailyRows: Array<{ module: TimetableModuleRow; session: TimetableSessionRow }>,
   academicYear: string,
-  term: TimetableScheduleTerm
+  term: TimetableScheduleTerm,
+  programmeTypeByCode: Map<string, string | null>
 ) {
   const header = [
     "Academic Year",
@@ -167,6 +173,7 @@ function buildDailyTimetableSheetRows(
     "End Time",
     "Room",
     "Teacher",
+    "Delivery Mode",
     "Status",
     "Remark",
   ];
@@ -181,6 +188,13 @@ function buildDailyTimetableSheetRows(
     lastModuleId = module.id;
 
     const isoDate = normalizeSessionDate(session.session_date);
+    const programmeCode = String(module.programme_code ?? "").trim();
+    const programmeType =
+      programmeTypeByCode.get(programmeCode.toUpperCase()) ?? null;
+    const includeDeliveryMode = supportsSessionDeliveryMode({
+      programmeCode,
+      programmeType,
+    });
 
     rows.push([
       academicYear,
@@ -198,6 +212,9 @@ function buildDailyTimetableSheetRows(
       formatTime(session.end_time),
       session.room_code,
       session.teacher_name ?? "",
+      includeDeliveryMode
+        ? normalizeSessionDeliveryMode(session.delivery_mode)
+        : "",
       session.status,
       session.remark ?? "",
     ]);
@@ -216,11 +233,19 @@ export async function downloadWeeklyDailyTimetableExcel(params: {
   const academicYear = normalizeAcademicYear(params.academicYear);
   const startTimeOptions = buildDayClassStartTimeOptions();
 
-  const [timetableModules, sessions, instances] = await Promise.all([
+  const [timetableModules, sessions, instances, programmes] = await Promise.all([
     listTimetableModules({ academicYear }),
     listTimetableSessions({ academicYear }),
     listTimetableModuleInstances({ academicYear }),
+    listProgrammes(),
   ]);
+
+  const programmeTypeByCode = new Map<string, string | null>();
+  for (const programme of programmes) {
+    const code = String(programme.programme_code ?? "").trim().toUpperCase();
+    if (!code) continue;
+    programmeTypeByCode.set(code, programme.programme_type ?? null);
+  }
 
   const modulesForTerm = timetableModules.filter(
     (row) => row.module_term === params.term
@@ -298,7 +323,12 @@ export async function downloadWeeklyDailyTimetableExcel(params: {
   XLSX.utils.book_append_sheet(
     workbook,
     XLSX.utils.aoa_to_sheet(
-      buildDailyTimetableSheetRows(dailyRows, academicYear, params.term)
+      buildDailyTimetableSheetRows(
+        dailyRows,
+        academicYear,
+        params.term,
+        programmeTypeByCode
+      )
     ),
     "Daily Timetable"
   );

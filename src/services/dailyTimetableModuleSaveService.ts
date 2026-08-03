@@ -1,4 +1,8 @@
 import { formatCancelledRemark } from "../lib/dailyTimetableSessionLabels";
+import {
+  normalizeSessionDeliveryMode,
+  type SessionDeliveryMode,
+} from "../lib/dailyTimetable";
 import { supabase } from "../lib/supabase";
 import { normalizeAcademicYear } from "../lib/utils";
 import {
@@ -26,6 +30,7 @@ export interface DailySessionDraftInput {
   end_time: string;
   room_code: string;
   teacher_name: string | null;
+  delivery_mode: SessionDeliveryMode;
   status: TimetableSessionStatus;
   remark: string;
 }
@@ -113,6 +118,7 @@ interface SessionSnapshot {
   end_time: string;
   room_code: string;
   teacher_name: string | null;
+  delivery_mode: SessionDeliveryMode;
   status: TimetableSessionStatus;
   remark: string;
 }
@@ -129,6 +135,7 @@ function snapshotFromRow(
     end_time: normalizeSessionTime(row.end_time).slice(0, 5),
     room_code: String(row.room_code ?? "").trim(),
     teacher_name: String(row.teacher_name ?? "").trim() || null,
+    delivery_mode: normalizeSessionDeliveryMode(row.delivery_mode),
     status: row.status as TimetableSessionStatus,
     remark: String(row.remark ?? "").trim(),
   };
@@ -147,6 +154,7 @@ function snapshotFromDraft(
     end_time: normalizeSessionTime(draft.end_time).slice(0, 5),
     room_code: String(draft.room_code ?? "").trim(),
     teacher_name: String(draft.teacher_name ?? "").trim() || null,
+    delivery_mode: normalizeSessionDeliveryMode(draft.delivery_mode),
     status: draft.status,
     remark: String(draft.remark ?? "").trim(),
   };
@@ -162,6 +170,7 @@ export function hasDraftChanges(
     end_time: entry.endTime,
     room_code: entry.roomCode,
     teacher_name: entry.teacherName ?? null,
+    delivery_mode: entry.deliveryMode,
     status: entry.status,
     remark: entry.remark ?? "",
   });
@@ -209,6 +218,12 @@ function buildChangeLines(before: SessionSnapshot, after: SessionSnapshot) {
       before.teacher_name ?? "",
       after.teacher_name ?? ""
     ),
+    formatFieldChange(
+      before.label,
+      "delivery mode",
+      before.delivery_mode,
+      after.delivery_mode
+    ),
     formatFieldChange(before.label, "status", before.status, after.status),
     formatFieldChange(before.label, "remark", before.remark, after.remark),
   ].filter((line): line is string => Boolean(line));
@@ -235,7 +250,7 @@ export function buildModuleChangeSummary(params: {
 
   for (const pending of params.pendingAdds ?? []) {
     blocks.push(
-      `• New session — date: ${normalizeSessionDate(pending.session_date)}, time: ${normalizeSessionTime(pending.start_time).slice(0, 5)}–${normalizeSessionTime(pending.end_time).slice(0, 5)}, room: ${pending.room_code || "(empty)"}, teacher: ${pending.teacher_name || "(empty)"}, status: ${pending.status}`
+      `• New session — date: ${normalizeSessionDate(pending.session_date)}, time: ${normalizeSessionTime(pending.start_time).slice(0, 5)}–${normalizeSessionTime(pending.end_time).slice(0, 5)}, room: ${pending.room_code || "(empty)"}, teacher: ${pending.teacher_name || "(empty)"}, delivery: ${normalizeSessionDeliveryMode(pending.delivery_mode)}, status: ${pending.status}`
     );
   }
 
@@ -254,6 +269,7 @@ export function buildModuleChangeSummary(params: {
         end_time: entry.endTime,
         room_code: entry.roomCode,
         teacher_name: entry.teacherName ?? null,
+        delivery_mode: entry.deliveryMode,
         status: entry.status,
         remark: entry.remark ?? "",
       });
@@ -292,6 +308,9 @@ async function applySessionDraftUpdate(params: {
   const draftRoom = String(params.draft.room_code).trim();
   const draftTeacher =
     String(params.draft.teacher_name ?? "").trim() || null;
+  const draftDeliveryMode = normalizeSessionDeliveryMode(
+    params.draft.delivery_mode
+  );
   const draftStatus = params.draft.status;
   const draftRemark = params.draft.remark.trim() || null;
 
@@ -306,6 +325,9 @@ async function applySessionDraftUpdate(params: {
   const existingRoom = existing ? String(existing.room_code ?? "").trim() : null;
   const existingTeacher = existing
     ? String(existing.teacher_name ?? "").trim() || null
+    : null;
+  const existingDeliveryMode = existing
+    ? normalizeSessionDeliveryMode(existing.delivery_mode)
     : null;
   const existingStatus = existing?.status ?? null;
   const existingRemark = existing
@@ -355,6 +377,9 @@ async function applySessionDraftUpdate(params: {
   }
   if (!existing || existingTeacher !== draftTeacher) {
     patch.teacher_name = draftTeacher;
+  }
+  if (!existing || existingDeliveryMode !== draftDeliveryMode) {
+    patch.delivery_mode = draftDeliveryMode;
   }
   if (!existing || existingStatus !== draftStatus) {
     patch.status = draftStatus;
@@ -552,6 +577,7 @@ export async function saveDailyTimetableModule(params: {
       end_time: normalizeSessionTime(pending.end_time),
       room_code: String(pending.room_code).trim(),
       teacher_name: pending.teacher_name ?? null,
+      delivery_mode: normalizeSessionDeliveryMode(pending.delivery_mode),
       status: pending.status ?? "normal",
       remark: pending.remark.trim() || null,
       created_by: params.changedBy ?? null,

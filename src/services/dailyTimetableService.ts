@@ -34,9 +34,11 @@ import {
 import {
   describeSessionLabelSequence,
   isHdDailyTimetableModule,
+  normalizeSessionDeliveryMode,
   weekdayLabel,
   type DailySessionKind,
   type DailySessionLabelSlot,
+  type SessionDeliveryMode,
 } from "../lib/dailyTimetable";
 import { sortDailyTimetableEntries } from "../lib/dailyTimetableEntrySort";
 import { isMixedProgrammeCode } from "../lib/timetableProgramme";
@@ -82,6 +84,8 @@ export interface DailyTimetableEntry {
   endTime: string;
   roomCode: string;
   teacherName: string | null;
+  /** F2F | Online for HD (excl. HDHC); ignored in UI for other programmes. */
+  deliveryMode: SessionDeliveryMode;
   hasWeeklySession: boolean;
   sessionNumber: number | null;
   /** Spare weekly slot without an L/T label (beyond contact-hour count). */
@@ -541,6 +545,7 @@ function materializeModuleDailyPlan(params: {
       endTime,
       roomCode: matched?.room_code ?? template.roomCode,
       teacherName: matched?.teacher_name ?? null,
+      deliveryMode: normalizeSessionDeliveryMode(matched?.delivery_mode),
       hasWeeklySession: Boolean(matched),
       sessionNumber: matched?.session_number ?? index + 1,
       isBackup: false,
@@ -576,6 +581,7 @@ function materializeModuleDailyPlan(params: {
       endTime: normalizeSessionTime(matched.end_time),
       roomCode: matched.room_code,
       teacherName: matched.teacher_name,
+      deliveryMode: normalizeSessionDeliveryMode(matched.delivery_mode),
       hasWeeklySession: true,
       sessionNumber: null,
       isBackup: true,
@@ -1213,6 +1219,7 @@ function sessionRowToDailyEntry(
     endTime: normalizeSessionTime(session.end_time),
     roomCode: session.room_code,
     teacherName: session.teacher_name,
+    deliveryMode: normalizeSessionDeliveryMode(session.delivery_mode),
     hasWeeklySession: true,
     sessionNumber: session.session_number,
     isBackup: isBackupTimetableSession({

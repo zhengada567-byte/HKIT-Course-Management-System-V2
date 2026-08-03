@@ -289,7 +289,7 @@ export const zhHant = {
   dailyTimetableModuleClearFailed: "關閉科目失敗。",
   exportWeeklyDailyTimetableExcel: "匯出每周及每日 Excel",
   exportWeeklyDailyTimetableHint:
-    "每周工作表：每個科目一行（星期、時段、課室）。每日工作表：各科目每個 L/T 課節（不含後備與已取消）。",
+    "每周工作表：每個科目一行（星期、時段、課室）。每日工作表：各科目每個 L/T 課節（不含後備與已取消），並包含 Delivery Mode（F2F/Online；僅 HD，不含 HDHC）。",
   viewByModule: "按科目檢視",
   viewByDate: "按日期檢視",
   selectModule: "選擇科目",
@@ -303,6 +303,7 @@ export const zhHant = {
     "管理員產生每日時間表後，檢視及編輯本課程的 L/T 課節（可改狀態、新增課節；系統會按日期重新排序標籤）。",
   loadDailyTimetable: "載入每日時間表",
   addSession: "新增課節",
+  sessionDeliveryMode: "授課模式",
   dailyOutstandingHoursTitle: "未排時數摘要",
   dailyOutstandingHoursTeaching: "Teaching",
   dailyOutstandingHoursTutorial: "Tutorial",

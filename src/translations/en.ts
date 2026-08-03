@@ -302,7 +302,7 @@ export const en = {
   dailyTimetableModuleClearFailed: "Failed to close module.",
   exportWeeklyDailyTimetableExcel: "Export weekly & daily Excel",
   exportWeeklyDailyTimetableHint:
-    "Weekly sheet: one row per module timeslot (weekday, time, room). Daily sheet: every L/T session per module (no backup or cancelled).",
+    "Weekly sheet: one row per module timeslot (weekday, time, room). Daily sheet: every L/T session per module (no backup or cancelled), including Delivery Mode (F2F/Online) for HD programmes except HDHC.",
   viewByModule: "View by module",
   viewByDate: "View by date",
   selectModule: "Select module",
@@ -316,6 +316,7 @@ export const en = {
     "View and edit daily L/T sessions for your programme after admin generates the daily timetable.",
   loadDailyTimetable: "Load daily timetable",
   addSession: "Add session",
+  sessionDeliveryMode: "Delivery mode",
   dailyOutstandingHoursTitle: "Outstanding hours",
   dailyOutstandingHoursTeaching: "Teaching",
   dailyOutstandingHoursTutorial: "Tutorial",

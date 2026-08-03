@@ -91,6 +91,43 @@ export function isHdDailyTimetableModule(params: {
   return true;
 }
 
+export type SessionDeliveryMode = "F2F" | "Online";
+
+export const SESSION_DELIVERY_MODE_OPTIONS: SessionDeliveryMode[] = [
+  "F2F",
+  "Online",
+];
+
+/** HD daily sessions only; HDHC and Degree do not use delivery mode. */
+export function supportsSessionDeliveryMode(params: {
+  programmeCode: string;
+  programmeType?: string | null;
+  isHd?: boolean;
+}) {
+  const programmeCode = String(params.programmeCode ?? "")
+    .trim()
+    .toUpperCase();
+
+  if (programmeCode === "HDHC") {
+    return false;
+  }
+
+  if (typeof params.isHd === "boolean") {
+    return params.isHd;
+  }
+
+  return isHdDailyTimetableModule({
+    programmeCode: params.programmeCode,
+    programmeType: params.programmeType,
+  });
+}
+
+export function normalizeSessionDeliveryMode(
+  value: string | null | undefined
+): SessionDeliveryMode {
+  return String(value ?? "").trim() === "Online" ? "Online" : "F2F";
+}
+
 export function computeDegreeTeachingSessionCount(teachingContactHours: number) {
   const hours = Number(teachingContactHours);
 

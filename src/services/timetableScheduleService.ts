@@ -61,6 +61,8 @@ export interface TimetableSessionRow {
   session_kind: "teaching" | "tutorial" | null;
   remark?: string | null;
   teacher_name: string | null;
+  /** F2F | Online — used for HD (excl. HDHC) daily sessions. */
+  delivery_mode?: string | null;
   module_size: number | null;
 }
 
