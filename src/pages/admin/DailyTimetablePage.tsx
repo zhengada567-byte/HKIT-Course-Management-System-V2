@@ -582,6 +582,7 @@ export function DailyTimetablePage() {
               allowEditAllGridModules={isAdmin}
               readOnly={!isAdmin}
               hideInstancePanel
+              showClassSizeModeToggle
               onAfterSave={isAdmin ? handleWeeklySaved : undefined}
             />
           )}

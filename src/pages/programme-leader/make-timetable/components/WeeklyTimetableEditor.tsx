@@ -155,11 +155,22 @@ function resolveWeeklyItemSchedulingIdentities(params: {
 }
 
 const EXPECTED_SIZE_LABEL = "Expected size";
+const ACTUAL_SIZE_LABEL_ZH = "\u5be6\u969b\u4eba\u6578";
+const EXPECTED_SIZE_LABEL_ZH = "\u9810\u8a08\u4eba\u6578";
+
+type ClassSizeDisplayMode = "expected" | "actual";
 
 function resolveInstanceStudentNumber(
-  instance?: TimetableModuleInstanceRow | null
+  instance?: TimetableModuleInstanceRow | null,
+  mode: ClassSizeDisplayMode = "expected"
 ) {
   if (!instance) return null;
+
+  if (mode === "actual") {
+    const actual = instance.instance_actual_size;
+    if (actual != null && Number(actual) > 0) return Number(actual);
+    return null;
+  }
 
   const expected = instance.instance_expected_size;
   if (expected != null && expected > 0) return expected;
@@ -168,10 +179,20 @@ function resolveInstanceStudentNumber(
 }
 
 function formatInstanceStudentNumber(
-  instance?: TimetableModuleInstanceRow | null
+  instance?: TimetableModuleInstanceRow | null,
+  mode: ClassSizeDisplayMode = "expected"
 ) {
-  const size = resolveInstanceStudentNumber(instance);
-  return size != null ? String(size) : "—";
+  const size = resolveInstanceStudentNumber(instance, mode);
+  if (size != null) return String(size);
+  return mode === "actual" ? "nil" : "—";
+}
+
+function classSizeChipLabel(
+  mode: ClassSizeDisplayMode,
+  useChineseLabels: boolean
+) {
+  if (!useChineseLabels) return EXPECTED_SIZE_LABEL;
+  return mode === "actual" ? ACTUAL_SIZE_LABEL_ZH : EXPECTED_SIZE_LABEL_ZH;
 }
 
 function classroomCapacityHint(params: {
@@ -309,6 +330,11 @@ export function WeeklyTimetableEditor(props: {
   hideInstancePanel?: boolean;
   /** View-only: hide save/add/edit/remove (e.g. PL on weekly & daily timetable). */
   readOnly?: boolean;
+  /**
+   * Admin weekly & daily timetable: show toggle between expected / actual class size
+   * on weekly chips only.
+   */
+  showClassSizeModeToggle?: boolean;
   /** Limit remaining-room summary to one campus; defaults to SSP. Pass "" for all locations. */
   availabilitySummaryLocation?: string;
   instancePanelTitle?: string;
@@ -332,6 +358,7 @@ export function WeeklyTimetableEditor(props: {
     allowEditAllGridModules = false,
     hideInstancePanel = false,
     readOnly = false,
+    showClassSizeModeToggle = false,
     availabilitySummaryLocation,
     instancePanelTitle,
     instancePanelDescription,
@@ -363,6 +390,8 @@ export function WeeklyTimetableEditor(props: {
   );
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [classSizeMode, setClassSizeMode] =
+    useState<ClassSizeDisplayMode>("expected");
   const [cellBusyKey, setCellBusyKey] = useState<string | null>(null);
   const [addDialog, setAddDialog] = useState<AddDialogState | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
@@ -1009,6 +1038,23 @@ export function WeeklyTimetableEditor(props: {
               </span>
             )}
 
+            {showClassSizeModeToggle ? (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={weeklyLoading}
+                onClick={() =>
+                  setClassSizeMode((current) =>
+                    current === "expected" ? "actual" : "expected"
+                  )
+                }
+              >
+                {classSizeMode === "expected"
+                  ? "\u5207\u63db\u81f3\u5be6\u969b\u4eba\u6578"
+                  : "\u5207\u63db\u81f3\u9810\u8a08\u4eba\u6578"}
+              </button>
+            ) : null}
+
             {!readOnly && (
             <button
               type="button"
@@ -1106,7 +1152,18 @@ export function WeeklyTimetableEditor(props: {
                                   item.moduleInstanceCode.toUpperCase()
                                 );
                                 const studentNumberLabel =
-                                  formatInstanceStudentNumber(itemInstance);
+                                  formatInstanceStudentNumber(
+                                    itemInstance,
+                                    showClassSizeModeToggle
+                                      ? classSizeMode
+                                      : "expected"
+                                  );
+                                const sizeLabel = classSizeChipLabel(
+                                  showClassSizeModeToggle
+                                    ? classSizeMode
+                                    : "expected",
+                                  showClassSizeModeToggle
+                                );
                                 const itemMeta =
                                   moduleMetaByCode[item.moduleInstanceCode] ??
                                   moduleMetaByCode[
@@ -1178,7 +1235,7 @@ export function WeeklyTimetableEditor(props: {
                                         {item.teacherName || "TBC"}
                                       </div>
                                       <div className="text-xs text-slate-600">
-                                        {EXPECTED_SIZE_LABEL}: {studentNumberLabel}
+                                        {sizeLabel}: {studentNumberLabel}
                                       </div>
                                     </div>
                                     <div className="flex shrink-0 flex-col gap-1">
