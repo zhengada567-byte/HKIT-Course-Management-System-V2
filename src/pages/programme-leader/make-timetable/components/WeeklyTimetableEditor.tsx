@@ -1029,10 +1029,15 @@ export function WeeklyTimetableEditor(props: {
 
           {!readOnly && (
           <p className="text-xs text-slate-600">
-            時段僅顯示上午／下午／晚上。Use Edit to change the classroom or
-            teacher. To change period, remove the module and add it again in the
-            target band（新增預設：上午 09:00–13:00、下午 14:00–18:00、晚上
-            18:30–22:30）.
+            {
+              "\u6642\u6bb5\u50c5\u986f\u793a\u4e0a\u5348\uff0f\u4e0b\u5348\uff0f\u665a\u4e0a\u3002"
+            }
+            Use Edit to change the classroom or teacher. To change period,
+            remove the module and add it again in the target band
+            {
+              "\uff08\u65b0\u589e\u9810\u8a2d\uff1a\u4e0a\u5348 09:00\u201313:00\u3001\u4e0b\u5348 14:00\u201318:00\u3001\u665a\u4e0a 18:30\u201322:30\uff09"
+            }
+            .
           </p>
           )}
 
@@ -1040,8 +1045,8 @@ export function WeeklyTimetableEditor(props: {
             <table className="w-full border-collapse text-sm">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="w-36 border border-slate-200 px-2 py-2 text-left">
-                    時段
+                  <th className="w-40 border border-slate-200 px-2 py-2 text-left">
+                    {"\u6642\u6bb5"}
                   </th>
                   <th
                     colSpan={weekdays.length}
@@ -1063,12 +1068,18 @@ export function WeeklyTimetableEditor(props: {
               <tbody>
                 {weeklyGrid.slots.map((slot) => {
                   const sk = buildWeeklySlotKey(slot.start);
-                  const periodLabel =
-                    slot.label || weeklyPeriodBandLabel(slot.start);
+                  // Never show raw start–end here — always 上午/下午/晚上 labels.
+                  const periodLabel = weeklyPeriodBandLabel(
+                    slot.start,
+                    slot.bandId
+                  );
                   return (
                     <tr key={sk}>
-                      <td className="border border-slate-200 px-2 py-2 align-top font-medium">
-                        {periodLabel}
+                      <td
+                        className="border border-slate-200 px-2 py-2 align-top font-medium"
+                        title={periodLabel}
+                      >
+                        <div className="leading-snug">{periodLabel}</div>
                       </td>
                       <td colSpan={weekdays.length} className="border border-slate-200 p-0">
                         <div className="overflow-x-auto">
@@ -1141,7 +1152,7 @@ export function WeeklyTimetableEditor(props: {
                                       </div>
                                       {item.crossesPeriodBands ? (
                                         <div className="text-[11px] font-medium text-amber-800">
-                                          跨時段
+                                          {"\u8de8\u6642\u6bb5"}
                                         </div>
                                       ) : null}
                                       <div className="text-xs text-slate-500">

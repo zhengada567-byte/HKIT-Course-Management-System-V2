@@ -313,6 +313,7 @@ export function mergeWeeklySlotRows(_params?: {
     start: slot.start,
     end: slot.end,
     label: slot.label,
+    bandId: slot.bandId,
   }));
 }
 
@@ -496,7 +497,12 @@ export function buildWeeklyTimetableGridFromSessions(params: {
 }
 
 export type WeeklyGridState = {
-  slots: Array<{ start: string; end: string; label?: string }>;
+  slots: Array<{
+    start: string;
+    end: string;
+    label?: string;
+    bandId?: string;
+  }>;
   itemsBySlotAndWeekday: Record<string, Record<number, WeeklyGridItem[]>>;
 };
 

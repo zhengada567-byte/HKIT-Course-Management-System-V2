@@ -17,11 +17,8 @@ export type WeeklyPeriodBand = {
 };
 
 /**
- * R1 + evening aligned to 18:30:
- * - Morning window 08:00–13:00 (sessions ending at 13:00 count as morning only)
- * - Afternoon 13:00–18:00
- * - Evening 18:30–22:30
- * Touching only at a boundary does not count as overlap (half-open style).
+ * Labels use Unicode escapes so file encoding cannot strip CJK text.
+ * Display target: 上午（08–13）/ 下午（13–18）/ 晚上（18:30–22:30）
  */
 export const WEEKLY_PERIOD_BANDS: WeeklyPeriodBand[] = [
   {
@@ -30,7 +27,8 @@ export const WEEKLY_PERIOD_BANDS: WeeklyPeriodBand[] = [
     slotEnd: "13:00",
     windowStart: "08:00",
     windowEnd: "13:00",
-    label: "上午（08–13）",
+    // 上午（08–13）
+    label: "\u4e0a\u5348\uff0808\u201313\uff09",
   },
   {
     id: "afternoon",
@@ -38,7 +36,8 @@ export const WEEKLY_PERIOD_BANDS: WeeklyPeriodBand[] = [
     slotEnd: "18:00",
     windowStart: "13:00",
     windowEnd: "18:00",
-    label: "下午（13–18）",
+    // 下午（13–18）
+    label: "\u4e0b\u5348\uff0813\u201318\uff09",
   },
   {
     id: "evening",
@@ -46,7 +45,8 @@ export const WEEKLY_PERIOD_BANDS: WeeklyPeriodBand[] = [
     slotEnd: "22:30",
     windowStart: "18:30",
     windowEnd: "22:30",
-    label: "晚上（18:30–22:30）",
+    // 晚上（18:30–22:30）
+    label: "\u665a\u4e0a\uff0818:30\u201322:30\uff09",
   },
 ];
 
@@ -125,8 +125,28 @@ export function resolveWeeklyPeriodBands(
   return [WEEKLY_PERIOD_BANDS[1]!];
 }
 
-export function weeklyPeriodBandLabel(slotStart: string): string {
+export function findWeeklyPeriodBand(params: {
+  slotStart?: string | null;
+  bandId?: WeeklyPeriodBandId | string | null;
+}): WeeklyPeriodBand | undefined {
+  const bandId = String(params.bandId ?? "").trim();
+  if (bandId) {
+    const byId = WEEKLY_PERIOD_BANDS.find((row) => row.id === bandId);
+    if (byId) return byId;
+  }
+
+  const start = String(params.slotStart ?? "").trim().slice(0, 5);
+  return WEEKLY_PERIOD_BANDS.find((row) => row.slotStart === start);
+}
+
+/** Always returns 上午/下午/晚上 labels for the three fixed bands. */
+export function weeklyPeriodBandLabel(
+  slotStart: string,
+  bandId?: WeeklyPeriodBandId | string | null
+): string {
+  const band = findWeeklyPeriodBand({ slotStart, bandId });
+  if (band) return band.label;
+
   const start = String(slotStart ?? "").trim().slice(0, 5);
-  const band = WEEKLY_PERIOD_BANDS.find((row) => row.slotStart === start);
-  return band?.label ?? `${start}`;
+  return start || "\u2014";
 }
