@@ -24,11 +24,15 @@ import {
   collectWeeklyPlacements,
   collectWeeklyTeacherChanges,
   getRemainingClassroomsForWeeklyCell,
+  listWeeklyConflictOccupants,
   persistWeeklyTimetableDraft,
+  removeWeeklyGridPlacement,
+  upsertWeeklyGridPlacement,
   wouldWeeklyPlacementConflict,
   type WeeklyGridItem,
   type WeeklyGridState,
 } from "../../../../services/timetableManualScheduleService";
+import { weeklyPeriodBandLabel } from "../../../../lib/weeklyTimetablePeriods";
 import {
   listTimetableSessions,
   type TimetableClassroomRow,
@@ -147,15 +151,6 @@ function resolveWeeklyItemSchedulingIdentities(params: {
     streamCode: params.meta?.stream_code ?? params.item.streamCode,
     moduleYear: params.meta?.module_year ?? params.item.moduleYear,
     combineMembers: params.combineMembers,
-  });
-}
-
-function sortWeeklyGridItems(items: WeeklyGridItem[]) {
-  return [...items].sort((a, b) => {
-    if (a.roomCode !== b.roomCode) {
-      return a.roomCode.localeCompare(b.roomCode);
-    }
-    return a.moduleInstanceCode.localeCompare(b.moduleInstanceCode);
   });
 }
 
@@ -632,22 +627,14 @@ export function WeeklyTimetableEditor(props: {
     setWeeklyGrid((current) => {
       if (!current) return current;
 
-      const next = cloneWeeklyGridState(current);
-      const sk = buildWeeklySlotKey(params.start);
-      const items = next.itemsBySlotAndWeekday[sk]?.[params.weekday] ?? [];
-
-      next.itemsBySlotAndWeekday[sk] = {
-        ...(next.itemsBySlotAndWeekday[sk] ?? {}),
-        [params.weekday]: items.filter(
-          (row) =>
-            !(
-              row.moduleInstanceCode === params.item.moduleInstanceCode &&
-              row.roomCode === params.item.roomCode
-            )
-        ),
-      };
-
-      return next;
+      return removeWeeklyGridPlacement({
+        grid: current,
+        weekday: params.weekday,
+        moduleInstanceCode: params.item.moduleInstanceCode,
+        roomCode: params.item.roomCode,
+        placementStart:
+          params.item.placementStart || params.start,
+      });
     });
     setSaveMessage(null);
   }
@@ -661,8 +648,8 @@ export function WeeklyTimetableEditor(props: {
     setEditError(null);
     setEditDialog({
       weekday: params.weekday,
-      start: params.start,
-      end: params.end,
+      start: params.item.placementStart || params.start,
+      end: params.item.placementEnd || params.end,
       item: params.item,
       roomCode: params.item.roomCode,
       teacherName: params.item.teacherName || "TBC",
@@ -692,20 +679,20 @@ export function WeeklyTimetableEditor(props: {
       return;
     }
 
-    const sk = buildWeeklySlotKey(start);
-    const existing = weeklyGrid.itemsBySlotAndWeekday[sk]?.[weekday] ?? [];
-    const others = existing.filter(
-      (row) =>
-        !(
-          row.moduleInstanceCode === item.moduleInstanceCode &&
-          row.roomCode === item.roomCode
-        )
-    );
+    const others = listWeeklyConflictOccupants({
+      grid: weeklyGrid,
+      weekday,
+      placementStart: start,
+      excludeModuleInstanceCode: item.moduleInstanceCode,
+      excludeRoomCode: item.roomCode,
+    });
 
-    const updatedPlacement: WeeklyGridItem = {
+    const updatedPlacement = {
       ...item,
       roomCode: nextRoomCode,
       teacherName: nextTeacherName,
+      placementStart: item.placementStart || start,
+      placementEnd: item.placementEnd || end,
     };
 
     const conflict = wouldWeeklyPlacementConflict(others, updatedPlacement);
@@ -717,12 +704,12 @@ export function WeeklyTimetableEditor(props: {
     setWeeklyGrid((current) => {
       if (!current) return current;
 
-      const next = cloneWeeklyGridState(current);
-      next.itemsBySlotAndWeekday[sk] = {
-        ...(next.itemsBySlotAndWeekday[sk] ?? {}),
-        [weekday]: sortWeeklyGridItems([...others, updatedPlacement]),
-      };
-      return next;
+      return upsertWeeklyGridPlacement(current, {
+        ...updatedPlacement,
+        weekday,
+        start: updatedPlacement.placementStart,
+        end: updatedPlacement.placementEnd,
+      });
     });
 
     setEditDialog(null);
@@ -773,10 +760,6 @@ export function WeeklyTimetableEditor(props: {
         throw new Error(`No timetable module found for "${code}".`);
       }
 
-      const sk = buildWeeklySlotKey(addDialog.start);
-      const existing =
-        weeklyGrid.itemsBySlotAndWeekday[sk]?.[addDialog.weekday] ?? [];
-
       const groupId = String(timetableModule.combine_group_id ?? "").trim();
       const combineMembers = groupId
         ? combineMembersByGroupId.get(groupId)
@@ -792,20 +775,21 @@ export function WeeklyTimetableEditor(props: {
         combineMembers,
       });
 
-      const conflict = wouldWeeklyPlacementConflict(existing, placement);
+      const conflict = wouldWeeklyPlacementConflict(
+        listWeeklyConflictOccupants({
+          grid: weeklyGrid,
+          weekday: addDialog.weekday,
+          placementStart: addDialog.start,
+        }),
+        placement
+      );
       if (conflict) {
         throw new Error(conflict);
       }
 
       setWeeklyGrid((current) => {
         if (!current) return current;
-
-        const next = cloneWeeklyGridState(current);
-        next.itemsBySlotAndWeekday[sk] = {
-          ...(next.itemsBySlotAndWeekday[sk] ?? {}),
-          [addDialog.weekday]: sortWeeklyGridItems([...existing, placement]),
-        };
-        return next;
+        return upsertWeeklyGridPlacement(current, placement);
       });
 
       setAddDialog(null);
@@ -1045,8 +1029,10 @@ export function WeeklyTimetableEditor(props: {
 
           {!readOnly && (
           <p className="text-xs text-slate-600">
-            Use Edit to change the classroom or teacher. To change the timeslot,
-            remove the module and add it again in the target slot.
+            時段僅顯示上午／下午／晚上。Use Edit to change the classroom or
+            teacher. To change period, remove the module and add it again in the
+            target band（新增預設：上午 09:00–13:00、下午 14:00–18:00、晚上
+            18:30–22:30）.
           </p>
           )}
 
@@ -1054,8 +1040,8 @@ export function WeeklyTimetableEditor(props: {
             <table className="w-full border-collapse text-sm">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="w-28 border border-slate-200 px-2 py-2 text-left">
-                    Time
+                  <th className="w-36 border border-slate-200 px-2 py-2 text-left">
+                    時段
                   </th>
                   <th
                     colSpan={weekdays.length}
@@ -1077,10 +1063,12 @@ export function WeeklyTimetableEditor(props: {
               <tbody>
                 {weeklyGrid.slots.map((slot) => {
                   const sk = buildWeeklySlotKey(slot.start);
+                  const periodLabel =
+                    slot.label || weeklyPeriodBandLabel(slot.start);
                   return (
                     <tr key={sk}>
                       <td className="border border-slate-200 px-2 py-2 align-top font-medium">
-                        {slot.start}–{slot.end}
+                        {periodLabel}
                       </td>
                       <td colSpan={weekdays.length} className="border border-slate-200 p-0">
                         <div className="overflow-x-auto">
@@ -1131,10 +1119,14 @@ export function WeeklyTimetableEditor(props: {
                                   selectedProgrammeCode: programmeCode,
                                   viewScope,
                                 });
+                                const placementStart =
+                                  item.placementStart || slot.start;
+                                const placementEnd =
+                                  item.placementEnd || slot.end;
 
                                 return (
                                 <div
-                                  key={`${item.roomCode}-${item.moduleInstanceCode}`}
+                                  key={`${item.roomCode}-${item.moduleInstanceCode}-${placementStart}`}
                                   className={cn(
                                     "rounded border px-2 py-1.5",
                                     highlightProgramme
@@ -1147,6 +1139,11 @@ export function WeeklyTimetableEditor(props: {
                                       <div className="font-medium">
                                         {item.moduleInstanceCode}
                                       </div>
+                                      {item.crossesPeriodBands ? (
+                                        <div className="text-[11px] font-medium text-amber-800">
+                                          跨時段
+                                        </div>
+                                      ) : null}
                                       <div className="text-xs text-slate-500">
                                         {[
                                           item.moduleYear || null,
@@ -1189,8 +1186,8 @@ export function WeeklyTimetableEditor(props: {
                                         onClick={() =>
                                           openEditDialog({
                                             weekday: day.id,
-                                            start: slot.start,
-                                            end: slot.end,
+                                            start: placementStart,
+                                            end: placementEnd,
                                             item,
                                           })
                                         }
@@ -1210,8 +1207,8 @@ export function WeeklyTimetableEditor(props: {
                                         onClick={() =>
                                           handleRemoveItem({
                                             weekday: day.id,
-                                            start: slot.start,
-                                            end: slot.end,
+                                            start: placementStart,
+                                            end: placementEnd,
                                             item,
                                           })
                                         }
@@ -1223,7 +1220,7 @@ export function WeeklyTimetableEditor(props: {
                                     </div>
                                   </div>
                                 </div>
-                              );
+                                );
                               })}
 
                               {!readOnly && (

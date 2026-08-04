@@ -7,6 +7,10 @@ import {
   type SchedulingCombineMember,
   type StreamYearSchedulingIdentity,
 } from "../lib/timetableSchedulingRules";
+import {
+  listFixedWeeklyPeriodSlots,
+  resolveWeeklyPeriodBands,
+} from "../lib/weeklyTimetablePeriods";
 import type { TimetableModuleRow } from "../types";
 import type { TimetableModuleInstanceRow } from "./timetableModuleInstanceService";
 import { applyTeacherToTimetableModuleInstance } from "./moduleDefaultTimetableSyncService";
@@ -82,7 +86,13 @@ export type WeeklyPlacementOccupant = {
   schedulingIdentities: StreamYearSchedulingIdentity[];
 };
 
-export type WeeklyGridItem = WeeklyPlacementOccupant;
+/** Chip in a period-band cell; placementStart/End are the real session times. */
+export type WeeklyGridItem = WeeklyPlacementOccupant & {
+  placementStart: string;
+  placementEnd: string;
+  /** Shown in more than one morning/afternoon/evening cell. */
+  crossesPeriodBands?: boolean;
+};
 
 export function wouldWeeklyPlacementConflict(
   existing: WeeklyPlacementOccupant[],
@@ -292,42 +302,18 @@ export async function removeModuleFromWeeklySlot(params: {
   await deleteWeeklyPlacementSessions(params);
 }
 
-export function mergeWeeklySlotRows(params: {
-  sessionSlots: Array<{ start: string; end: string }>;
-  instances: TimetableModuleInstanceRow[];
-  preferredStartByCode: Record<string, string>;
-  startTimeOptions: string[];
+export function mergeWeeklySlotRows(_params?: {
+  sessionSlots?: Array<{ start: string; end: string }>;
+  instances?: TimetableModuleInstanceRow[];
+  preferredStartByCode?: Record<string, string>;
+  startTimeOptions?: string[];
 }) {
-  const map = new Map<string, { start: string; end: string }>();
-  const addStart = (startTime: string, mode?: string | null) => {
-    const row = weeklySlotRow(startTime, mode);
-    map.set(row.start, row);
-  };
-
-  for (const slot of params.sessionSlots) {
-    addStart(slot.start);
-  }
-
-  for (const instance of params.instances) {
-    const mode = String(instance.instance_mode ?? "").trim();
-    if (mode === "Night") {
-      addStart(WEEKLY_NIGHT_SLOT_START, "Night");
-      continue;
-    }
-
-    const preferred =
-      params.preferredStartByCode[instance.module_instance_code] || "09:00";
-    addStart(preferred);
-  }
-
-  if (map.size === 0) {
-    for (const start of params.startTimeOptions) {
-      addStart(start);
-    }
-    addStart(WEEKLY_NIGHT_SLOT_START, "Night");
-  }
-
-  return Array.from(map.values()).sort((a, b) => a.start.localeCompare(b.start));
+  // Weekly UI always shows three fixed period bands.
+  return listFixedWeeklyPeriodSlots().map((slot) => ({
+    start: slot.start,
+    end: slot.end,
+    label: slot.label,
+  }));
 }
 
 /** Build the same weekly grid structure shown in WeeklyTimetableEditor. */
@@ -340,7 +326,6 @@ export function buildWeeklyTimetableGridFromSessions(params: {
   startTimeOptions: string[];
   combineMembersByGroupId?: Map<string, SchedulingCombineMember[]>;
 }): WeeklyGridState {
-  const sessionSlots: Array<{ start: string; end: string }> = [];
   const instanceByCode = new Map(
     params.timetableInstances.map((instance) => [
       String(instance.module_instance_code ?? "").trim(),
@@ -416,7 +401,7 @@ export function buildWeeklyTimetableGridFromSessions(params: {
 
   const collapsed = new Map<
     string,
-    WeeklyGridItem & { weekday: number; start: string; end: string }
+    WeeklyPlacementOccupant & { weekday: number; start: string; end: string }
   >();
 
   for (const [instanceCode, byPattern] of patternsByInstance) {
@@ -431,8 +416,6 @@ export function buildWeeklyTimetableGridFromSessions(params: {
     const instance = instanceByCode.get(instanceCode);
 
     for (const bucket of kept) {
-      sessionSlots.push({ start: bucket.start, end: bucket.end });
-
       const key = [
         bucket.weekday,
         bucket.start,
@@ -469,25 +452,36 @@ export function buildWeeklyTimetableGridFromSessions(params: {
   const itemsBySlotAndWeekday: WeeklyGridState["itemsBySlotAndWeekday"] = {};
 
   for (const item of collapsed.values()) {
-    const slotKey = buildWeeklySlotKey(item.start);
-    itemsBySlotAndWeekday[slotKey] ||= {};
-    itemsBySlotAndWeekday[slotKey][item.weekday] ||= [];
-    itemsBySlotAndWeekday[slotKey][item.weekday]!.push({
-      moduleInstanceCode: item.moduleInstanceCode,
-      moduleCode: item.moduleCode,
-      moduleName: item.moduleName,
-      teacherName: item.teacherName,
-      roomCode: item.roomCode,
-      programmeCode: item.programmeCode,
-      streamCode: item.streamCode,
-      moduleYear: item.moduleYear,
-      schedulingIdentities: item.schedulingIdentities,
-    });
+    const bands = resolveWeeklyPeriodBands(item.start, item.end);
+    const crossesPeriodBands = bands.length > 1;
+
+    for (const band of bands) {
+      const slotKey = buildWeeklySlotKey(band.slotStart);
+      itemsBySlotAndWeekday[slotKey] ||= {};
+      itemsBySlotAndWeekday[slotKey][item.weekday] ||= [];
+      itemsBySlotAndWeekday[slotKey][item.weekday]!.push({
+        moduleInstanceCode: item.moduleInstanceCode,
+        moduleCode: item.moduleCode,
+        moduleName: item.moduleName,
+        teacherName: item.teacherName,
+        roomCode: item.roomCode,
+        programmeCode: item.programmeCode,
+        streamCode: item.streamCode,
+        moduleYear: item.moduleYear,
+        schedulingIdentities: item.schedulingIdentities,
+        placementStart: item.start,
+        placementEnd: item.end,
+        crossesPeriodBands,
+      });
+    }
   }
 
   for (const sk of Object.keys(itemsBySlotAndWeekday)) {
     for (const day of Object.keys(itemsBySlotAndWeekday[sk] ?? {})) {
       itemsBySlotAndWeekday[sk]![Number(day)]!.sort((a, b) => {
+        if (a.placementStart !== b.placementStart) {
+          return a.placementStart.localeCompare(b.placementStart);
+        }
         if (a.roomCode !== b.roomCode) {
           return a.roomCode.localeCompare(b.roomCode);
         }
@@ -496,22 +490,13 @@ export function buildWeeklyTimetableGridFromSessions(params: {
     }
   }
 
-  const uniqueSessionSlots = Array.from(
-    new Map(sessionSlots.map((slot) => [slot.start, slot])).values()
-  );
-
-  const slots = mergeWeeklySlotRows({
-    sessionSlots: uniqueSessionSlots,
-    instances: params.timetableInstances,
-    preferredStartByCode: params.preferredStartByCode ?? {},
-    startTimeOptions: params.startTimeOptions,
-  });
+  const slots = mergeWeeklySlotRows();
 
   return { slots, itemsBySlotAndWeekday };
 }
 
 export type WeeklyGridState = {
-  slots: Array<{ start: string; end: string }>;
+  slots: Array<{ start: string; end: string; label?: string }>;
   itemsBySlotAndWeekday: Record<string, Record<number, WeeklyGridItem[]>>;
 };
 
@@ -732,6 +717,7 @@ export function collectWeeklyPlacements(
   grid: WeeklyGridState
 ): WeeklyPlacementRecord[] {
   const results: WeeklyPlacementRecord[] = [];
+  const seen = new Set<string>();
 
   for (const slot of grid.slots) {
     const slotKey = buildWeeklySlotKey(slot.start);
@@ -741,11 +727,31 @@ export function collectWeeklyPlacements(
       const weekday = Number(dayText) as WeeklyPlacementRecord["weekday"];
 
       for (const item of items) {
-        results.push({
-          ...item,
+        const start = item.placementStart || slot.start;
+        const end = item.placementEnd || slot.end;
+        const identity = [
           weekday,
-          start: slot.start,
-          end: slot.end,
+          start,
+          item.roomCode,
+          item.moduleInstanceCode.toUpperCase(),
+        ].join("|");
+
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+
+        results.push({
+          moduleInstanceCode: item.moduleInstanceCode,
+          moduleCode: item.moduleCode,
+          moduleName: item.moduleName,
+          teacherName: item.teacherName,
+          roomCode: item.roomCode,
+          programmeCode: item.programmeCode,
+          streamCode: item.streamCode,
+          moduleYear: item.moduleYear,
+          schedulingIdentities: item.schedulingIdentities,
+          weekday,
+          start,
+          end,
         });
       }
     }
@@ -776,6 +782,148 @@ export function buildDraftWeeklyPlacement(params: {
     start: params.start,
     end: params.end,
   };
+}
+
+/** Place a draft chip into every overlapping period-band cell. */
+export function upsertWeeklyGridPlacement(
+  grid: WeeklyGridState,
+  placement: WeeklyPlacementRecord
+): WeeklyGridState {
+  const next = cloneWeeklyGridState(grid);
+  const bands = resolveWeeklyPeriodBands(placement.start, placement.end);
+  const crossesPeriodBands = bands.length > 1;
+  const instanceKey = placement.moduleInstanceCode.toUpperCase();
+
+  // Remove any existing copies of this instance on the same weekday (all bands).
+  for (const slot of next.slots) {
+    const slotKey = buildWeeklySlotKey(slot.start);
+    const items = next.itemsBySlotAndWeekday[slotKey]?.[placement.weekday] ?? [];
+    next.itemsBySlotAndWeekday[slotKey] = {
+      ...(next.itemsBySlotAndWeekday[slotKey] ?? {}),
+      [placement.weekday]: items.filter(
+        (item) => item.moduleInstanceCode.toUpperCase() !== instanceKey
+      ),
+    };
+  }
+
+  const chip: WeeklyGridItem = {
+    moduleInstanceCode: placement.moduleInstanceCode,
+    moduleCode: placement.moduleCode,
+    moduleName: placement.moduleName,
+    teacherName: placement.teacherName,
+    roomCode: placement.roomCode,
+    programmeCode: placement.programmeCode,
+    streamCode: placement.streamCode,
+    moduleYear: placement.moduleYear,
+    schedulingIdentities: placement.schedulingIdentities,
+    placementStart: placement.start,
+    placementEnd: placement.end,
+    crossesPeriodBands,
+  };
+
+  for (const band of bands) {
+    const slotKey = buildWeeklySlotKey(band.slotStart);
+    const items = next.itemsBySlotAndWeekday[slotKey]?.[placement.weekday] ?? [];
+    next.itemsBySlotAndWeekday[slotKey] = {
+      ...(next.itemsBySlotAndWeekday[slotKey] ?? {}),
+      [placement.weekday]: [...items, chip].sort((a, b) => {
+        if (a.placementStart !== b.placementStart) {
+          return a.placementStart.localeCompare(b.placementStart);
+        }
+        if (a.roomCode !== b.roomCode) {
+          return a.roomCode.localeCompare(b.roomCode);
+        }
+        return a.moduleInstanceCode.localeCompare(b.moduleInstanceCode);
+      }),
+    };
+  }
+
+  return next;
+}
+
+export function removeWeeklyGridPlacement(params: {
+  grid: WeeklyGridState;
+  weekday: number;
+  moduleInstanceCode: string;
+  roomCode?: string;
+  placementStart?: string;
+}): WeeklyGridState {
+  const next = cloneWeeklyGridState(params.grid);
+  const instanceKey = params.moduleInstanceCode.toUpperCase();
+  const roomKey = String(params.roomCode ?? "").trim().toUpperCase();
+  const startKey = String(params.placementStart ?? "").trim().slice(0, 5);
+
+  for (const slot of next.slots) {
+    const slotKey = buildWeeklySlotKey(slot.start);
+    const items = next.itemsBySlotAndWeekday[slotKey]?.[params.weekday] ?? [];
+    next.itemsBySlotAndWeekday[slotKey] = {
+      ...(next.itemsBySlotAndWeekday[slotKey] ?? {}),
+      [params.weekday]: items.filter((item) => {
+        if (item.moduleInstanceCode.toUpperCase() !== instanceKey) {
+          return true;
+        }
+        if (roomKey && item.roomCode.toUpperCase() !== roomKey) {
+          return true;
+        }
+        if (
+          startKey &&
+          String(item.placementStart ?? "").slice(0, 5) !== startKey
+        ) {
+          return true;
+        }
+        return false;
+      }),
+    };
+  }
+
+  return next;
+}
+
+/** Occupants that share the same exact placement start (for conflict checks). */
+export function listWeeklyConflictOccupants(params: {
+  grid: WeeklyGridState;
+  weekday: number;
+  placementStart: string;
+  excludeModuleInstanceCode?: string;
+  excludeRoomCode?: string;
+}): WeeklyPlacementOccupant[] {
+  const startKey = String(params.placementStart ?? "").trim().slice(0, 5);
+  const excludeInstance = String(params.excludeModuleInstanceCode ?? "")
+    .trim()
+    .toUpperCase();
+  const excludeRoom = String(params.excludeRoomCode ?? "").trim().toUpperCase();
+  const seen = new Set<string>();
+  const results: WeeklyPlacementOccupant[] = [];
+
+  for (const slot of params.grid.slots) {
+    const slotKey = buildWeeklySlotKey(slot.start);
+    const items =
+      params.grid.itemsBySlotAndWeekday[slotKey]?.[params.weekday] ?? [];
+
+    for (const item of items) {
+      if (String(item.placementStart ?? "").slice(0, 5) !== startKey) {
+        continue;
+      }
+
+      const instanceKey = item.moduleInstanceCode.toUpperCase();
+      const roomKey = item.roomCode.toUpperCase();
+      const identity = `${instanceKey}|${roomKey}`;
+
+      if (seen.has(identity)) continue;
+      if (
+        excludeInstance &&
+        instanceKey === excludeInstance &&
+        (!excludeRoom || roomKey === excludeRoom)
+      ) {
+        continue;
+      }
+
+      seen.add(identity);
+      results.push(item);
+    }
+  }
+
+  return results;
 }
 
 export async function persistWeeklyTimetableDraft(params: {
