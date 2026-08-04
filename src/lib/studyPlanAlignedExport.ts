@@ -159,48 +159,39 @@ function partitionModulesForAlignedExport(params: {
   };
 }
 
-export type StudyPlanModuleColumnWriter = (
+export type StudyPlanModulePairWriter = (
   module: StudyPlanModule
-) => string[];
+) => [string, string];
 
-function buildRepeatedModuleHeaders(
-  moduleCount: number,
-  labels: string[]
+function buildRepeatedPairHeaders(
+  pairCount: number,
+  labels: [string, string]
 ): string[] {
   const headers: string[] = [];
 
-  for (let index = 0; index < moduleCount; index += 1) {
-    headers.push(...labels);
+  for (let index = 0; index < pairCount; index += 1) {
+    headers.push(labels[0], labels[1]);
   }
 
   return headers;
 }
 
-function emptyModuleColumns(columnCount: number): string[] {
-  return Array.from({ length: columnCount }, () => "");
-}
-
-function appendModuleColumns(
+function appendModulePairs(
   row: string[],
   modules: Array<StudyPlanModule | null>,
-  moduleCount: number,
-  writeColumns: StudyPlanModuleColumnWriter,
-  columnCount: number
+  pairCount: number,
+  writePair: StudyPlanModulePairWriter
 ) {
-  for (let index = 0; index < moduleCount; index += 1) {
+  for (let index = 0; index < pairCount; index += 1) {
     const module = modules[index] ?? null;
 
     if (!module) {
-      row.push(...emptyModuleColumns(columnCount));
+      row.push("", "");
       continue;
     }
 
-    const cells = writeColumns(module).slice(0, columnCount);
-    row.push(...cells);
-
-    if (cells.length < columnCount) {
-      row.push(...emptyModuleColumns(columnCount - cells.length));
-    }
+    const [left, right] = writePair(module);
+    row.push(left, right);
   }
 }
 
@@ -208,10 +199,9 @@ function buildAlignedSheetRows(params: {
   bundles: StudyPlanExportBundle[];
   catalog: StudyPlanModule[];
   isDegree: boolean;
-  writeColumns: StudyPlanModuleColumnWriter;
-  moduleColumnHeaders: string[];
+  writePair: StudyPlanModulePairWriter;
+  pairHeader: [string, string];
 }): string[][] {
-  const columnCount = params.moduleColumnHeaders.length;
   const partitioned = params.bundles.map(({ student, modules }) => ({
     student,
     ...partitionModulesForAlignedExport({
@@ -231,39 +221,23 @@ function buildAlignedSheetRows(params: {
 
   const headerRow = [
     ...STUDY_PLAN_CSV_STUDENT_HEADERS,
-    ...buildRepeatedModuleHeaders(maxBridgingCount, params.moduleColumnHeaders),
-    ...buildRepeatedModuleHeaders(
-      params.catalog.length,
-      params.moduleColumnHeaders
-    ),
-    ...buildRepeatedModuleHeaders(maxExtraCount, params.moduleColumnHeaders),
+    ...buildRepeatedPairHeaders(maxBridgingCount, params.pairHeader),
+    ...buildRepeatedPairHeaders(params.catalog.length, params.pairHeader),
+    ...buildRepeatedPairHeaders(maxExtraCount, params.pairHeader),
   ];
 
   const dataRows = partitioned.map(
     ({ student, bridgingModules, catalogSlots, extraModules }) => {
       const row = [...buildStudyPlanStudentCsvCells(student)];
 
-      appendModuleColumns(
-        row,
-        bridgingModules,
-        maxBridgingCount,
-        params.writeColumns,
-        columnCount
-      );
-      appendModuleColumns(
+      appendModulePairs(row, bridgingModules, maxBridgingCount, params.writePair);
+      appendModulePairs(
         row,
         catalogSlots,
         catalogSlots.length,
-        params.writeColumns,
-        columnCount
+        params.writePair
       );
-      appendModuleColumns(
-        row,
-        extraModules,
-        maxExtraCount,
-        params.writeColumns,
-        columnCount
-      );
+      appendModulePairs(row, extraModules, maxExtraCount, params.writePair);
 
       while (row.length < headerRow.length) {
         row.push("");
@@ -329,8 +303,8 @@ async function buildAlignedProgrammeSheet(
   programmeCode: string,
   bundles: StudyPlanExportBundle[],
   options: {
-    writeColumns: StudyPlanModuleColumnWriter;
-    moduleColumnHeaders: string[];
+    writePair: StudyPlanModulePairWriter;
+    pairHeader: [string, string];
     buildCatalog?: typeof buildExportCatalogColumns;
   }
 ): Promise<AlignedStudyPlanSheet> {
@@ -355,8 +329,8 @@ async function buildAlignedProgrammeSheet(
       bundles,
       catalog,
       isDegree,
-      writeColumns: options.writeColumns,
-      moduleColumnHeaders: options.moduleColumnHeaders,
+      writePair: options.writePair,
+      pairHeader: options.pairHeader,
     }),
   };
 }
@@ -387,12 +361,8 @@ export async function buildAlignedStudyPlanSheets(
   bundles: StudyPlanExportBundle[]
 ): Promise<AlignedStudyPlanSheet[]> {
   return buildAlignedModuleProfileSheets(bundles, {
-    writeColumns: (module) => [
-      module.moduleCode,
-      studyTermCellValue(module),
-      enrollmentClassCellValue(module, "Not enrolled"),
-    ],
-    moduleColumnHeaders: ["Module code", "Study term", "Enrolled class"],
+    writePair: (module) => [module.moduleCode, studyTermCellValue(module)],
+    pairHeader: ["Module code", "Study term"],
   });
 }
 
@@ -401,16 +371,16 @@ export async function buildAlignedEnrollmentProfileSheets(
   params: { notEnrolledLabel: string }
 ): Promise<AlignedStudyPlanSheet[]> {
   return buildAlignedModuleProfileSheets(bundles, {
-    writeColumns: (module) => [
+    writePair: (module) => [
       enrollmentClassCellValue(module, params.notEnrolledLabel),
       studyTermCellValue(module),
     ],
-    moduleColumnHeaders: ["Enrolled class", "Study term"],
+    pairHeader: ["Enrolled class", "Study term"],
     buildCatalog: buildEnrollmentExportCatalogColumns,
   });
 }
 
-export function enrollmentClassCellValue(
+function enrollmentClassCellValue(
   module: StudyPlanModule,
   notEnrolledLabel: string
 ): string {
@@ -430,8 +400,8 @@ export function enrollmentClassCellValue(
 async function buildAlignedModuleProfileSheets(
   bundles: StudyPlanExportBundle[],
   options: {
-    writeColumns: StudyPlanModuleColumnWriter;
-    moduleColumnHeaders: string[];
+    writePair: StudyPlanModulePairWriter;
+    pairHeader: [string, string];
     buildCatalog?: typeof buildExportCatalogColumns;
   }
 ): Promise<AlignedStudyPlanSheet[]> {
