@@ -566,7 +566,7 @@ export function getRemainingClassroomsForWeeklySlotAllDays(params: {
   );
 }
 
-export type WeeklyPlacementRecord = WeeklyGridItem & {
+export type WeeklyPlacementRecord = WeeklyPlacementOccupant & {
   weekday: 1 | 2 | 3 | 4 | 5 | 6;
   start: string;
   end: string;
