@@ -15,6 +15,7 @@ import { listTeachers } from "../../../../services/teacherService";
 import { listTimetableModuleInstances,
   type TimetableModuleInstanceRow,
 } from "../../../../services/timetableModuleInstanceService";
+import { loadEnrolledClassSizeByInstanceCode } from "../../../../services/studyPlanEnrollmentService";
 import { loadPlanningModulesByCombineGroupIds } from "../../../../services/splitClassService";
 import {
   buildDraftWeeklyPlacement,
@@ -162,11 +163,22 @@ type ClassSizeDisplayMode = "expected" | "actual";
 
 function resolveInstanceStudentNumber(
   instance?: TimetableModuleInstanceRow | null,
-  mode: ClassSizeDisplayMode = "expected"
+  mode: ClassSizeDisplayMode = "expected",
+  enrolledCountByInstanceCode?: Map<string, number> | null
 ) {
   if (!instance) return null;
 
   if (mode === "actual") {
+    const code = String(instance.module_instance_code ?? "")
+      .trim()
+      .toUpperCase();
+
+    if (enrolledCountByInstanceCode && code) {
+      const liveCount = enrolledCountByInstanceCode.get(code);
+      if (liveCount != null && liveCount > 0) return liveCount;
+      return null;
+    }
+
     const actual = instance.instance_actual_size;
     if (actual != null && Number(actual) > 0) return Number(actual);
     return null;
@@ -180,9 +192,14 @@ function resolveInstanceStudentNumber(
 
 function formatInstanceStudentNumber(
   instance?: TimetableModuleInstanceRow | null,
-  mode: ClassSizeDisplayMode = "expected"
+  mode: ClassSizeDisplayMode = "expected",
+  enrolledCountByInstanceCode?: Map<string, number> | null
 ) {
-  const size = resolveInstanceStudentNumber(instance, mode);
+  const size = resolveInstanceStudentNumber(
+    instance,
+    mode,
+    enrolledCountByInstanceCode
+  );
   if (size != null) return String(size);
   return mode === "actual" ? "nil" : "—";
 }
@@ -392,6 +409,8 @@ export function WeeklyTimetableEditor(props: {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [classSizeMode, setClassSizeMode] =
     useState<ClassSizeDisplayMode>("expected");
+  const [enrolledCountByInstanceCode, setEnrolledCountByInstanceCode] =
+    useState<Map<string, number>>(new Map());
   const [cellBusyKey, setCellBusyKey] = useState<string | null>(null);
   const [addDialog, setAddDialog] = useState<AddDialogState | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
@@ -492,7 +511,20 @@ export function WeeklyTimetableEditor(props: {
         setLoadedInstancesByCode(new Map());
       }
 
-      const sessions = await listTimetableSessions({ academicYear });
+      const sessionsPromise = listTimetableSessions({ academicYear });
+      const enrolledCountsPromise = showClassSizeModeToggle
+        ? loadEnrolledClassSizeByInstanceCode({
+            academicYear,
+            offeredTerm: term,
+            includeBridging: true,
+          })
+        : Promise.resolve(new Map<string, number>());
+
+      const [sessions, enrolledCounts] = await Promise.all([
+        sessionsPromise,
+        enrolledCountsPromise,
+      ]);
+      setEnrolledCountByInstanceCode(enrolledCounts);
       const sessionInstanceCodes = Array.from(
         new Set(
           sessions
@@ -584,6 +616,7 @@ export function WeeklyTimetableEditor(props: {
     preferredStartByCode,
     forceViewScopeAll,
     programmeCode,
+    showClassSizeModeToggle,
     startTimeOptions,
     term,
     timetableInstances,
@@ -1156,7 +1189,10 @@ export function WeeklyTimetableEditor(props: {
                                     itemInstance,
                                     showClassSizeModeToggle
                                       ? classSizeMode
-                                      : "expected"
+                                      : "expected",
+                                    showClassSizeModeToggle
+                                      ? enrolledCountByInstanceCode
+                                      : null
                                   );
                                 const sizeLabel = classSizeChipLabel(
                                   showClassSizeModeToggle

@@ -285,6 +285,44 @@ export async function loadStudyPlanEnrollmentRows(params: {
   return rows;
 }
 
+/**
+ * Live headcount per enrolled class (module instance), same source as
+ * Study Plan → 報表 → 分班統計. Includes bridging by default.
+ * Unassigned rows (no enrolled_module_instance_code) are omitted.
+ */
+export async function loadEnrolledClassSizeByInstanceCode(params: {
+  academicYear: string;
+  offeredTerm: ModuleTerm;
+  /** Default true — bridging students belong to the same class. */
+  includeBridging?: boolean;
+}): Promise<Map<string, number>> {
+  const includeBridging = params.includeBridging !== false;
+  const rows = await loadStudyPlanEnrollmentRows({
+    academicYear: params.academicYear,
+    offeredTerm: params.offeredTerm,
+  });
+
+  const counts = new Map<string, number>();
+
+  for (const row of rows) {
+    if (!includeBridging && String(row.plan_stage ?? "").trim() === "bridging") {
+      continue;
+    }
+
+    const instanceCode = String(row.enrolled_module_instance_code ?? "")
+      .trim()
+      .toUpperCase();
+
+    if (!instanceCode) {
+      continue;
+    }
+
+    counts.set(instanceCode, (counts.get(instanceCode) ?? 0) + 1);
+  }
+
+  return counts;
+}
+
 async function loadCombineGroupMembersByGroupId(params: {
   combineGroupIds: string[];
 }): Promise<Map<string, Array<{ module_code: string; programme_code: string }>>> {
