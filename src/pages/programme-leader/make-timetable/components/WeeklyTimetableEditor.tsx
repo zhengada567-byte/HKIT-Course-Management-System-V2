@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Minus, Pencil, Plus } from "lucide-react";
 
 import { getProgrammeFamilyKey } from "../../../../lib/crossProgrammeCombine";
@@ -74,6 +74,8 @@ type ViewScope = "all" | "programme";
 const WEEKLY_DAY_COLUMN_CLASS =
   "w-40 min-w-[10rem] shrink-0 border-l border-slate-200 px-2 py-2 align-top";
 const WEEKLY_DAY_ROW_MIN_WIDTH = "min-w-[60rem]";
+/** Shared horizontal scroll for day header + each period row. */
+const WEEKLY_DAY_SCROLL_CLASS = "overflow-x-auto";
 const SELECTED_PROGRAMME_HIGHLIGHT_CELL = "border-red-400 bg-red-100";
 const SELECTED_PROGRAMME_HIGHLIGHT_ROW = "bg-red-100";
 
@@ -412,6 +414,29 @@ export function WeeklyTimetableEditor(props: {
   const [enrolledCountByInstanceCode, setEnrolledCountByInstanceCode] =
     useState<Map<string, number>>(new Map());
   const [cellBusyKey, setCellBusyKey] = useState<string | null>(null);
+  const dayScrollRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const syncingDayScrollRef = useRef(false);
+
+  const syncWeeklyDayScroll = useCallback((source: HTMLDivElement) => {
+    if (syncingDayScrollRef.current) return;
+    syncingDayScrollRef.current = true;
+    const left = source.scrollLeft;
+
+    for (const element of dayScrollRefs.current) {
+      if (element && element !== source && element.scrollLeft !== left) {
+        element.scrollLeft = left;
+      }
+    }
+
+    syncingDayScrollRef.current = false;
+  }, []);
+
+  const setWeeklyDayScrollRef = useCallback(
+    (index: number, element: HTMLDivElement | null) => {
+      dayScrollRefs.current[index] = element;
+    },
+    []
+  );
   const [addDialog, setAddDialog] = useState<AddDialogState | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
   const [editDialog, setEditDialog] = useState<EditDialogState | null>(null);
@@ -1131,21 +1156,29 @@ export function WeeklyTimetableEditor(props: {
                     colSpan={weekdays.length}
                     className="border border-slate-200 p-0 text-left"
                   >
-                    <div className={`flex ${WEEKLY_DAY_ROW_MIN_WIDTH}`}>
-                      {weekdays.map((day) => (
-                        <div
-                          key={day.id}
-                          className={`${WEEKLY_DAY_COLUMN_CLASS} border-t-0 font-medium`}
-                        >
-                          {day.label}
-                        </div>
-                      ))}
+                    <div
+                      ref={(element) => setWeeklyDayScrollRef(0, element)}
+                      className={WEEKLY_DAY_SCROLL_CLASS}
+                      onScroll={(event) =>
+                        syncWeeklyDayScroll(event.currentTarget)
+                      }
+                    >
+                      <div className={`flex ${WEEKLY_DAY_ROW_MIN_WIDTH}`}>
+                        {weekdays.map((day) => (
+                          <div
+                            key={day.id}
+                            className={`${WEEKLY_DAY_COLUMN_CLASS} border-t-0 font-medium`}
+                          >
+                            {day.label}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {weeklyGrid.slots.map((slot) => {
+                {weeklyGrid.slots.map((slot, slotIndex) => {
                   const sk = buildWeeklySlotKey(slot.start);
                   // Never show raw start–end here — always 上午/下午/晚上 labels.
                   const periodLabel = weeklyPeriodBandLabel(
@@ -1161,7 +1194,15 @@ export function WeeklyTimetableEditor(props: {
                         <div className="leading-snug">{periodLabel}</div>
                       </td>
                       <td colSpan={weekdays.length} className="border border-slate-200 p-0">
-                        <div className="overflow-x-auto">
+                        <div
+                          ref={(element) =>
+                            setWeeklyDayScrollRef(slotIndex + 1, element)
+                          }
+                          className={WEEKLY_DAY_SCROLL_CLASS}
+                          onScroll={(event) =>
+                            syncWeeklyDayScroll(event.currentTarget)
+                          }
+                        >
                           <div className={`flex ${WEEKLY_DAY_ROW_MIN_WIDTH}`}>
                             {weekdays.map((day) => {
                         const items =

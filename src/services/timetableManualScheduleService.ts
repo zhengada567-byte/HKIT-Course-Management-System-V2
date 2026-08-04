@@ -346,7 +346,8 @@ export function buildWeeklyTimetableGridFromSessions(params: {
 
   // Weekly layout is the recurring pattern only:
   // - ignore cancel / make_up (Daily one-offs must not move Weekly chips)
-  // - keep patterns that are majority or appear at least twice
+  // - keep a timeslot only when it covers more than half of that instance's
+  //   normal sessions (so a one-off Daily time edit cannot spawn a Weekly chip)
   // - teacher always comes from instance (main teacher), not session substitutes
   const patternsByInstance = new Map<string, Map<string, PatternBucket>>();
 
@@ -409,10 +410,9 @@ export function buildWeeklyTimetableGridFromSessions(params: {
     const buckets = [...byPattern.values()];
     if (buckets.length === 0) continue;
 
-    const maxCount = Math.max(...buckets.map((row) => row.count));
-    const kept = buckets.filter(
-      (row) => row.count === maxCount || row.count >= 2
-    );
+    const totalCount = buckets.reduce((sum, row) => sum + row.count, 0);
+    // Strict majority (> 50%): half or less must not affect Weekly.
+    const kept = buckets.filter((row) => row.count * 2 > totalCount);
 
     const instance = instanceByCode.get(instanceCode);
 
