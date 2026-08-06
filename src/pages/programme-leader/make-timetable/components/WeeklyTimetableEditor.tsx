@@ -17,6 +17,7 @@ import { listTimetableModuleInstances,
 } from "../../../../services/timetableModuleInstanceService";
 import { loadEnrolledClassSizeByInstanceCode } from "../../../../services/studyPlanEnrollmentService";
 import { loadPlanningModulesByCombineGroupIds } from "../../../../services/splitClassService";
+import { isBridgingSchedulingModuleCode } from "../../../../services/bridgingModuleService";
 import {
   buildDraftWeeklyPlacement,
   buildWeeklySlotKey,
@@ -985,10 +986,23 @@ export function WeeklyTimetableEditor(props: {
 
     const sk = buildWeeklySlotKey(addDialog.start);
     const items = weeklyGrid.itemsBySlotAndWeekday[sk]?.[addDialog.weekday] ?? [];
-    const remaining = getRemainingClassroomsForWeeklyCell({ items, classrooms });
+    const selectedCode = addDialog.moduleInstanceCode.trim();
+    const selectedInstance = selectedCode
+      ? instanceByCode.get(selectedCode.toUpperCase())
+      : null;
+    const allowOccupiedRooms = isBridgingSchedulingModuleCode(
+      selectedCode,
+      selectedInstance?.module_code,
+      selectedInstance?.module_instance_code
+    );
+    const remaining = getRemainingClassroomsForWeeklyCell({
+      items,
+      classrooms,
+      allowOccupiedRooms,
+    });
 
     return remaining.length > 0 ? remaining : classrooms;
-  }, [addDialog, weeklyGrid, classrooms]);
+  }, [addDialog, weeklyGrid, classrooms, instanceByCode]);
 
   const editDialogInstance = useMemo(() => {
     if (!editDialog) return null;

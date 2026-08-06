@@ -245,11 +245,16 @@ function diagnoseWeekdayPlacementFailures(params: {
   streamAllOccupiedSlots: Map<string, Set<string>>;
   programmeSlotStreams: Map<string, Map<string, Set<string>>>;
   teachingDates: string[];
-  exemptFromStreamYearConflict?: boolean;
+  /** Bridging modules: ignore NA / teacher / room / cohort scheduling locks. */
+  exemptFromSchedulingConflicts?: boolean;
 }): string | null {
   const label = schedulingWeekdayLabel(params.weekday);
+  const exempt = params.exemptFromSchedulingConflicts === true;
 
-  if (params.naSet.has(`${params.teacherName}||${params.weekday}||${params.period}`)) {
+  if (
+    !exempt &&
+    params.naSet.has(`${params.teacherName}||${params.weekday}||${params.period}`)
+  ) {
     return `${label}: teacher Not Available (${params.period})`;
   }
 
@@ -259,12 +264,15 @@ function diagnoseWeekdayPlacementFailures(params: {
     end: params.end,
   });
 
-  if (params.takenTeacherSlots.has(teacherSlotKey(params.teacherName, slotKey))) {
+  if (
+    !exempt &&
+    params.takenTeacherSlots.has(teacherSlotKey(params.teacherName, slotKey))
+  ) {
     return `${label}: teacher already has ${params.start}–${params.end} on this weekday`;
   }
 
   if (
-    !params.exemptFromStreamYearConflict &&
+    !exempt &&
     isAnyStreamYearTimeslotBlocked(
       params.streamYearTimeslotState,
       params.schedulingIdentities,
@@ -280,29 +288,49 @@ function diagnoseWeekdayPlacementFailures(params: {
   let sawScoreNullOnly = false;
 
   for (const room of params.rooms) {
-    if (params.takenRoomSlots.has(roomSlotKey(room.room_code, slotKey))) {
+    if (
+      !exempt &&
+      params.takenRoomSlots.has(roomSlotKey(room.room_code, slotKey))
+    ) {
       continue;
     }
 
     sawRoomNotWeeklyTaken = true;
 
     let conflict = false;
-    for (const date of params.teachingDates) {
-      const existing = params.existingByDate.get(date) ?? [];
-      const overlapped = existing.some((s) => {
-        if (s.status === "cancel") return false;
-        const sStart = String(s.start_time).slice(0, 5);
-        const sEnd = String(s.end_time).slice(0, 5);
-        if (!overlaps({ start: params.start, end: params.end }, { start: sStart, end: sEnd })) {
+    if (!exempt) {
+      for (const date of params.teachingDates) {
+        const existing = params.existingByDate.get(date) ?? [];
+        const overlapped = existing.some((s) => {
+          if (s.status === "cancel") return false;
+          if (
+            isBridgingSchedulingModuleCode(
+              s.module_code,
+              s.module_instance_code
+            )
+          ) {
+            return false;
+          }
+          const sStart = String(s.start_time).slice(0, 5);
+          const sEnd = String(s.end_time).slice(0, 5);
+          if (
+            !overlaps(
+              { start: params.start, end: params.end },
+              { start: sStart, end: sEnd }
+            )
+          ) {
+            return false;
+          }
+          if (s.room_code === room.room_code) return true;
+          if (String(s.teacher_name ?? "").trim() === params.teacherName) {
+            return true;
+          }
           return false;
+        });
+        if (overlapped) {
+          conflict = true;
+          break;
         }
-        if (s.room_code === room.room_code) return true;
-        if (String(s.teacher_name ?? "").trim() === params.teacherName) return true;
-        return false;
-      });
-      if (overlapped) {
-        conflict = true;
-        break;
       }
     }
 
@@ -317,7 +345,7 @@ function diagnoseWeekdayPlacementFailures(params: {
       alignKey: params.alignKey,
       programmeCode: params.programmeCode,
       schedulingIdentities: params.schedulingIdentities,
-      exemptFromStreamYearConflict: params.exemptFromStreamYearConflict,
+      exemptFromStreamYearConflict: exempt,
       streamYearTimeslotState: params.streamYearTimeslotState,
       streamSlotByModule: params.streamSlotByModule,
       streamYearOccupiedSlots: params.streamYearOccupiedSlots,
@@ -374,7 +402,7 @@ function buildWeekdayFailureDetail(params: {
   streamAllOccupiedSlots: Map<string, Set<string>>;
   programmeSlotStreams: Map<string, Map<string, Set<string>>>;
   teachingDatesByWeekday: Map<Weekday, string[]>;
-  exemptFromStreamYearConflict?: boolean;
+  exemptFromSchedulingConflicts?: boolean;
 }): string {
   const notes: string[] = [];
 
@@ -401,7 +429,7 @@ function buildWeekdayFailureDetail(params: {
       streamAllOccupiedSlots: params.streamAllOccupiedSlots,
       programmeSlotStreams: params.programmeSlotStreams,
       teachingDates: params.teachingDatesByWeekday.get(weekday) ?? [],
-      exemptFromStreamYearConflict: params.exemptFromStreamYearConflict,
+      exemptFromSchedulingConflicts: params.exemptFromSchedulingConflicts,
     });
 
     if (note) {
@@ -590,12 +618,15 @@ async function seedAutoScheduleFromExistingSessions(params: {
 
     const slotKey = buildWeeklyTimeslotKey({ weekday, start, end });
     const teacherName = String(session.teacher_name ?? "").trim();
+    const bridgingSession = isTimetableModuleBridging(timetableModule);
 
-    if (teacherName) {
-      params.takenTeacherSlots.add(teacherSlotKey(teacherName, slotKey));
+    // Bridging sessions do not occupy teacher/room locks for other modules.
+    if (!bridgingSession) {
+      if (teacherName) {
+        params.takenTeacherSlots.add(teacherSlotKey(teacherName, slotKey));
+      }
+      params.takenRoomSlots.add(roomSlotKey(roomCode, slotKey));
     }
-
-    params.takenRoomSlots.add(roomSlotKey(roomCode, slotKey));
 
     const programmeCode = String(timetableModule.programme_code ?? "").trim();
     const moduleYear = String(timetableModule.module_year ?? "").trim();
@@ -619,7 +650,7 @@ async function seedAutoScheduleFromExistingSessions(params: {
         String(session.module_code ?? timetableModule.base_module_code ?? "").trim()
       ),
       slotKey,
-      exemptFromStreamYearConflict: isTimetableModuleBridging(timetableModule),
+      exemptFromStreamYearConflict: bridgingSession,
       streamYearTimeslotState: params.streamYearTimeslotState,
       streamSlotByModule: params.streamSlotByModule,
       streamYearOccupiedSlots: params.streamYearOccupiedSlots,
@@ -994,7 +1025,7 @@ export async function autoScheduleInstances(params: {
       timetableModule,
       membersByCombineGroupId
     );
-    const exemptFromStreamYearConflict =
+    const exemptFromSchedulingConflicts =
       isTimetableModuleBridging(timetableModule);
 
     type PlacementCandidate = {
@@ -1011,12 +1042,18 @@ export async function autoScheduleInstances(params: {
     for (const { weekday, start, end } of slotAttempts) {
       const period = getPeriodForStartTime(start);
 
-      if (naSet.has(`${teacherName}||${weekday}||${period}`)) {
+      if (
+        !exemptFromSchedulingConflicts &&
+        naSet.has(`${teacherName}||${weekday}||${period}`)
+      ) {
         continue;
       }
 
       const slotKey = buildTimeslotKey({ weekday, start, end });
-      if (takenTeacherSlots.has(teacherSlotKey(teacherName, slotKey))) {
+      if (
+        !exemptFromSchedulingConflicts &&
+        takenTeacherSlots.has(teacherSlotKey(teacherName, slotKey))
+      ) {
         continue;
       }
 
@@ -1027,27 +1064,40 @@ export async function autoScheduleInstances(params: {
       });
 
       for (const room of rooms) {
-        if (takenRoomSlots.has(roomSlotKey(room.room_code, slotKey))) {
+        if (
+          !exemptFromSchedulingConflicts &&
+          takenRoomSlots.has(roomSlotKey(room.room_code, slotKey))
+        ) {
           continue;
         }
 
         let conflict = false;
-        for (const date of dates) {
-          const existing = existingByDate.get(date) ?? [];
-          const overlapped = existing.some((s) => {
-            if (s.status === "cancel") return false;
-            const sStart = String(s.start_time).slice(0, 5);
-            const sEnd = String(s.end_time).slice(0, 5);
-            if (!overlaps({ start, end }, { start: sStart, end: sEnd })) {
+        if (!exemptFromSchedulingConflicts) {
+          for (const date of dates) {
+            const existing = existingByDate.get(date) ?? [];
+            const overlapped = existing.some((s) => {
+              if (s.status === "cancel") return false;
+              if (
+                isBridgingSchedulingModuleCode(
+                  s.module_code,
+                  s.module_instance_code
+                )
+              ) {
+                return false;
+              }
+              const sStart = String(s.start_time).slice(0, 5);
+              const sEnd = String(s.end_time).slice(0, 5);
+              if (!overlaps({ start, end }, { start: sStart, end: sEnd })) {
+                return false;
+              }
+              if (s.room_code === room.room_code) return true;
+              if (String(s.teacher_name ?? "").trim() === teacherName) return true;
               return false;
+            });
+            if (overlapped) {
+              conflict = true;
+              break;
             }
-            if (s.room_code === room.room_code) return true;
-            if (String(s.teacher_name ?? "").trim() === teacherName) return true;
-            return false;
-          });
-          if (overlapped) {
-            conflict = true;
-            break;
           }
         }
 
@@ -1060,7 +1110,7 @@ export async function autoScheduleInstances(params: {
           alignKey,
           programmeCode,
           schedulingIdentities,
-          exemptFromStreamYearConflict,
+          exemptFromStreamYearConflict: exemptFromSchedulingConflicts,
           streamYearTimeslotState,
           streamSlotByModule,
           streamYearOccupiedSlots,
@@ -1093,8 +1143,10 @@ export async function autoScheduleInstances(params: {
     let placed = false;
 
     if (best) {
-      takenTeacherSlots.add(teacherSlotKey(teacherName, best.slotKey));
-      takenRoomSlots.add(roomSlotKey(best.room.room_code, best.slotKey));
+      if (!exemptFromSchedulingConflicts) {
+        takenTeacherSlots.add(teacherSlotKey(teacherName, best.slotKey));
+        takenRoomSlots.add(roomSlotKey(best.room.room_code, best.slotKey));
+      }
 
       recordAutoSchedulePlacement({
         programmeCode,
@@ -1102,7 +1154,7 @@ export async function autoScheduleInstances(params: {
         moduleYear,
         alignKey,
         schedulingIdentities,
-        exemptFromStreamYearConflict,
+        exemptFromStreamYearConflict: exemptFromSchedulingConflicts,
         slotKey: best.slotKey,
         streamYearTimeslotState,
         streamSlotByModule,
@@ -1164,7 +1216,7 @@ export async function autoScheduleInstances(params: {
         streamAllOccupiedSlots,
         programmeSlotStreams,
         teachingDatesByWeekday,
-        exemptFromStreamYearConflict,
+        exemptFromSchedulingConflicts,
       });
 
       const modeHint =

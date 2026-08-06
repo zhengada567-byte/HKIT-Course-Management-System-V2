@@ -85,7 +85,7 @@ export type WeeklyPlacementOccupant = {
   streamCode: string;
   moduleYear: string;
   schedulingIdentities: StreamYearSchedulingIdentity[];
-  /** Bridging (short) modules skip programme/stream/year same-slot bans. */
+  /** Bridging (short) modules: no weekly scheduling conflict restrictions. */
   isBridgingModule: boolean;
 };
 
@@ -101,6 +101,20 @@ export function wouldWeeklyPlacementConflict(
   existing: WeeklyPlacementOccupant[],
   candidate: WeeklyPlacementOccupant
 ): string | null {
+  // Bridging modules have no weekly placement restrictions (cohort / teacher /
+  // pairing). Keep only same-instance duplicate detection for the candidate.
+  if (candidate.isBridgingModule) {
+    for (const item of existing) {
+      if (
+        item.moduleInstanceCode.toUpperCase() ===
+        candidate.moduleInstanceCode.toUpperCase()
+      ) {
+        return `Module instance ${item.moduleInstanceCode} is already in this timeslot.`;
+      }
+    }
+    return null;
+  }
+
   const candidateTeacher = normalizeTeacherNameKey(candidate.teacherName);
 
   for (const item of existing) {
@@ -111,13 +125,12 @@ export function wouldWeeklyPlacementConflict(
       return `Module instance ${item.moduleInstanceCode} is already in this timeslot.`;
     }
 
-    const eitherBridging =
-      candidate.isBridgingModule || item.isBridgingModule;
+    // Occupant that is bridging does not constrain normal modules.
+    if (item.isBridgingModule) {
+      continue;
+    }
 
-    // Bridging modules are exempt from programme + stream + year same-slot bans.
-    // Teacher and room constraints remain elsewhere / below.
     if (
-      !eitherBridging &&
       schedulingIdentitiesShareStreamYearGroup(
         candidate.schedulingIdentities,
         item.schedulingIdentities
@@ -147,8 +160,6 @@ export function wouldWeeklyPlacementConflict(
         .toUpperCase();
 
     if (sameTeacher && sameProgramme && sameStream && sameYear) {
-      // Still apply when either is bridging: same teacher must not double-book
-      // the cohort identity slot (teacher constraint kept).
       return (
         `Conflict with ${item.moduleInstanceCode}: same teacher, programme, stream and year ` +
         `cannot share this weekly timeslot.`
@@ -541,7 +552,13 @@ export function getOccupiedRoomCodesForWeeklyCell(
 export function getRemainingClassroomsForWeeklyCell(params: {
   items: WeeklyGridItem[];
   classrooms: TimetableClassroomRow[];
+  /** Bridging modules may reuse rooms already shown in the cell. */
+  allowOccupiedRooms?: boolean;
 }): TimetableClassroomRow[] {
+  if (params.allowOccupiedRooms) {
+    return params.classrooms;
+  }
+
   const occupied = getOccupiedRoomCodesForWeeklyCell(params.items);
 
   return params.classrooms.filter(
