@@ -1,3 +1,4 @@
+import { canonicalizeModuleCode } from "../lib/studyPlanModuleCodeAliases";
 import {
   normalizeModuleContactHours,
   normalizeModuleTutorialContactHours,
@@ -157,7 +158,7 @@ export async function upsertModule(input: ModuleInput) {
   const contactHours = await resolveModuleTeachingTutorialHoursForUpsert(input);
 
   const payload = {
-    module_code: input.module_code.trim(),
+    module_code: canonicalizeModuleCode(input.module_code),
     module_name: input.module_name?.trim() || null,
     module_year: normalizeProgrammeYear(input.module_year) ?? null,
     module_term: input.module_term,

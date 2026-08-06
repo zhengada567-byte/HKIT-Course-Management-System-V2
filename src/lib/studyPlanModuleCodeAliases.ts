@@ -2,14 +2,46 @@ import type { ModuleTerm } from "../types/common";
 
 /**
  * Catalogue study-plan codes that use a term suffix in timetable/planning
- * (e.g. BUS692 in study plan -> BUS692Sep / BUS692Feb in timetable).
+ * (e.g. BUS692 in study plan -> BUS692SEP / BUS692FEB in timetable).
  */
 const TERM_SUFFIX_CATALOG_MODULE_CODES = new Set(["BUS692"]);
 
 const OFFERED_TERM_SUFFIXES: ModuleTerm[] = ["Sep", "Feb", "Jun"];
 
-function normalizeModuleCode(value: string | null | undefined) {
+/** Embedded term suffix on codes — always SEP / FEB / JUN (not Sep/Feb/Jun). */
+export type OfferedTermCodeSuffix = "SEP" | "FEB" | "JUN";
+
+export function normalizeModuleCode(value: string | null | undefined) {
   return String(value ?? "").trim().toUpperCase();
+}
+
+/** Map module_term (Sep) -> code suffix (SEP). */
+export function offeredTermCodeSuffix(
+  term: ModuleTerm
+): OfferedTermCodeSuffix {
+  return term.toUpperCase() as OfferedTermCodeSuffix;
+}
+
+/**
+ * If a code ends with Sep/Feb/Jun (any case), normalize that suffix to SEP/FEB/JUN.
+ * Does not change module_term fields — only codes that embed a term suffix
+ * (e.g. UWLCFI1Sep -> UWLCFI1SEP, BUS692Feb -> BUS692FEB).
+ */
+export function canonicalizeEmbeddedTermSuffix(
+  value: string | null | undefined
+): string {
+  const text = String(value ?? "").trim();
+  if (!text) return text;
+
+  const match = text.match(/^(.*)(sep|feb|jun)$/i);
+  if (!match) return text;
+
+  return `${match[1]}${match[2].toUpperCase()}`;
+}
+
+/** Uppercase + canonicalize embedded term suffix for stored module codes. */
+export function canonicalizeModuleCode(value: string | null | undefined) {
+  return canonicalizeEmbeddedTermSuffix(normalizeModuleCode(value));
 }
 
 export function isTermSuffixCatalogModuleCode(moduleCode: string) {
@@ -25,24 +57,25 @@ export function catalogToTimetableModuleCode(
   if (!TERM_SUFFIX_CATALOG_MODULE_CODES.has(base)) {
     return base;
   }
-  return `${base}${offeredTerm}`;
+  return `${base}${offeredTermCodeSuffix(offeredTerm)}`;
 }
 
 /**
  * Keys under which a timetable module_code should be indexed for study-plan lookup.
- * e.g. BUS692Sep -> [BUS692SEP, BUS692] when offeredTerm is Sep.
+ * e.g. BUS692SEP -> [BUS692SEP, BUS692] when offeredTerm is Sep.
  */
 export function timetableModuleLookupKeys(
   timetableModuleCode: string,
   offeredTerm: ModuleTerm
 ) {
-  const code = normalizeModuleCode(timetableModuleCode);
-  const keys = new Set<string>([code]);
+  const code = canonicalizeModuleCode(timetableModuleCode);
+  const keys = new Set<string>([code].filter(Boolean));
 
   for (const term of OFFERED_TERM_SUFFIXES) {
-    if (!code.endsWith(term.toUpperCase())) continue;
+    const suffix = offeredTermCodeSuffix(term);
+    if (!code.endsWith(suffix)) continue;
 
-    const base = code.slice(0, -term.length);
+    const base = code.slice(0, -suffix.length);
     if (!TERM_SUFFIX_CATALOG_MODULE_CODES.has(base)) break;
 
     if (term === offeredTerm) {
@@ -63,7 +96,7 @@ export function catalogModuleLookupKeys(
   offeredTerm: ModuleTerm
 ) {
   const base = normalizeModuleCode(catalogModuleCode);
-  const keys = new Set<string>([base]);
+  const keys = new Set<string>([base].filter(Boolean));
 
   if (TERM_SUFFIX_CATALOG_MODULE_CODES.has(base)) {
     keys.add(catalogToTimetableModuleCode(base, offeredTerm));

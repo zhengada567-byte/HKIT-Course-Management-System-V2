@@ -74,7 +74,7 @@ const EXPORT_TERM_SUFFIX_PATTERN = /^([A-Z]{2,4}\d{3})(FEB|SEP|JUN)$/;
 
 /**
  * Column identity for aligned study-plan export.
- * e.g. BUS692Feb and BUS692 both map to BUS692.
+ * e.g. BUS692FEB / BUS692Feb and BUS692 both map to BUS692.
  */
 export function getStudyPlanExportColumnKey(value: unknown): string {
   const base = getBaseModuleCode(value);

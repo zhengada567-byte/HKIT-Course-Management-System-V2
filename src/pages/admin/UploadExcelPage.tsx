@@ -12,6 +12,7 @@ import {
   normalizeModuleContactHours,
   normalizeModuleTutorialContactHours,
 } from "../../lib/moduleContactHours";
+import { canonicalizeModuleCode } from "../../lib/studyPlanModuleCodeAliases";
 import { parseNumberOrNull } from "../../lib/utils";
 import { upsertApprovedLoading } from "../../services/approvedLoadingService";
 import { upsertModuleEnrollments } from "../../services/moduleEnrollmentService";
@@ -199,10 +200,9 @@ async function uploadModuleRows(params: {
       ])
     );
 
-    const moduleCode = getText(row, "Module Code", [
-      "module code",
-      "module_code",
-    ]);
+    const moduleCode = canonicalizeModuleCode(
+      getText(row, "Module Code", ["module code", "module_code"])
+    );
 
     const moduleName = getText(row, "Module Name", [
       "module name",
