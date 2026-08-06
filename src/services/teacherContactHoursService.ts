@@ -31,6 +31,7 @@ export interface TeacherContactHoursModuleRow {
   module_code: string;
   module_name: string | null;
   programme_code: string;
+  module_year: string | null;
   module_term: ModuleTerm;
   teaching_status: TeachingStatus;
   session_count: number;
@@ -135,9 +136,11 @@ function defaultLookupKey(params: {
 }
 
 /**
- * Resolve 此科教學身份 per timetable module:
- * teaching_assignments → module_default_assignments.
- * Does not infer from Day/Night mode.
+ * Resolve 此科教學身份 per timetable module instance (方案 A):
+ * teaching_assignments for that class (best confirmed/version) →
+ * module_default_assignments (基本科目设定 default).
+ * One status per class instance; all L/T sessions on that instance use it.
+ * Does not use catalogue employment or Day/Night mode.
  */
 async function loadTeachingStatusByModuleId(params: {
   academicYear: string;
@@ -259,7 +262,12 @@ async function loadTeachingStatusByModuleId(params: {
 
 /**
  * Sum actual session durations for numbered L/T sessions under each teacher.
- * FT/PT filter uses 此科教學身份 (teaching_status), not catalogue employment.
+ * FT/PT filter = 此科教學身份 of that timetable class instance
+ * (assignment after timetable/split, else 基本科目设定 default).
+ * Hours from daily timetable L/T durations. Not Day/Night mode.
+ *
+ * Exception: when reporting PT hours, tutorials taught by catalogue-FT
+ * teachers on a PT-status class are excluded (FT taking PT-module tutorial).
  */
 export async function getTeacherContactHoursSummary(params: {
   academicYear: string;
@@ -312,7 +320,7 @@ export async function getTeacherContactHoursSummary(params: {
       session.timetable_module_id
     );
 
-    // Only count sessions whose module teaching status matches the filter.
+    // Class-instance 此科教學身份 must match FT/PT filter.
     if (!teachingStatus || teachingStatus !== params.teachingStatus) {
       continue;
     }
@@ -331,14 +339,26 @@ export async function getTeacherContactHoursSummary(params: {
       session.session_kind
     );
 
+    const employment = resolveTeacherEmploymentFromCatalog(
+      teacherName,
+      teachers
+    );
+
+    // FT catalogue teachers tutoring a PT-status class do not count toward
+    // PT contact hours (lectures on PT classes still count).
+    if (
+      params.teachingStatus === "PT" &&
+      employment === "FT" &&
+      !isLecture
+    ) {
+      continue;
+    }
+
     let teacherAcc = byTeacher.get(teacherName);
     if (!teacherAcc) {
       teacherAcc = {
         teacher_name: teacherName,
-        teacher_employment_type: resolveTeacherEmploymentFromCatalog(
-          teacherName,
-          teachers
-        ),
+        teacher_employment_type: employment,
         teaching_status: params.teachingStatus,
         session_count: 0,
         total_hours: 0,
@@ -371,6 +391,7 @@ export async function getTeacherContactHoursSummary(params: {
           normalizeText(session.module_code),
         module_name: module?.module_name ?? session.module_name,
         programme_code: normalizeText(module?.programme_code),
+        module_year: normalizeText(module?.module_year) || null,
         module_term: moduleTerm,
         teaching_status: teachingStatus,
         session_count: 0,

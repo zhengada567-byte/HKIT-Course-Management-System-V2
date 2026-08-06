@@ -21,6 +21,13 @@ import {
   DollarSign,
   Megaphone,
   UsersRound,
+  ClipboardCheck,
+  Award,
+  Share2,
+  Building2,
+  UserRoundSearch,
+  HandCoins,
+  Wallet,
 } from "lucide-react";
 
 import { cn } from "../../lib/utils";
@@ -102,7 +109,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
     },
     {
       to: "/account-hr/hourly-rates",
-      label: t.hourlyRatesTitle,
+      label: t.ptTeacherCostsTitle,
       icon: DollarSign,
       roles: ["account_hr", "admin"],
     },
@@ -116,6 +123,48 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       to: "/account-hr/ft-staff-costs",
       label: t.ftStaffCostsTitle,
       icon: UsersRound,
+      roles: ["account_hr", "admin"],
+    },
+    {
+      to: "/account-hr/review-fees",
+      label: t.reviewFeesTitle,
+      icon: ClipboardCheck,
+      roles: ["account_hr", "admin"],
+    },
+    {
+      to: "/account-hr/scholarship-expenses",
+      label: t.scholarshipExpensesTitle,
+      icon: Award,
+      roles: ["account_hr", "admin"],
+    },
+    {
+      to: "/account-hr/referral-scheme",
+      label: t.referralSchemeTitle,
+      icon: Share2,
+      roles: ["account_hr", "admin"],
+    },
+    {
+      to: "/account-hr/ssp-misc-costs",
+      label: t.sspMiscCostsTitle,
+      icon: Building2,
+      roles: ["account_hr", "admin"],
+    },
+    {
+      to: "/account-hr/external-review",
+      label: t.externalReviewEngagementsTitle,
+      icon: UserRoundSearch,
+      roles: ["account_hr", "admin"],
+    },
+    {
+      to: "/account-hr/tuition-summary",
+      label: t.tuitionSummaryTitle,
+      icon: Wallet,
+      roles: ["account_hr", "admin"],
+    },
+    {
+      to: "/account-hr/partner-sharing",
+      label: t.partnerSharingPageTitle,
+      icon: HandCoins,
       roles: ["account_hr", "admin"],
     },
     {

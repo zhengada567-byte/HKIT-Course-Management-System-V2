@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import { LoadingState } from "../../components/ui/LoadingState";
 import { PageHeader } from "../../components/ui/PageHeader";
-import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import {
@@ -14,6 +13,8 @@ import {
 } from "../../services/ftStaffCostService";
 import { listProgrammes } from "../../services/programmeService";
 import type { ProgrammeRow } from "../../types";
+import { ACCOUNT_HR_DEFAULT_ACADEMIC_YEAR } from "./accountHrAcademicYear";
+import { AccountHrAcademicYearSelect } from "./AccountHrAcademicYearSelect";
 
 function uniqueProgrammeCodes(programmes: ProgrammeRow[]) {
   return Array.from(
@@ -37,10 +38,12 @@ function emptyDrafts(): Record<FtStaffMonthKey, string> {
 }
 
 export function FtStaffCostsPage() {
-  const { academicYear } = useAcademicYear();
   const { user } = useAuth();
   const { t } = useLanguage();
 
+  const [academicYear, setAcademicYear] = useState(
+    ACCOUNT_HR_DEFAULT_ACADEMIC_YEAR
+  );
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -58,23 +61,51 @@ export function FtStaffCostsPage() {
     setLoading(true);
     setMessage("");
 
+    let programmeLoadError = "";
+    let costLoadError = "";
+
     try {
-      const [programmeRows, costRows] = await Promise.all([
-        listProgrammes(),
-        listFtStaffCosts({ academicYear }),
-      ]);
-
+      const programmeRows = await listProgrammes();
       setProgrammes(programmeRows);
-      setRows(costRows);
-
       if (!programmeCode && programmeRows.length > 0) {
         setProgrammeCode(uniqueProgrammeCodes(programmeRows)[0] ?? "");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Load failed");
-    } finally {
-      setLoading(false);
+      programmeLoadError =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object" &&
+              error &&
+              "message" in error &&
+              typeof (error as { message: unknown }).message === "string"
+            ? (error as { message: string }).message
+            : "Failed to load programmes.";
     }
+
+    try {
+      const costRows = await listFtStaffCosts({ academicYear });
+      setRows(costRows);
+    } catch (error) {
+      setRows([]);
+      const detail =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object" &&
+              error &&
+              "message" in error &&
+              typeof (error as { message: unknown }).message === "string"
+            ? (error as { message: string }).message
+            : "Failed to load FT staff costs.";
+      costLoadError =
+        /could not find the table|does not exist|schema cache/i.test(detail)
+          ? `${detail} — please apply migrations 052/053 on Supabase.`
+          : detail;
+    }
+
+    if (programmeLoadError || costLoadError) {
+      setMessage([programmeLoadError, costLoadError].filter(Boolean).join(" "));
+    }
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -175,23 +206,30 @@ export function FtStaffCostsPage() {
       />
 
       <div className="mb-4 card">
-        <div className="card-body max-w-md">
-          <label className="form-label">{t.programmeCode}</label>
-          <select
-            className="form-select"
-            value={programmeCode}
-            onChange={(event) => {
-              setProgrammeCode(event.target.value);
-              setMessage("");
-            }}
-          >
-            <option value="">{t.selectProgramme}</option>
-            {programmeCodes.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
+        <div className="card-body grid gap-3 md:grid-cols-2">
+          <AccountHrAcademicYearSelect
+            label={t.academicYear}
+            value={academicYear}
+            onChange={setAcademicYear}
+          />
+          <div>
+            <label className="form-label">{t.programmeCode}</label>
+            <select
+              className="form-select"
+              value={programmeCode}
+              onChange={(event) => {
+                setProgrammeCode(event.target.value);
+                setMessage("");
+              }}
+            >
+              <option value="">{t.selectProgramme}</option>
+              {programmeCodes.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 

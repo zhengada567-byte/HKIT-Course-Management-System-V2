@@ -27,6 +27,14 @@ import { FeatureUpdateLocksPage } from "../pages/admin/FeatureUpdateLocksPage";
 import { HourlyRatesPage } from "../pages/account-hr/HourlyRatesPage";
 import { PromotionExpensesPage } from "../pages/account-hr/PromotionExpensesPage";
 import { FtStaffCostsPage } from "../pages/account-hr/FtStaffCostsPage";
+import { ReviewFeesPage } from "../pages/account-hr/ReviewFeesPage";
+import { ScholarshipExpensesPage } from "../pages/account-hr/ScholarshipExpensesPage";
+import { ReferralSchemePage } from "../pages/account-hr/ReferralSchemePage";
+import { SspMiscCostsPage } from "../pages/account-hr/SspMiscCostsPage";
+import { ExternalReviewPage } from "../pages/account-hr/ExternalReviewEngagementsPage";
+import { TuitionSummaryPage } from "../pages/account-hr/TuitionSummaryPage";
+import { PartnerSharingPage } from "../pages/account-hr/PartnerSharingPage";
+import { TuitionPartnerSharingPage } from "../pages/account-hr/TuitionPartnerSharingPage";
 
 export const routes: RouteObject[] = [
   {
@@ -88,6 +96,74 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute allowedRoles={["account_hr", "admin"]}>
             <FtStaffCostsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "account-hr/review-fees",
+        element: (
+          <ProtectedRoute allowedRoles={["account_hr", "admin"]}>
+            <ReviewFeesPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "account-hr/scholarship-expenses",
+        element: (
+          <ProtectedRoute allowedRoles={["account_hr", "admin"]}>
+            <ScholarshipExpensesPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "account-hr/referral-scheme",
+        element: (
+          <ProtectedRoute allowedRoles={["account_hr", "admin"]}>
+            <ReferralSchemePage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "account-hr/ssp-misc-costs",
+        element: (
+          <ProtectedRoute allowedRoles={["account_hr", "admin"]}>
+            <SspMiscCostsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "account-hr/external-review",
+        element: (
+          <ProtectedRoute allowedRoles={["account_hr", "admin"]}>
+            <ExternalReviewPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "account-hr/external-review-rates",
+        element: <Navigate to="/account-hr/external-review" replace />,
+      },
+      {
+        path: "account-hr/tuition-summary",
+        element: (
+          <ProtectedRoute allowedRoles={["account_hr", "admin"]}>
+            <TuitionSummaryPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "account-hr/partner-sharing",
+        element: (
+          <ProtectedRoute allowedRoles={["account_hr", "admin"]}>
+            <PartnerSharingPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "account-hr/tuition-partner-sharing",
+        element: (
+          <ProtectedRoute allowedRoles={["account_hr", "admin"]}>
+            <TuitionPartnerSharingPage />
           </ProtectedRoute>
         ),
       },

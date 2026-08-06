@@ -43,7 +43,7 @@ export const en = {
   teacherLoadingViewModules: "Module counts",
   teacherLoadingViewContactHours: "Contact hours",
   teacherContactHoursDescription:
-    "Sums actual duration of numbered L/T sessions under each teacher (from Daily/Weekly session teacher). FT/PT filter uses teaching status for each module (此科教學身份), not catalogue employment. Backups, cancelled, and empty/TBC teachers are excluded.",
+    "Sums actual duration of numbered L/T sessions under each teacher (from Daily/Weekly session teacher). FT/PT filter uses teaching status for each module (此科教學身份), not catalogue employment. For PT: tutorials taught by catalogue-FT teachers are excluded. Backups, cancelled, and empty/TBC teachers are excluded.",
   teacherContactHoursSearchHint:
     "Select teaching status for this module (and optional term), then click Search.",
   teacherContactHoursTermAll: "All terms",
@@ -144,18 +144,56 @@ export const en = {
   guideStaffCourseSearch: "Search the module catalogue by programme (read-only).",
   accountHr: "AccountHR",
   accountHrDashboardDescription:
-    "View the academic calendar and maintain hourly rates, promotion expenses, and FT staff costs.",
+    "View the academic calendar and maintain hourly rates, promotion, FT staff, review fees, scholarships, referral scheme, SSP misc, external review, tuition summary, and partner sharing.",
   guideAccountHrAcademicCalendar:
     "View learning weeks, holidays, and key dates.",
   guideAccountHrHourlyRates:
-    "Enter programme-level rates, special cases, and individual teacher overrides.",
+    "Part-time teacher costs: set hourly rates, calculate PT teaching fees from contact hours, and record supervisor fees.",
   guideAccountHrPromotionExpenses:
     "Enter social media (monthly), workshops, brochure, exhibition, and other promotion costs by programme.",
   guideAccountHrFtStaffCosts:
     "Enter monthly FT staff cost totals (Academic + Admin combined) by programme.",
+  guideAccountHrReviewFees:
+    "By programme and academic year: enter review, registration, annual audit (AR to NCR), or periodic fees (tab switch).",
+  guideAccountHrScholarshipExpenses:
+    "For HDBA / HDHC / HDC: enter Y1 and Y2 HKIT DAE articulation headcounts; total = (Y1+Y2) × $10,000.",
+  guideAccountHrReferralScheme:
+    "Enter Referral Scheme amounts manually by programme and term.",
+  guideAccountHrSspMiscCosts:
+    "Enter SSP misc charges by programme and term (rent, waste, repair, lift, fire alarm, electricity, water).",
+  guideAccountHrExternalReview:
+    "Set default per-module fees, then by term/programme record External Examiner / Advisor / Class Visit with modules and amounts.",
+  guideAccountHrTuitionPartnerSharing:
+    "Enter tuition income by term, and Degree partner sharing from FT enrolled count × fee per student.",
+  guideAccountHrTuitionSummary:
+    "Enter programme tuition fee per academic year (HKIT defaults). For each term, view student counts and fill tuition income manually.",
+  guideAccountHrPartnerSharing:
+    "Partner U for Degree programmes; UWLCFI Partner 个人; HDEE Sharing to FLU.",
   hourlyRatesTitle: "Hourly Rates",
   hourlyRatesDescription:
     "Set standard programme-year rates (e.g. HDC Y1, WUC Y3), special-case rates, and per-teacher overrides from the FT/PT teacher list.",
+  ptTeacherCostsTitle: "Part-time Teacher Costs",
+  ptTeacherCostsDescription:
+    "Hourly rates, calculated PT teaching fees from contact hours, and supervisor fees ($2,500 per student / year).",
+  ptTeacherCostsRatesTab: "Hourly rates",
+  ptTeacherCostsTeachingTab: "PT teaching fees",
+  ptTeacherCostsSupervisorTab: "Supervisor fees",
+  ptTeachingCostHint:
+    "Same as Teacher Loading → Contact hours → PT: daily L/T hours on class instances whose 此科教學身份 = PT (timetable/split assignment, else Basic Settings default). Tutorials by catalogue-FT teachers on those PT classes are excluded. Cost = hours × teacher override rate (else programme-year rate).",
+  ptTeachingCost: "Teaching fee",
+  contactHoursLabel: "Contact hours",
+  noPtTeachingCostsYet: "No PT teaching contact hours for this filter yet.",
+  ptTeachingMissingRatesHint:
+    "{count} module line(s) have no matching hourly rate — set rates in the Hourly rates tab.",
+  ptSupervisorFeeHint:
+    "Select programme and term, then choose each PT supervisor and enter how many students they supervise. Fee = students × $2,500 / year.",
+  ptSupervisorName: "PT supervisor",
+  ptSupervisorStudentCount: "Students supervised",
+  ptSupervisorAmountPerStudent: "Fee per student / year",
+  ptSupervisorFeeSaved: "Supervisor fee saved.",
+  noPtSupervisorFeesYet: "No supervisor fees for this programme and term yet.",
+  confirmDeletePtSupervisorFee: "Delete this supervisor fee record?",
+  catalogueEmploymentType: "Catalogue employment (FT/PT)",
   programmeHourlyRates: "Programme rates",
   specialHourlyRates: "Special rates",
   teacherHourlyRates: "Teacher rates",
@@ -204,7 +242,153 @@ export const en = {
   ftStaffCostsHint:
     "Select a programme, then enter one monthly total for FT staff costs (Academic + Admin).",
   ftStaffCostSaved: "Full-time staff costs saved.",
+  reviewFeesTitle: "Review / Registration / Annual Audit / Periodic Fees",
+  reviewFeesDescription:
+    "Enter review, registration, annual audit (AR to NCR), or periodic fees manually by programme for each academic year.",
+  reviewFeesHint:
+    "Select an academic year, switch fee type tabs, then enter and save the amount for each programme.",
+  reviewFeeTab: "Review fee",
+  registrationFeeTab: "Registration fee",
+  annualAuditFeeTab: "Annual audit fee (AR to NCR)",
+  periodicFeeTab: "Periodic fee",
+  reviewFeeAmount: "Review fee",
+  registrationFeeAmount: "Registration fee",
+  annualAuditFeeAmount: "Annual audit fee (AR to NCR)",
+  periodicFeeAmount: "Periodic fee",
+  reviewFeeSaved: "Fee saved.",
+  programmeFeeSaved: "Fee saved.",
+  scholarshipExpensesTitle: "Scholarship Expenses",
+  scholarshipExpensesDescription:
+    "HKIT DAE students articulating to HDBA / HDHC / HDC receive $10,000 scholarship per academic year.",
+  scholarshipExpensesHint:
+    "Select an academic year, then manually enter Y1 and Y2 headcounts of HKIT DAE students who articulated into each programme.",
+  scholarshipAmountPerStudent: "Scholarship per student / year",
+  scholarshipY1DaeCount: "Y1 (HKIT DAE → HD)",
+  scholarshipY2DaeCount: "Y2 (HKIT DAE → HD)",
+  scholarshipTotalExpense: "Total scholarship expense",
+  scholarshipFormulaHint:
+    "Total = (Y1 count + Y2 count) × $10,000 per student.",
+  scholarshipExpenseSaved: "Scholarship expense saved.",
+  referralSchemeTitle: "Referral Scheme",
+  referralSchemeDescription:
+    "Enter Referral Scheme amounts manually by programme and term.",
+  referralSchemeHint:
+    "Select an academic year and term, then enter and save the amount for each programme.",
+  referralSchemeAmount: "Referral Scheme amount",
+  referralSchemeSaved: "Referral Scheme amount saved.",
+  sspMiscCostsTitle: "SSP Misc Charges",
+  sspMiscCostsDescription:
+    "Enter SSP miscellaneous charges by programme and term for each category.",
+  sspMiscCostsHint:
+    "Select academic year, term, and programme, then fill each SSP category amount and save.",
+  sspMiscCategory: "SSP category",
+  sspMiscCostsSaved: "SSP misc charges saved.",
+  externalReviewRatesTitle: "External Review Rates",
+  externalReviewRatesDescription:
+    "Default per-module fee for External Examiner, External Advisor, and Class Visit.",
+  externalReviewRatesHint:
+    "These amounts are used as defaults when adding modules on the External Review page.",
+  externalReviewDefaultAmountPerModule: "Default amount / module",
+  externalReviewRoleType: "Role",
+  externalReviewRateSaved: "Default rate saved.",
+  externalReviewEngagementsTitle: "External Review",
+  externalReviewPageDescription:
+    "Switch tabs to set default per-module fees, or record External Examiner / Advisor / Class Visit by term and programme.",
+  externalReviewRecordsTab: "Records",
+  externalReviewRatesTab: "Default rates",
+  externalReviewEngagementsDescription:
+    "Record External Examiner / Advisor / Class Visit by term and programme, with reviewed modules and fees.",
+  externalReviewEngagementsHint:
+    "Select academic year, term, and programme. Switch role tabs to enter each hired person and their modules.",
+  externalExaminer: "External Examiner",
+  externalAdvisor: "External Advisor",
+  classVisitObserver: "Class Visit",
+  externalExaminerName: "External Examiner name",
+  externalAdvisorName: "External Advisor name",
+  classVisitObserverName: "Class Visit observer name",
+  externalReviewModules: "Reviewed modules",
+  addModule: "Add module",
+  externalReviewEngagementSaved: "External review record saved.",
+  noExternalReviewEngagementsYet:
+    "No external review records for this term and programme yet.",
+  confirmDeleteExternalReview: "Delete this external review record?",
   month: "Month",
+  tuitionPartnerSharingTitle: "Tuition & Partner Sharing",
+  tuitionPartnerSharingDescription:
+    "Record tuition income by programme and term, and calculate Degree partner sharing from FT enrolled students × fee per student.",
+  tuitionIncomeTitle: "Tuition income",
+  partnerSharingTitle: "Sharing to Partner",
+  tuitionIncomeAmount: "Tuition income",
+  tuitionIncomeSaved: "Tuition income saved.",
+  noTuitionIncomeYet: "No tuition income for this academic year yet.",
+  confirmDeleteTuitionIncome: "Delete this tuition income record?",
+  partnerSharingHint:
+    "Top: save individual sharing fee by programme for the academic year. Bottom: load that fee and FT count to calculate total.",
+  partnerSharingFeeSection: "1. Individual sharing fee",
+  partnerSharingFeeSectionHint:
+    "One fee for all UWL* programmes, one fee for all WU* programmes. Saved for the academic year and reused below.",
+  partnerSharingFeeGroup: "Programme group",
+  partnerSharingFeeGroupUwl: "All UWL* programmes",
+  partnerSharingFeeGroupWu: "All WU* programmes",
+  partnerSharingCalcSection: "2. Calculate sharing",
+  partnerSharingCalcSectionHint:
+    "Select programme and term to load FT enrolled count and the saved group fee (UWL* or WU*). Total = count × fee.",
+  loadSavedSharingFee: "Load saved fee",
+  partnerSharingDegreeOnlyHint:
+    "Partner sharing auto-count applies to Degree programmes only. Please select a Degree programme.",
+  ftEnrolledStudentCount: "FT enrolled students",
+  sharingFeePerStudent: "Individual sharing fee",
+  sharingFeePerStudentHint: "Saved per programme/year; load below instead of retyping.",
+  totalSharingFee: "Total sharing fee",
+  partnerSharingSaved: "Partner sharing saved.",
+  partnerSharingFeeSaved: "Individual sharing fee saved.",
+  partnerSharingFeeRequired: "Please enter the individual sharing fee before saving.",
+  noPartnerSharingYet: "No partner sharing records for this academic year yet.",
+  confirmDeletePartnerSharing: "Delete this partner sharing record?",
+  selectTermRequired: "Please select a term.",
+  term: "Term",
+  studyTerm: "Study term",
+  tuitionSummaryTitle: "Tuition Summary",
+  tuitionSummaryDescription:
+    "Top: programme FT tuition fee by academic year (defaults from HKIT website). Bottom: student headcount for the selected term, and tuition income filled in manually by accounting.",
+  tuitionSummaryHint:
+    "Graduated students are excluded from headcount. Save fee per programme to reuse.",
+  tuitionFeeByAcademicYearSection: "1. Programme tuition fee (academic year)",
+  tuitionFeeByAcademicYearHint:
+    "Defaults are taken from HKIT HD/Degree programme pages. Edit and save if needed.",
+  tuitionTermSummarySection: "2. Term student summary & tuition income",
+  tuitionTermSummaryHint:
+    "Filter by term (Sep/Feb/Jun). Student numbers are loaded from study plans for that term. Tuition income is for accounting to enter manually — not auto-calculated.",
+  tuitionFeeSourceHint: "Fee reference sources:",
+  hkitPublishedFtFee: "HKIT published FT fee",
+  accountingFillPlaceholder: "Accounting fill-in",
+  tuitionIncomeManualHint: "Tuition income is entered manually (not calculated).",
+  exportStudentListCsv: "Export student list CSV",
+  studentListExported:
+    "Exported {count} student(s) for {programme}.",
+  programmeTuitionFeePerStudent: "Programme tuition fee / student",
+  studentCountByYearMode: "Students by year (FT/PT)",
+  tuitionIncomeTotal: "Tuition income total",
+  tuitionFeeSaved: "Tuition fee saved.",
+  savedFeesCount: "saved fee row(s)",
+  guideAccountHrTuitionSummary:
+    "Enter programme tuition fee per academic year (HKIT defaults). For each term, view student counts and fill tuition income manually.",
+  partnerSharingPageTitle: "Sharing to Partner",
+  partnerSharingPageDescription:
+    "Partner U (Degree), Partner 个人 (UWLCFI), and Sharing to FLU (HDEE).",
+  sharingToPartnerU: "Sharing to Partner U",
+  sharingToPartnerIndividual: "Sharing to Partner 个人",
+  sharingToFlu: "Sharing to FLU",
+  partnerUFeePerStudent: "Partner U fee / student",
+  teacherCost: "Teacher cost",
+  labTechnicianCost: "Lab technician cost",
+  otherCost: "Other cost",
+  studentHeadcount: "Student headcount",
+  studentHeadcountHint: "Loaded from study-plan students (non-graduated).",
+  individualSharingFormulaHint:
+    "UWLCFI: (n×2/6×(tuition−Partner U fee)/2 − teacher cost) / 2",
+  fluSharingFormulaHint:
+    "HDEE: (n×2/8×tuition/2 − teacher − lab − other) / 2 (no Partner U fee)",
   programmeType: "Programme Type",
   programmeCode: "Programme Code",
   programmeName: "Programme Name",

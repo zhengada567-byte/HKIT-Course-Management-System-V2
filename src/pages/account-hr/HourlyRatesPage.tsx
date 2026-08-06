@@ -4,7 +4,6 @@ import { DataTable } from "../../components/tables/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingState } from "../../components/ui/LoadingState";
 import { PageHeader } from "../../components/ui/PageHeader";
-import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import { PROGRAMME_YEAR_OPTIONS } from "../../lib/programmeYear";
@@ -23,11 +22,30 @@ import {
   type SpecialHourlyRateRow,
   type TeacherHourlyRateRow,
 } from "../../services/hourlyRateService";
+import { calculatePtTeachingCosts, type PtTeachingCostLine } from "../../services/ptTeachingCostService";
+import {
+  calculatePtSupervisorTotal,
+  deletePtSupervisorFee,
+  listPtSupervisorFees,
+  PT_SUPERVISOR_AMOUNT_PER_STUDENT,
+  upsertPtSupervisorFee,
+  type PtSupervisorFeeRow,
+} from "../../services/ptSupervisorFeeService";
 import { listProgrammes } from "../../services/programmeService";
 import { listTeachers } from "../../services/teacherService";
-import type { EmploymentType, ProgrammeRow, TeacherRow } from "../../types";
+import type { EmploymentType, ModuleTerm, ProgrammeRow, TeacherRow } from "../../types";
+import { ACCOUNT_HR_DEFAULT_ACADEMIC_YEAR } from "./accountHrAcademicYear";
+import { AccountHrAcademicYearSelect } from "./AccountHrAcademicYearSelect";
 
-type TabKey = "programme" | "special" | "teacher";
+type PageTabKey = "rates" | "teaching" | "supervisor";
+type RatesTabKey = "programme" | "special" | "teacher";
+
+const TERM_OPTIONS: ModuleTerm[] = ["Sep", "Feb", "Jun"];
+
+function money(value: number | string | null | undefined) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n.toFixed(2) : "0.00";
+}
 
 function uniqueProgrammeCodes(programmes: ProgrammeRow[]) {
   return Array.from(
@@ -40,11 +58,14 @@ function uniqueProgrammeCodes(programmes: ProgrammeRow[]) {
 }
 
 export function HourlyRatesPage() {
-  const { academicYear } = useAcademicYear();
   const { user } = useAuth();
   const { t } = useLanguage();
 
-  const [tab, setTab] = useState<TabKey>("programme");
+  const [academicYear, setAcademicYear] = useState(
+    ACCOUNT_HR_DEFAULT_ACADEMIC_YEAR
+  );
+  const [pageTab, setPageTab] = useState<PageTabKey>("rates");
+  const [ratesTab, setRatesTab] = useState<RatesTabKey>("programme");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -56,6 +77,25 @@ export function HourlyRatesPage() {
   );
   const [specialRates, setSpecialRates] = useState<SpecialHourlyRateRow[]>([]);
   const [teacherRates, setTeacherRates] = useState<TeacherHourlyRateRow[]>([]);
+
+  const [teachingTerm, setTeachingTerm] = useState<"All" | ModuleTerm>("All");
+  const [teachingProgramme, setTeachingProgramme] = useState("");
+  const [teachingLoading, setTeachingLoading] = useState(false);
+  const [teachingLines, setTeachingLines] = useState<PtTeachingCostLine[]>([]);
+  const [teachingTotal, setTeachingTotal] = useState(0);
+  const [teachingMissingRates, setTeachingMissingRates] = useState(0);
+
+  const [supervisorTerm, setSupervisorTerm] = useState<ModuleTerm>("Sep");
+  const [supervisorProgramme, setSupervisorProgramme] = useState("");
+  const [supervisorRows, setSupervisorRows] = useState<PtSupervisorFeeRow[]>(
+    []
+  );
+  const [supervisorForm, setSupervisorForm] = useState({
+    id: "",
+    supervisorName: "",
+    studentCount: "",
+    notes: "",
+  });
 
   const [programmeForm, setProgrammeForm] = useState({
     id: "" as string,
@@ -102,35 +142,88 @@ export function HourlyRatesPage() {
       );
   }, [teachers, teacherForm.employmentFilter]);
 
+  const ptTeachers = useMemo(() => {
+    return teachers
+      .filter(
+        (row) => String(row.employment_type ?? "").toUpperCase() === "PT"
+      )
+      .slice()
+      .sort((a, b) =>
+        teacherDisplayNameFromRow(a).localeCompare(
+          teacherDisplayNameFromRow(b)
+        )
+      );
+  }, [teachers]);
+
+  const supervisorTotal = useMemo(
+    () =>
+      supervisorRows.reduce(
+        (sum, row) => sum + (Number(row.total_amount) || 0),
+        0
+      ),
+    [supervisorRows]
+  );
+
+  const supervisorFormTotal = useMemo(
+    () =>
+      calculatePtSupervisorTotal({
+        studentCount: Number(supervisorForm.studentCount || 0),
+      }),
+    [supervisorForm.studentCount]
+  );
+
   async function loadAll() {
     setLoading(true);
     setMessage("");
 
-    try {
-      const [
-        programmeRows,
-        teacherRows,
-        programmeRateRows,
-        specialRateRows,
-        teacherRateRows,
-      ] = await Promise.all([
-        listProgrammes(),
-        listTeachers(academicYear),
-        listProgrammeHourlyRates(academicYear),
-        listSpecialHourlyRates(academicYear),
-        listTeacherHourlyRates(academicYear),
-      ]);
+    const errors: string[] = [];
 
+    try {
+      const programmeRows = await listProgrammes();
       setProgrammes(programmeRows);
+    } catch (error) {
+      errors.push(
+        error instanceof Error ? error.message : "Failed to load programmes."
+      );
+    }
+
+    try {
+      const teacherRows = await listTeachers(academicYear);
       setTeachers(teacherRows);
+    } catch (error) {
+      setTeachers([]);
+      errors.push(
+        error instanceof Error ? error.message : "Failed to load teachers."
+      );
+    }
+
+    try {
+      const [programmeRateRows, specialRateRows, teacherRateRows] =
+        await Promise.all([
+          listProgrammeHourlyRates(academicYear),
+          listSpecialHourlyRates(academicYear),
+          listTeacherHourlyRates(academicYear),
+        ]);
       setProgrammeRates(programmeRateRows);
       setSpecialRates(specialRateRows);
       setTeacherRates(teacherRateRows);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Load failed");
-    } finally {
-      setLoading(false);
+      setProgrammeRates([]);
+      setSpecialRates([]);
+      setTeacherRates([]);
+      const detail =
+        error instanceof Error ? error.message : "Failed to load hourly rates.";
+      errors.push(
+        /could not find the table|does not exist|schema cache/i.test(detail)
+          ? `${detail} — please apply migration 050 on Supabase.`
+          : detail
+      );
     }
+
+    if (errors.length > 0) {
+      setMessage(errors.join(" "));
+    }
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -157,7 +250,114 @@ export function HourlyRatesPage() {
       hourlyRate: "",
       notes: "",
     });
+    setTeachingLines([]);
+    setTeachingTotal(0);
+    setTeachingMissingRates(0);
+    setSupervisorForm({
+      id: "",
+      supervisorName: "",
+      studentCount: "",
+      notes: "",
+    });
   }, [academicYear]);
+
+  async function loadTeachingCosts() {
+    setTeachingLoading(true);
+    setMessage("");
+    try {
+      const result = await calculatePtTeachingCosts({
+        academicYear,
+        term: teachingTerm,
+        programmeCode: teachingProgramme || undefined,
+      });
+      setTeachingLines(result.lines);
+      setTeachingTotal(result.totalCost);
+      setTeachingMissingRates(result.missingRateCount);
+    } catch (error) {
+      setTeachingLines([]);
+      setTeachingTotal(0);
+      setTeachingMissingRates(0);
+      setMessage(
+        error instanceof Error ? error.message : "Failed to calculate PT costs."
+      );
+    } finally {
+      setTeachingLoading(false);
+    }
+  }
+
+  async function loadSupervisorFees() {
+    if (!supervisorProgramme) {
+      setSupervisorRows([]);
+      return;
+    }
+    setMessage("");
+    try {
+      const rows = await listPtSupervisorFees({
+        academicYear,
+        moduleTerm: supervisorTerm,
+        programmeCode: supervisorProgramme,
+      });
+      setSupervisorRows(rows);
+    } catch (error) {
+      setSupervisorRows([]);
+      const detail =
+        error instanceof Error
+          ? error.message
+          : "Failed to load supervisor fees.";
+      setMessage(
+        /could not find the table|does not exist|schema cache/i.test(detail)
+          ? `${detail} — please apply migration 064 on Supabase.`
+          : detail
+      );
+    }
+  }
+
+  useEffect(() => {
+    if (pageTab === "supervisor") {
+      void loadSupervisorFees();
+    }
+  }, [pageTab, academicYear, supervisorTerm, supervisorProgramme]);
+
+  useEffect(() => {
+    if (pageTab === "teaching") {
+      void loadTeachingCosts();
+    }
+  }, [pageTab, academicYear, teachingTerm, teachingProgramme]);
+
+  async function saveSupervisorFee(event: React.FormEvent) {
+    event.preventDefault();
+    if (!supervisorProgramme) {
+      setMessage(t.selectProgrammeRequiredShort);
+      return;
+    }
+    setSaving(true);
+    setMessage("");
+    try {
+      await upsertPtSupervisorFee({
+        id: supervisorForm.id || undefined,
+        academicYear,
+        programmeCode: supervisorProgramme,
+        moduleTerm: supervisorTerm,
+        supervisorName: supervisorForm.supervisorName,
+        studentCount: supervisorForm.studentCount || "0",
+        amountPerStudent: PT_SUPERVISOR_AMOUNT_PER_STUDENT,
+        notes: supervisorForm.notes,
+        updatedBy: user?.id ?? null,
+      });
+      setSupervisorForm({
+        id: "",
+        supervisorName: "",
+        studentCount: "",
+        notes: "",
+      });
+      await loadSupervisorFees();
+      setMessage(t.ptSupervisorFeeSaved);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function saveProgrammeRate(event: React.FormEvent) {
     event.preventDefault();
@@ -272,7 +472,13 @@ export function HourlyRatesPage() {
     }));
   }
 
-  const tabs: { key: TabKey; label: string }[] = [
+  const pageTabs: { key: PageTabKey; label: string }[] = [
+    { key: "rates", label: t.ptTeacherCostsRatesTab },
+    { key: "teaching", label: t.ptTeacherCostsTeachingTab },
+    { key: "supervisor", label: t.ptTeacherCostsSupervisorTab },
+  ];
+
+  const ratesTabs: { key: RatesTabKey; label: string }[] = [
     { key: "programme", label: t.programmeHourlyRates },
     { key: "special", label: t.specialHourlyRates },
     { key: "teacher", label: t.teacherHourlyRates },
@@ -281,22 +487,32 @@ export function HourlyRatesPage() {
   return (
     <div className="page-container">
       <PageHeader
-        title={t.hourlyRatesTitle}
-        description={t.hourlyRatesDescription}
+        title={t.ptTeacherCostsTitle}
+        description={t.ptTeacherCostsDescription}
       />
 
+      <div className="mb-4 card">
+        <div className="card-body">
+          <AccountHrAcademicYearSelect
+            label={t.academicYear}
+            value={academicYear}
+            onChange={setAcademicYear}
+          />
+        </div>
+      </div>
+
       <div className="mb-4 flex flex-wrap gap-2">
-        {tabs.map((item) => (
+        {pageTabs.map((item) => (
           <button
             key={item.key}
             type="button"
             className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-              tab === item.key
+              pageTab === item.key
                 ? "border-blue-600 bg-blue-50 text-blue-700"
                 : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             }`}
             onClick={() => {
-              setTab(item.key);
+              setPageTab(item.key);
               setMessage("");
             }}
           >
@@ -311,11 +527,350 @@ export function HourlyRatesPage() {
         </div>
       )}
 
-      {loading ? (
+      {pageTab === "teaching" ? (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">{t.ptTeachingCostHint}</p>
+          <div className="card">
+            <div className="card-body grid gap-3 md:grid-cols-3">
+              <div>
+                <label className="form-label">{t.term}</label>
+                <select
+                  className="form-select"
+                  value={teachingTerm}
+                  onChange={(event) =>
+                    setTeachingTerm(
+                      event.target.value as "All" | ModuleTerm
+                    )
+                  }
+                >
+                  <option value="All">All</option>
+                  {TERM_OPTIONS.map((term) => (
+                    <option key={term} value={term}>
+                      {term}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="form-label">{t.programmeCode}</label>
+                <select
+                  className="form-select"
+                  value={teachingProgramme}
+                  onChange={(event) =>
+                    setTeachingProgramme(event.target.value)
+                  }
+                >
+                  <option value="">{t.allProgrammes}</option>
+                  {programmeCodes.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={teachingLoading}
+                  onClick={() => void loadTeachingCosts()}
+                >
+                  {teachingLoading ? t.loading : t.search}
+                </button>
+              </div>
+            </div>
+          </div>
+          {teachingMissingRates > 0 ? (
+            <p className="text-sm text-amber-700">
+              {t.ptTeachingMissingRatesHint.replace(
+                "{count}",
+                String(teachingMissingRates)
+              )}
+            </p>
+          ) : null}
+          {teachingLoading ? (
+            <LoadingState />
+          ) : teachingLines.length === 0 ? (
+            <EmptyState message={t.noPtTeachingCostsYet} />
+          ) : (
+            <>
+              <DataTable
+                rowKey={(row) =>
+                  `${row.teacher_name}-${row.module_instance_code}-${row.module_term}`
+                }
+                rows={teachingLines}
+                columns={[
+                  {
+                    key: "teacher",
+                    header: t.teacherName,
+                    render: (row) => row.teacher_name,
+                  },
+                  {
+                    key: "teachingStatus",
+                    header: t.teachingStatusForThisModule,
+                    render: () => "PT",
+                  },
+                  {
+                    key: "employment",
+                    header: t.catalogueEmploymentType,
+                    render: (row) => row.teacher_employment_type || "—",
+                  },
+                  {
+                    key: "programme",
+                    header: t.programmeCode,
+                    render: (row) => row.programme_code || "—",
+                  },
+                  {
+                    key: "module",
+                    header: t.moduleCode,
+                    render: (row) => row.module_instance_code || row.module_code,
+                  },
+                  {
+                    key: "year",
+                    header: t.programmeYear,
+                    render: (row) => row.module_year || "—",
+                  },
+                  {
+                    key: "term",
+                    header: t.term,
+                    render: (row) => row.module_term,
+                  },
+                  {
+                    key: "hours",
+                    header: t.contactHoursLabel,
+                    render: (row) => money(row.contact_hours),
+                  },
+                  {
+                    key: "rate",
+                    header: t.hourlyRate,
+                    render: (row) =>
+                      row.hourly_rate == null
+                        ? "—"
+                        : `${money(row.hourly_rate)}${
+                            row.rate_source === "teacher"
+                              ? ` (${t.teacherHourlyRates})`
+                              : ""
+                          }`,
+                  },
+                  {
+                    key: "cost",
+                    header: t.ptTeachingCost,
+                    render: (row) =>
+                      row.cost == null ? "—" : money(row.cost),
+                  },
+                ]}
+              />
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800">
+                {t.total}: {money(teachingTotal)}
+              </div>
+            </>
+          )}
+        </div>
+      ) : pageTab === "supervisor" ? (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">{t.ptSupervisorFeeHint}</p>
+          <div className="card">
+            <div className="card-body grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="form-label">{t.term}</label>
+                <select
+                  className="form-select"
+                  value={supervisorTerm}
+                  onChange={(event) =>
+                    setSupervisorTerm(event.target.value as ModuleTerm)
+                  }
+                >
+                  {TERM_OPTIONS.map((term) => (
+                    <option key={term} value={term}>
+                      {term}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="form-label">{t.programmeCode}</label>
+                <select
+                  className="form-select"
+                  value={supervisorProgramme}
+                  onChange={(event) =>
+                    setSupervisorProgramme(event.target.value)
+                  }
+                >
+                  <option value="">{t.selectProgramme}</option>
+                  {programmeCodes.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="card-body border-t border-slate-100 pt-0">
+              <p className="text-sm font-medium text-slate-800">
+                {t.ptSupervisorAmountPerStudent}:{" "}
+                {money(PT_SUPERVISOR_AMOUNT_PER_STUDENT)}
+              </p>
+            </div>
+          </div>
+
+          <form className="card" onSubmit={saveSupervisorFee}>
+            <div className="card-body grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <label className="form-label">{t.ptSupervisorName}</label>
+                <select
+                  className="form-select"
+                  value={supervisorForm.supervisorName}
+                  onChange={(event) =>
+                    setSupervisorForm((prev) => ({
+                      ...prev,
+                      supervisorName: event.target.value,
+                    }))
+                  }
+                  required
+                  disabled={!supervisorProgramme}
+                >
+                  <option value="">{t.selectTeacher}</option>
+                  {ptTeachers.map((row) => {
+                    const name = teacherDisplayNameFromRow(row);
+                    return (
+                      <option key={row.id ?? name} value={name}>
+                        {name}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              <div>
+                <label className="form-label">{t.ptSupervisorStudentCount}</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={supervisorForm.studentCount}
+                  onChange={(event) =>
+                    setSupervisorForm((prev) => ({
+                      ...prev,
+                      studentCount: event.target.value,
+                    }))
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <label className="form-label">{t.total}</label>
+                <div className="form-input bg-slate-50 font-semibold">
+                  {money(supervisorFormTotal)}
+                </div>
+              </div>
+              <div className="flex items-end">
+                <button
+                  className="btn btn-primary"
+                  type="submit"
+                  disabled={saving || !supervisorProgramme}
+                >
+                  {saving ? t.loading : t.save}
+                </button>
+              </div>
+            </div>
+          </form>
+
+          {supervisorRows.length === 0 ? (
+            <EmptyState message={t.noPtSupervisorFeesYet} />
+          ) : (
+            <>
+              <DataTable
+                rowKey={(row) => row.id}
+                rows={supervisorRows}
+                columns={[
+                  {
+                    key: "supervisor",
+                    header: t.ptSupervisorName,
+                    render: (row) => row.supervisor_name,
+                  },
+                  {
+                    key: "count",
+                    header: t.ptSupervisorStudentCount,
+                    render: (row) => row.student_count,
+                  },
+                  {
+                    key: "rate",
+                    header: t.ptSupervisorAmountPerStudent,
+                    render: (row) => money(row.amount_per_student),
+                  },
+                  {
+                    key: "total",
+                    header: t.total,
+                    render: (row) => money(row.total_amount),
+                  },
+                  {
+                    key: "actions",
+                    header: t.actions,
+                    render: (row) => (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() =>
+                            setSupervisorForm({
+                              id: row.id,
+                              supervisorName: row.supervisor_name,
+                              studentCount: String(row.student_count),
+                              notes: row.notes ?? "",
+                            })
+                          }
+                        >
+                          {t.edit}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm"
+                          onClick={async () => {
+                            if (!window.confirm(t.confirmDeletePtSupervisorFee)) {
+                              return;
+                            }
+                            await deletePtSupervisorFee(row.id);
+                            await loadSupervisorFees();
+                          }}
+                        >
+                          {t.delete}
+                        </button>
+                      </div>
+                    ),
+                  },
+                ]}
+              />
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800">
+                {t.total}: {money(supervisorTotal)}
+              </div>
+            </>
+          )}
+        </div>
+      ) : loading ? (
         <LoadingState />
       ) : (
         <>
-          {tab === "programme" && (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {ratesTabs.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  ratesTab === item.key
+                    ? "border-blue-600 bg-blue-50 text-blue-700"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+                onClick={() => {
+                  setRatesTab(item.key);
+                  setMessage("");
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          {ratesTab === "programme" && (
             <div className="space-y-4">
               <form className="card" onSubmit={saveProgrammeRate}>
                 <div className="card-body grid gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -496,7 +1051,7 @@ export function HourlyRatesPage() {
             </div>
           )}
 
-          {tab === "special" && (
+          {ratesTab === "special" && (
             <div className="space-y-4">
               <form className="card" onSubmit={saveSpecialRate}>
                 <div className="card-body grid gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -671,7 +1226,7 @@ export function HourlyRatesPage() {
             </div>
           )}
 
-          {tab === "teacher" && (
+          {ratesTab === "teacher" && (
             <div className="space-y-4">
               <form className="card" onSubmit={saveTeacherRate}>
                 <div className="card-body grid gap-3 md:grid-cols-2 xl:grid-cols-6">

@@ -4,7 +4,6 @@ import { DataTable } from "../../components/tables/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingState } from "../../components/ui/LoadingState";
 import { PageHeader } from "../../components/ui/PageHeader";
-import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import { listProgrammes } from "../../services/programmeService";
@@ -25,6 +24,8 @@ import {
   type WorkshopCostRow,
 } from "../../services/promotionExpenseService";
 import type { ProgrammeRow } from "../../types";
+import { ACCOUNT_HR_DEFAULT_ACADEMIC_YEAR } from "./accountHrAcademicYear";
+import { AccountHrAcademicYearSelect } from "./AccountHrAcademicYearSelect";
 
 type TabKey =
   | "social_media"
@@ -49,10 +50,12 @@ function money(value: number | string | null | undefined) {
 }
 
 export function PromotionExpensesPage() {
-  const { academicYear } = useAcademicYear();
   const { user } = useAuth();
   const { t } = useLanguage();
 
+  const [academicYear, setAcademicYear] = useState(
+    ACCOUNT_HR_DEFAULT_ACADEMIC_YEAR
+  );
   const [tab, setTab] = useState<TabKey>("social_media");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -123,28 +126,60 @@ export function PromotionExpensesPage() {
     setLoading(true);
     setMessage("");
 
+    let programmeLoadError = "";
+    let costLoadError = "";
+
     try {
-      const [programmeRows, social, workshops, occurrences] = await Promise.all([
-        listProgrammes(),
-        listSocialMediaCosts({ academicYear }),
-        listWorkshopCosts({ academicYear }),
-        listPromotionOccurrenceCosts({ academicYear }),
-      ]);
-
+      const programmeRows = await listProgrammes();
       setProgrammes(programmeRows);
-      setSocialRows(social);
-      setWorkshopRows(workshops);
-      setOccurrenceRows(occurrences);
-
       if (!programmeCode && programmeRows.length > 0) {
         const first = uniqueProgrammeCodes(programmeRows)[0] ?? "";
         setProgrammeCode(first);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Load failed");
-    } finally {
-      setLoading(false);
+      programmeLoadError =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object" &&
+              error &&
+              "message" in error &&
+              typeof (error as { message: unknown }).message === "string"
+            ? (error as { message: string }).message
+            : "Failed to load programmes.";
     }
+
+    try {
+      const [social, workshops, occurrences] = await Promise.all([
+        listSocialMediaCosts({ academicYear }),
+        listWorkshopCosts({ academicYear }),
+        listPromotionOccurrenceCosts({ academicYear }),
+      ]);
+      setSocialRows(social);
+      setWorkshopRows(workshops);
+      setOccurrenceRows(occurrences);
+    } catch (error) {
+      setSocialRows([]);
+      setWorkshopRows([]);
+      setOccurrenceRows([]);
+      const detail =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object" &&
+              error &&
+              "message" in error &&
+              typeof (error as { message: unknown }).message === "string"
+            ? (error as { message: string }).message
+            : "Failed to load promotion expenses.";
+      costLoadError =
+        /could not find the table|does not exist|schema cache/i.test(detail)
+          ? `${detail} — please apply migration 051 on Supabase.`
+          : detail;
+    }
+
+    if (programmeLoadError || costLoadError) {
+      setMessage([programmeLoadError, costLoadError].filter(Boolean).join(" "));
+    }
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -349,38 +384,45 @@ export function PromotionExpensesPage() {
       />
 
       <div className="mb-4 card">
-        <div className="card-body max-w-md">
-          <label className="form-label">{t.programmeCode}</label>
-          <select
-            className="form-select"
-            value={programmeCode}
-            onChange={(event) => {
-              setProgrammeCode(event.target.value);
-              setMessage("");
-              setWorkshopForm({
-                id: "",
-                workshopTitle: "",
-                speakerFee: "",
-                promotionFee: "",
-                expenseDate: "",
-                notes: "",
-              });
-              setOccurrenceForm({
-                id: "",
-                title: "",
-                amount: "",
-                expenseDate: "",
-                notes: "",
-              });
-            }}
-          >
-            <option value="">{t.selectProgramme}</option>
-            {programmeCodes.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
+        <div className="card-body grid gap-3 md:grid-cols-2">
+          <AccountHrAcademicYearSelect
+            label={t.academicYear}
+            value={academicYear}
+            onChange={setAcademicYear}
+          />
+          <div>
+            <label className="form-label">{t.programmeCode}</label>
+            <select
+              className="form-select"
+              value={programmeCode}
+              onChange={(event) => {
+                setProgrammeCode(event.target.value);
+                setMessage("");
+                setWorkshopForm({
+                  id: "",
+                  workshopTitle: "",
+                  speakerFee: "",
+                  promotionFee: "",
+                  expenseDate: "",
+                  notes: "",
+                });
+                setOccurrenceForm({
+                  id: "",
+                  title: "",
+                  amount: "",
+                  expenseDate: "",
+                  notes: "",
+                });
+              }}
+            >
+              <option value="">{t.selectProgramme}</option>
+              {programmeCodes.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 

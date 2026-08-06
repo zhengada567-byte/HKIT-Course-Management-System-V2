@@ -1,4 +1,16 @@
-import { CalendarDays, DollarSign, Megaphone, UsersRound } from "lucide-react";
+import {
+  Award,
+  Building2,
+  CalendarDays,
+  ClipboardCheck,
+  DollarSign,
+  HandCoins,
+  Megaphone,
+  Share2,
+  UserRoundSearch,
+  UsersRound,
+  Wallet,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { PageHeader } from "../../components/ui/PageHeader";
@@ -18,7 +30,7 @@ export function AccountHRDashboard() {
     },
     {
       to: "/account-hr/hourly-rates",
-      label: t.hourlyRatesTitle,
+      label: t.ptTeacherCostsTitle,
       description: t.guideAccountHrHourlyRates,
       icon: DollarSign,
     },
@@ -34,6 +46,48 @@ export function AccountHRDashboard() {
       description: t.guideAccountHrFtStaffCosts,
       icon: UsersRound,
     },
+    {
+      to: "/account-hr/review-fees",
+      label: t.reviewFeesTitle,
+      description: t.guideAccountHrReviewFees,
+      icon: ClipboardCheck,
+    },
+    {
+      to: "/account-hr/scholarship-expenses",
+      label: t.scholarshipExpensesTitle,
+      description: t.guideAccountHrScholarshipExpenses,
+      icon: Award,
+    },
+    {
+      to: "/account-hr/referral-scheme",
+      label: t.referralSchemeTitle,
+      description: t.guideAccountHrReferralScheme,
+      icon: Share2,
+    },
+    {
+      to: "/account-hr/ssp-misc-costs",
+      label: t.sspMiscCostsTitle,
+      description: t.guideAccountHrSspMiscCosts,
+      icon: Building2,
+    },
+    {
+      to: "/account-hr/external-review",
+      label: t.externalReviewEngagementsTitle,
+      description: t.guideAccountHrExternalReview,
+      icon: UserRoundSearch,
+    },
+    {
+      to: "/account-hr/tuition-summary",
+      label: t.tuitionSummaryTitle,
+      description: t.guideAccountHrTuitionSummary,
+      icon: Wallet,
+    },
+    {
+      to: "/account-hr/partner-sharing",
+      label: t.partnerSharingPageTitle,
+      description: t.guideAccountHrPartnerSharing,
+      icon: HandCoins,
+    },
   ];
 
   return (
@@ -47,7 +101,7 @@ export function AccountHRDashboard() {
         {t.username}: <strong>{user?.username ?? "-"}</strong> · {t.accountHr}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {links.map((item) => {
           const Icon = item.icon;
 
