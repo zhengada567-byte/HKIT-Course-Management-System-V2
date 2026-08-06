@@ -104,3 +104,42 @@ export function catalogModuleLookupKeys(
 
   return [...keys];
 }
+
+/**
+ * Module codes whose timetable classes may be offered when enrolling a study-plan row.
+ * Plan module stays as the catalogue code (e.g. HD405); PL may enrol into related
+ * short bridging classes (HD405B) without changing other plan fields.
+ *
+ * - HD405 -> HD405, HD405B
+ * - HD405B -> HD405B, HD405
+ * - BUS692 (+ term) -> existing catalogue lookup keys only
+ */
+export function relatedEnrollmentModuleCodes(
+  catalogModuleCode: string,
+  offeredTerm?: ModuleTerm
+) {
+  const base = normalizeModuleCode(catalogModuleCode);
+  const keys = new Set<string>();
+
+  if (!base) return [];
+
+  if (offeredTerm) {
+    for (const key of catalogModuleLookupKeys(base, offeredTerm)) {
+      keys.add(key);
+    }
+  } else {
+    keys.add(base);
+  }
+
+  // Parent short-code style (2 letters + 3 digits): include bridging B offering.
+  if (/^[A-Z]{2}\d{3}$/.test(base)) {
+    keys.add(`${base}B`);
+  }
+
+  // Bridging short code: also allow parent full-class instances.
+  if (/^[A-Z]{2}\d{3}B$/.test(base)) {
+    keys.add(base.slice(0, -1));
+  }
+
+  return [...keys];
+}

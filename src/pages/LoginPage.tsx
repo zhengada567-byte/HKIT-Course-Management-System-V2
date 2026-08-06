@@ -8,12 +8,13 @@ import type { UserRole } from "../types";
 const ROLE_OPTIONS: {
   role: UserRole;
   username: string;
-  labelKey: "programmeLeader" | "admin" | "staff";
+  labelKey: "programmeLeader" | "admin" | "staff" | "accountHr";
   passwordless?: boolean;
 }[] = [
   { role: "programme_leader", username: "pl", labelKey: "programmeLeader" },
   { role: "admin", username: "admin", labelKey: "admin" },
   { role: "staff", username: "staff", labelKey: "staff", passwordless: true },
+  { role: "account_hr", username: "AccountHR", labelKey: "accountHr" },
 ];
 
 export function LoginPage() {
@@ -91,7 +92,7 @@ export function LoginPage() {
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
             <label className="form-label">{t.selectUser}</label>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {ROLE_OPTIONS.map((option) => {
                 const selected = selectedRole === option.role;
 

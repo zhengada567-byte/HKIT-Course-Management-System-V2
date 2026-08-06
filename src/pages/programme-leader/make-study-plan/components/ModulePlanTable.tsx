@@ -7,6 +7,7 @@ import {
 } from "react";
 
 import { getBaseModuleCode } from "../../../../lib/studyPlanModuleCode";
+import { relatedEnrollmentModuleCodes } from "../../../../lib/studyPlanModuleCodeAliases";
 import { useLanguage } from "../../../../contexts/LanguageContext";
 import { formatProgrammeYearDisplay } from "../../../../lib/programmeYear";
 import { lookupStudyPlanModuleMetadataByCode } from "../../../../services/studyPlanService";
@@ -97,8 +98,10 @@ function buildEnrollmentOptionsForModule(
     return [];
   }
 
-  const matches = enrollmentInstances.filter(
-    (row) => String(row.moduleCode ?? "").trim().toUpperCase() === moduleCode
+  const relatedCodes = new Set(relatedEnrollmentModuleCodes(moduleCode));
+
+  const matches = enrollmentInstances.filter((row) =>
+    relatedCodes.has(String(row.moduleCode ?? "").trim().toUpperCase())
   );
 
   if (matches.length === 0) {

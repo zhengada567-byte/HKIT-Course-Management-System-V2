@@ -24,6 +24,9 @@ import { ModuleTeacherAssignmentPage } from "../pages/programme-leader/ModuleTea
 import { DailyTimetablePage } from "../pages/admin/DailyTimetablePage";
 import { StudyPlanEnrollmentPage } from "../pages/admin/StudyPlanEnrollmentPage";
 import { FeatureUpdateLocksPage } from "../pages/admin/FeatureUpdateLocksPage";
+import { HourlyRatesPage } from "../pages/account-hr/HourlyRatesPage";
+import { PromotionExpensesPage } from "../pages/account-hr/PromotionExpensesPage";
+import { FtStaffCostsPage } from "../pages/account-hr/FtStaffCostsPage";
 
 export const routes: RouteObject[] = [
   {
@@ -57,8 +60,34 @@ export const routes: RouteObject[] = [
       {
         path: "academic-calendar",
         element: (
-          <ProtectedRoute allowedRoles={["programme_leader", "admin", "staff"]}>
+          <ProtectedRoute
+            allowedRoles={["programme_leader", "admin", "staff", "account_hr"]}
+          >
             <AcademicCalendarPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "account-hr/hourly-rates",
+        element: (
+          <ProtectedRoute allowedRoles={["account_hr", "admin"]}>
+            <HourlyRatesPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "account-hr/promotion-expenses",
+        element: (
+          <ProtectedRoute allowedRoles={["account_hr", "admin"]}>
+            <PromotionExpensesPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "account-hr/ft-staff-costs",
+        element: (
+          <ProtectedRoute allowedRoles={["account_hr", "admin"]}>
+            <FtStaffCostsPage />
           </ProtectedRoute>
         ),
       },

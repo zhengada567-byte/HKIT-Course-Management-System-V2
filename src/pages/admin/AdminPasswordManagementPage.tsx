@@ -9,7 +9,9 @@ export function AdminPasswordManagementPage() {
   const { user } = useAuth();
   const { t } = useLanguage();
 
-  const [targetUsername, setTargetUsername] = useState<"pl" | "admin">("pl");
+  const [targetUsername, setTargetUsername] = useState<
+    "pl" | "admin" | "AccountHR"
+  >("pl");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -55,7 +57,7 @@ export function AdminPasswordManagementPage() {
     <div className="page-container">
       <PageHeader
         title={t.passwordManagement}
-        description="Admin can change Programme Leader and Admin passwords."
+        description="Admin can change Programme Leader, Admin, and AccountHR passwords."
       />
 
       <form className="card max-w-xl" onSubmit={handleSave}>
@@ -66,11 +68,14 @@ export function AdminPasswordManagementPage() {
               className="form-select"
               value={targetUsername}
               onChange={(event) =>
-                setTargetUsername(event.target.value as "pl" | "admin")
+                setTargetUsername(
+                  event.target.value as "pl" | "admin" | "AccountHR"
+                )
               }
             >
               <option value="pl">Programme Leader - pl</option>
               <option value="admin">Admin - admin</option>
+              <option value="AccountHR">AccountHR - AccountHR</option>
             </select>
           </div>
 

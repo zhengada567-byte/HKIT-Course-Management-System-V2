@@ -18,6 +18,9 @@ import {
   Upload,
   UserPlus,
   Users,
+  DollarSign,
+  Megaphone,
+  UsersRound,
 } from "lucide-react";
 
 import { cn } from "../../lib/utils";
@@ -73,7 +76,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       to: "/dashboard",
       label: t.dashboard,
       icon: LayoutDashboard,
-      roles: ["admin", "programme_leader", "staff"],
+      roles: ["admin", "programme_leader", "staff", "account_hr"],
     },
     {
       to: "/admin/programmes",
@@ -95,7 +98,25 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       to: "/academic-calendar",
       label: t.academicCalendar,
       icon: CalendarDays,
-      roles: ["programme_leader", "admin", "staff"],
+      roles: ["programme_leader", "admin", "staff", "account_hr"],
+    },
+    {
+      to: "/account-hr/hourly-rates",
+      label: t.hourlyRatesTitle,
+      icon: DollarSign,
+      roles: ["account_hr", "admin"],
+    },
+    {
+      to: "/account-hr/promotion-expenses",
+      label: t.promotionExpensesTitle,
+      icon: Megaphone,
+      roles: ["account_hr", "admin"],
+    },
+    {
+      to: "/account-hr/ft-staff-costs",
+      label: t.ftStaffCostsTitle,
+      icon: UsersRound,
+      roles: ["account_hr", "admin"],
     },
     {
       to: "/teacher-loading",
