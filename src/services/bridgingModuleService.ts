@@ -26,6 +26,24 @@ export function isBridgingModuleCode(moduleCode: string | null | undefined) {
   return /^[A-Z]{2}\d{3}B$/.test(code);
 }
 
+/**
+ * True when a timetable / instance code refers to a bridging (short) module.
+ * Matches GS401B and split forms like PROG_STREAM_GS401B_1.
+ */
+export function isBridgingSchedulingModuleCode(
+  ...codes: Array<string | null | undefined>
+) {
+  for (const raw of codes) {
+    const text = String(raw ?? "").trim().toUpperCase();
+    if (!text) continue;
+    if (isBridgingModuleCode(text)) return true;
+    for (const part of text.split(/[_\s/-]+/)) {
+      if (isBridgingModuleCode(part)) return true;
+    }
+  }
+  return false;
+}
+
 /** GS401 → GS401B; already GS401B → GS401B. */
 export function buildBridgingModuleCode(parentModuleCode: string) {
   const code = String(parentModuleCode ?? "")

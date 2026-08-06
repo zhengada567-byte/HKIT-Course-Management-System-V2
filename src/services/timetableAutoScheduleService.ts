@@ -36,6 +36,7 @@ import {
 import { addDays, toIsoDateString } from "../lib/academicCalendar";
 import { loadPlanningModulesByCombineGroupIds } from "./splitClassService";
 import { buildModuleCatalogKey, loadModuleUsesComputerMap } from "./moduleService";
+import { isBridgingSchedulingModuleCode } from "./bridgingModuleService";
 import { listTeachers } from "./teacherService";
 import { listTimetableModulesByInstanceCodes } from "./timetableService";
 import { listTeacherNotAvailableForTeachers } from "./timetableTeacherAvailabilityService";
@@ -47,6 +48,14 @@ type Period = "AM" | "PM" | "EVENING";
 
 const NIGHT_START = "18:30";
 const NIGHT_END = "22:30";
+
+function isTimetableModuleBridging(timetableModule: TimetableModuleRow) {
+  return isBridgingSchedulingModuleCode(
+    timetableModule.base_module_code,
+    timetableModule.module_instance_code,
+    (timetableModule as { module_code?: string | null }).module_code
+  );
+}
 
 function schedulingIdentitiesForModule(
   timetableModule: TimetableModuleRow,
@@ -236,6 +245,7 @@ function diagnoseWeekdayPlacementFailures(params: {
   streamAllOccupiedSlots: Map<string, Set<string>>;
   programmeSlotStreams: Map<string, Map<string, Set<string>>>;
   teachingDates: string[];
+  exemptFromStreamYearConflict?: boolean;
 }): string | null {
   const label = schedulingWeekdayLabel(params.weekday);
 
@@ -254,6 +264,7 @@ function diagnoseWeekdayPlacementFailures(params: {
   }
 
   if (
+    !params.exemptFromStreamYearConflict &&
     isAnyStreamYearTimeslotBlocked(
       params.streamYearTimeslotState,
       params.schedulingIdentities,
@@ -306,6 +317,7 @@ function diagnoseWeekdayPlacementFailures(params: {
       alignKey: params.alignKey,
       programmeCode: params.programmeCode,
       schedulingIdentities: params.schedulingIdentities,
+      exemptFromStreamYearConflict: params.exemptFromStreamYearConflict,
       streamYearTimeslotState: params.streamYearTimeslotState,
       streamSlotByModule: params.streamSlotByModule,
       streamYearOccupiedSlots: params.streamYearOccupiedSlots,
@@ -362,6 +374,7 @@ function buildWeekdayFailureDetail(params: {
   streamAllOccupiedSlots: Map<string, Set<string>>;
   programmeSlotStreams: Map<string, Map<string, Set<string>>>;
   teachingDatesByWeekday: Map<Weekday, string[]>;
+  exemptFromStreamYearConflict?: boolean;
 }): string {
   const notes: string[] = [];
 
@@ -388,6 +401,7 @@ function buildWeekdayFailureDetail(params: {
       streamAllOccupiedSlots: params.streamAllOccupiedSlots,
       programmeSlotStreams: params.programmeSlotStreams,
       teachingDates: params.teachingDatesByWeekday.get(weekday) ?? [],
+      exemptFromStreamYearConflict: params.exemptFromStreamYearConflict,
     });
 
     if (note) {
@@ -605,6 +619,7 @@ async function seedAutoScheduleFromExistingSessions(params: {
         String(session.module_code ?? timetableModule.base_module_code ?? "").trim()
       ),
       slotKey,
+      exemptFromStreamYearConflict: isTimetableModuleBridging(timetableModule),
       streamYearTimeslotState: params.streamYearTimeslotState,
       streamSlotByModule: params.streamSlotByModule,
       streamYearOccupiedSlots: params.streamYearOccupiedSlots,
@@ -979,6 +994,8 @@ export async function autoScheduleInstances(params: {
       timetableModule,
       membersByCombineGroupId
     );
+    const exemptFromStreamYearConflict =
+      isTimetableModuleBridging(timetableModule);
 
     type PlacementCandidate = {
       weekday: Weekday;
@@ -1043,6 +1060,7 @@ export async function autoScheduleInstances(params: {
           alignKey,
           programmeCode,
           schedulingIdentities,
+          exemptFromStreamYearConflict,
           streamYearTimeslotState,
           streamSlotByModule,
           streamYearOccupiedSlots,
@@ -1084,6 +1102,7 @@ export async function autoScheduleInstances(params: {
         moduleYear,
         alignKey,
         schedulingIdentities,
+        exemptFromStreamYearConflict,
         slotKey: best.slotKey,
         streamYearTimeslotState,
         streamSlotByModule,
@@ -1145,6 +1164,7 @@ export async function autoScheduleInstances(params: {
         streamAllOccupiedSlots,
         programmeSlotStreams,
         teachingDatesByWeekday,
+        exemptFromStreamYearConflict,
       });
 
       const modeHint =

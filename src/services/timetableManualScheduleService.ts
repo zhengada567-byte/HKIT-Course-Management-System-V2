@@ -7,6 +7,7 @@ import {
   type SchedulingCombineMember,
   type StreamYearSchedulingIdentity,
 } from "../lib/timetableSchedulingRules";
+import { isBridgingSchedulingModuleCode } from "./bridgingModuleService";
 import {
   listFixedWeeklyPeriodSlots,
   resolveWeeklyPeriodBands,
@@ -84,6 +85,8 @@ export type WeeklyPlacementOccupant = {
   streamCode: string;
   moduleYear: string;
   schedulingIdentities: StreamYearSchedulingIdentity[];
+  /** Bridging (short) modules skip programme/stream/year same-slot bans. */
+  isBridgingModule: boolean;
 };
 
 /** Chip in a period-band cell; placementStart/End are the real session times. */
@@ -108,7 +111,13 @@ export function wouldWeeklyPlacementConflict(
       return `Module instance ${item.moduleInstanceCode} is already in this timeslot.`;
     }
 
+    const eitherBridging =
+      candidate.isBridgingModule || item.isBridgingModule;
+
+    // Bridging modules are exempt from programme + stream + year same-slot bans.
+    // Teacher and room constraints remain elsewhere / below.
     if (
+      !eitherBridging &&
       schedulingIdentitiesShareStreamYearGroup(
         candidate.schedulingIdentities,
         item.schedulingIdentities
@@ -138,6 +147,8 @@ export function wouldWeeklyPlacementConflict(
         .toUpperCase();
 
     if (sameTeacher && sameProgramme && sameStream && sameYear) {
+      // Still apply when either is bridging: same teacher must not double-book
+      // the cohort identity slot (teacher constraint kept).
       return (
         `Conflict with ${item.moduleInstanceCode}: same teacher, programme, stream and year ` +
         `cannot share this weekly timeslot.`
@@ -159,13 +170,14 @@ export function buildWeeklyPlacementOccupant(params: {
   const programmeCode = String(params.timetableModule.programme_code ?? "").trim();
   const streamCode = String(params.timetableModule.stream_code ?? "").trim();
   const moduleYear = String(params.timetableModule.module_year ?? "").trim();
+  const moduleCode =
+    params.moduleCode ??
+    params.timetableModule.base_module_code ??
+    params.instance.module_code;
 
   return {
     moduleInstanceCode: params.instance.module_instance_code,
-    moduleCode:
-      params.moduleCode ??
-      params.timetableModule.base_module_code ??
-      params.instance.module_code,
+    moduleCode,
     moduleName:
       params.moduleName ??
       params.instance.module_name ??
@@ -182,6 +194,13 @@ export function buildWeeklyPlacementOccupant(params: {
       moduleYear,
       combineMembers: params.combineMembers,
     }),
+    isBridgingModule: isBridgingSchedulingModuleCode(
+      moduleCode,
+      params.timetableModule.base_module_code,
+      params.instance.module_code,
+      params.instance.module_instance_code,
+      params.timetableModule.module_instance_code
+    ),
   };
 }
 
@@ -470,6 +489,7 @@ export function buildWeeklyTimetableGridFromSessions(params: {
         streamCode: item.streamCode,
         moduleYear: item.moduleYear,
         schedulingIdentities: item.schedulingIdentities,
+        isBridgingModule: item.isBridgingModule,
         placementStart: item.start,
         placementEnd: item.end,
         crossesPeriodBands,
@@ -755,6 +775,7 @@ export function collectWeeklyPlacements(
           streamCode: item.streamCode,
           moduleYear: item.moduleYear,
           schedulingIdentities: item.schedulingIdentities,
+          isBridgingModule: item.isBridgingModule,
           weekday,
           start,
           end,
@@ -822,6 +843,7 @@ export function upsertWeeklyGridPlacement(
     streamCode: placement.streamCode,
     moduleYear: placement.moduleYear,
     schedulingIdentities: placement.schedulingIdentities,
+    isBridgingModule: placement.isBridgingModule,
     placementStart: placement.start,
     placementEnd: placement.end,
     crossesPeriodBands,

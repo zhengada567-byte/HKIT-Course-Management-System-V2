@@ -558,6 +558,8 @@ export function scoreAutoScheduleSlot(params: {
   alignKey: string;
   programmeCode: string;
   schedulingIdentities?: StreamYearSchedulingIdentity[];
+  /** Bridging modules skip programme+stream+year hard slot bans. */
+  exemptFromStreamYearConflict?: boolean;
   streamYearTimeslotState: StreamYearTimeslotState;
   streamSlotByModule: Map<string, Map<string, string>>;
   streamYearOccupiedSlots: Map<string, Set<string>>;
@@ -573,6 +575,7 @@ export function scoreAutoScheduleSlot(params: {
     });
 
   if (
+    !params.exemptFromStreamYearConflict &&
     isAnyStreamYearTimeslotBlocked(
       params.streamYearTimeslotState,
       identities,
@@ -619,7 +622,10 @@ export function scoreAutoScheduleSlot(params: {
     const targetProgramme = normalizeProgrammeKey(identity.programmeCode);
     const targetYear = normalizeModuleYearKey(identity.moduleYear);
 
-    if (params.streamYearOccupiedSlots.get(streamYearKey)?.has(params.slotKey)) {
+    if (
+      !params.exemptFromStreamYearConflict &&
+      params.streamYearOccupiedSlots.get(streamYearKey)?.has(params.slotKey)
+    ) {
       score -= 80;
     }
 
@@ -638,6 +644,9 @@ export function scoreAutoScheduleSlot(params: {
       }
 
       if (otherYear === targetYear) {
+        if (params.exemptFromStreamYearConflict) {
+          continue;
+        }
         return null;
       }
 
@@ -664,6 +673,8 @@ export function recordAutoSchedulePlacement(params: {
   alignKey: string;
   slotKey: string;
   schedulingIdentities?: StreamYearSchedulingIdentity[];
+  /** Bridging: do not occupy programme+stream+year slots (other modules stay free). */
+  exemptFromStreamYearConflict?: boolean;
   streamYearTimeslotState: StreamYearTimeslotState;
   streamSlotByModule: Map<string, Map<string, string>>;
   streamYearOccupiedSlots: Map<string, Set<string>>;
@@ -682,6 +693,10 @@ export function recordAutoSchedulePlacement(params: {
     params.streamSlotByModule.set(params.alignKey, new Map());
   }
   params.streamSlotByModule.get(params.alignKey)!.set(params.streamKey, params.slotKey);
+
+  if (params.exemptFromStreamYearConflict) {
+    return;
+  }
 
   registerAllStreamYearTimeslots(
     params.streamYearTimeslotState,
