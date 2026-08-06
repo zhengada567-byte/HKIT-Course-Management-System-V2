@@ -80,6 +80,44 @@ export const en = {
     " Skipped {skipped} class instance(s) that already have a different teacher set in the weekly timetable.",
   moduleBasicSettingsTimetableUpdateNone:
     "No matching timetable modules/sessions found for the loaded modules. Save basic settings first, and ensure split/schedule already exists.",
+  addBridgingModule: "Add Bridging Module",
+  addBridgingModuleHint:
+    "Create short bridging offerings (code ends with B) from any HD module in the programme catalogue for {term} / {programme}. Parent module term is not filtered — the selected term only sets when GS401B is offered. Same term shares one GS401B under the HD programme. Hours default from the parent module.",
+  addBridgingModuleSelectProgramme:
+    "Select a programme first, then open Add Bridging Module.",
+  addBridgingModuleEmpty:
+    "No HD parent modules found for this programme.",
+  addBridgingModuleLoadFailed: "Failed to load bridging module candidates.",
+  addBridgingModuleSelectParents:
+    "Select at least one normal module to create bridging modules.",
+  addBridgingModuleInvalidHours: "Teaching and tutorial hours must be numbers.",
+  addBridgingModuleCreated: "Created {count} bridging module offering(s).",
+  addBridgingModuleReactivated: "Reactivated {count}.",
+  addBridgingModuleSkipped:
+    "Skipped {count} already existing for this term.",
+  addBridgingModuleCreateFailed: "Failed to create bridging modules.",
+  addBridgingModuleHoursSaved: "Bridging module hours saved.",
+  addBridgingModuleHoursFailed: "Failed to save bridging module hours.",
+  addBridgingModuleDeactivated: "Bridging offering deactivated for this term.",
+  addBridgingModuleDeactivateFailed: "Failed to deactivate bridging offering.",
+  addBridgingModuleActiveCount:
+    "Active bridging offerings this term: {count}",
+  addBridgingModuleCode: "Bridging code",
+  addBridgingTeachingHours: "Teaching hours",
+  addBridgingTutorialHours: "Tutorial hours",
+  addBridgingModuleNotCreated: "Not created",
+  addBridgingModuleStatusActive: "Active",
+  addBridgingModuleStatusInactive: "Inactive",
+  addBridgingModuleAlreadyExists: "Already exists for this term",
+  addBridgingModuleSaveHours: "Save hours",
+  addBridgingModuleDeactivate: "Deactivate",
+  addBridgingModuleSelectedCount: "Selected: {count}",
+  addBridgingModuleCreate: "Create selected",
+  degreeTermBridgingModulesTitle: "Bridging modules this term",
+  degreeTermBridgingModulesHint:
+    "Active short bridging offerings ({term}) from articulated HD modules. Set proposed teacher, teaching status, and mode here (same as normal modules). Assignments are saved under the HD programme.",
+  degreeTermBridgingModulesEmpty:
+    "No bridging modules offered for this term yet.",
   moduleTeacherAssignmentDescription:
     "Select a programme to load proposed (default) teachers per module. Change teachers from the dropdown and save. New teachers are saved to the database and appear in the dropdown immediately.",
   loadModuleTeachers: "Load Modules",

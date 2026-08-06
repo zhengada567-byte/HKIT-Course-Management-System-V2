@@ -24,6 +24,8 @@ export type {
   TeacherRow,
   ModuleRow,
   ModuleUsesComputerFlag,
+  BridgingModuleOfferingStatus,
+  BridgingModuleOfferingRow,
   ModuleAdjustmentRow,
   ModuleEnrollmentRow,
   ModuleDefaultAssignmentRow,

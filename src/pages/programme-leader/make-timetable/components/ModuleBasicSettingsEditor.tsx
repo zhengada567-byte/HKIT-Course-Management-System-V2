@@ -18,6 +18,10 @@ import {
   upsertModuleDefaultAssignments,
   type ProgrammeModuleTeacherRow,
 } from "../../../../services/moduleDefaultAssignmentService";
+import {
+  listDegreeTermBridgingModuleTeacherRows,
+} from "../../../../services/bridgingModuleService";
+import { isDegreeProgrammeByCode } from "../../../../services/studyPlanService";
 import { syncTeachersFromModuleDefaultsToTimetable } from "../../../../services/moduleDefaultTimetableSyncService";
 import {
   isModuleOfferingActive,
@@ -29,13 +33,34 @@ import { listTeachers, upsertTeacher } from "../../../../services/teacherService
 import { listTeacherAvailabilitySaved } from "../../../../services/timetableTeacherAvailabilityService";
 import { InstanceTeacherSelect } from "./InstanceTeacherSelect";
 import { TeacherAvailabilityModal } from "./TeacherAvailabilityModal";
-import type { EmploymentType, ModuleTerm, ProgrammeRow, TeacherRow, TeachingMode, TeachingStatus } from "../../../../types";
+import { AddBridgingModuleModal } from "./AddBridgingModuleModal";
+import type {
+  EmploymentType,
+  ModuleRow,
+  ModuleTerm,
+  ProgrammeRow,
+  TeacherRow,
+  TeachingMode,
+  TeachingStatus,
+} from "../../../../types";
 
 const moduleTermOptions: ModuleTerm[] = ["Sep", "Feb", "Jun"];
 const modeOptions: TeachingMode[] = ["Day", "Night", "Saturday"];
 
 function modeOptionLabel(mode: TeachingMode) {
   return mode === "Saturday" ? "Sat" : mode;
+}
+
+/** Draft key includes programme so Degree + HD bridging rows never collide. */
+function rowDraftKey(
+  module: Pick<ModuleRow, "module_code" | "stream_code" | "programme_code">
+) {
+  return `${String(module.programme_code ?? "")
+    .trim()
+    .toUpperCase()}|${moduleDefaultAssignmentKey(
+    module.module_code,
+    module.stream_code
+  )}`;
 }
 
 function modeFromAssignment(
@@ -86,10 +111,7 @@ function proposedTeachersFromRows(
   const names = new Set<string>();
 
   for (const row of rows) {
-    const key = moduleDefaultAssignmentKey(
-      row.module.module_code,
-      row.module.stream_code
-    );
+    const key = rowDraftKey(row.module);
     const draft = drafts[key] ?? buildDraftFromRow(row, teachers, true);
     const teacherName = String(draft.teacherName ?? "").trim();
 
@@ -140,7 +162,12 @@ export function ModuleBasicSettingsEditor({
   const [programmeCode, setProgrammeCode] = useState(initialProgrammeCode);
   const [moduleTerm, setModuleTerm] = useState<ModuleTerm>(initialModuleTerm);
   const [rows, setRows] = useState<ProgrammeModuleTeacherRow[]>([]);
+  const [bridgingRows, setBridgingRows] = useState<ProgrammeModuleTeacherRow[]>(
+    []
+  );
   const [drafts, setDrafts] = useState<Record<string, ModuleTeacherDraft>>({});
+  const [showDegreeBridgingSection, setShowDegreeBridgingSection] =
+    useState(false);
   const [teachers, setTeachers] = useState<TeacherRow[]>([]);
   const [savedAvailabilityTeachers, setSavedAvailabilityTeachers] = useState<
     Set<string>
@@ -151,6 +178,7 @@ export function ModuleBasicSettingsEditor({
   const [creatingTeacher, setCreatingTeacher] = useState(false);
   const [showNewTeacherForm, setShowNewTeacherForm] = useState(false);
   const [teacherAvailabilityOpen, setTeacherAvailabilityOpen] = useState(false);
+  const [addBridgingOpen, setAddBridgingOpen] = useState(false);
   const [newTeacherForm, setNewTeacherForm] = useState(
     buildEmptyTeacherForm(initialAcademicYear)
   );
@@ -190,12 +218,21 @@ export function ModuleBasicSettingsEditor({
   );
 
   const teachersOnPage = useMemo(
-    () => proposedTeachersFromRows(rows, drafts, teachers),
-    [rows, drafts, teachers]
+    () =>
+      proposedTeachersFromRows(
+        [...rows, ...bridgingRows],
+        drafts,
+        teachers
+      ),
+    [rows, bridgingRows, drafts, teachers]
   );
 
   const canOpenTeacherAvailability =
-    Boolean(programmeCode && moduleTerm) && rows.length > 0 && !loading;
+    Boolean(programmeCode && moduleTerm) &&
+    (rows.length > 0 || bridgingRows.length > 0) &&
+    !loading;
+
+  const hasAssignableRows = rows.length > 0 || bridgingRows.length > 0;
 
   async function loadTeachers(year = selectedAcademicYear) {
     const data = await listTeachers(year);
@@ -240,6 +277,7 @@ export function ModuleBasicSettingsEditor({
 
     try {
       const teacherRows = await listTeachers(selectedAcademicYear);
+      const isDegree = await isDegreeProgrammeByCode(programmeCode);
 
       const data = await listProgrammeModuleTeacherRows({
         academicYear: selectedAcademicYear,
@@ -253,27 +291,80 @@ export function ModuleBasicSettingsEditor({
         moduleTerm,
       });
 
-      const nextDrafts = Object.fromEntries(
-        data.map((row) => [
-          moduleDefaultAssignmentKey(row.module.module_code, row.module.stream_code),
-          buildDraftFromRow(
-            row,
-            teacherRows,
-            isModuleOfferingActive(offeringMap, row.module.id)
-          ),
-        ])
-      );
+      let nextBridgingRows: ProgrammeModuleTeacherRow[] = [];
+      const bridgingOfferingByModuleId = new Map<string, boolean>();
+
+      if (isDegree) {
+        nextBridgingRows = await listDegreeTermBridgingModuleTeacherRows({
+          academicYear: selectedAcademicYear,
+          degreeProgrammeCode: programmeCode,
+          moduleTerm,
+        });
+
+        const hdProgrammes = Array.from(
+          new Set(
+            nextBridgingRows.map((row) =>
+              String(row.module.programme_code ?? "").trim()
+            )
+          )
+        ).filter(Boolean);
+
+        const hdOfferingMaps = await Promise.all(
+          hdProgrammes.map((hdProgrammeCode) =>
+            loadPlanningOfferingByModuleId({
+              academicYear: selectedAcademicYear,
+              programmeCode: hdProgrammeCode,
+              moduleTerm,
+            })
+          )
+        );
+
+        for (const map of hdOfferingMaps) {
+          for (const [moduleId, entry] of map.entries()) {
+            bridgingOfferingByModuleId.set(moduleId, entry.offeringActive);
+          }
+        }
+      }
+
+      const nextDrafts: Record<string, ModuleTeacherDraft> = {};
+
+      for (const row of data) {
+        nextDrafts[rowDraftKey(row.module)] = buildDraftFromRow(
+          row,
+          teacherRows,
+          isModuleOfferingActive(offeringMap, row.module.id)
+        );
+      }
+
+      for (const row of nextBridgingRows) {
+        const offeringActive = bridgingOfferingByModuleId.has(row.module.id)
+          ? Boolean(bridgingOfferingByModuleId.get(row.module.id))
+          : true;
+        nextDrafts[rowDraftKey(row.module)] = buildDraftFromRow(
+          row,
+          teacherRows,
+          offeringActive
+        );
+      }
 
       setTeachers(teacherRows);
       setRows(data);
+      setBridgingRows(nextBridgingRows);
       setDrafts(nextDrafts);
+      setShowDegreeBridgingSection(isDegree);
 
-      const teacherNames = proposedTeachersFromRows(data, nextDrafts, teacherRows);
+      const teacherNames = proposedTeachersFromRows(
+        [...data, ...nextBridgingRows],
+        nextDrafts,
+        teacherRows
+      );
       await refreshAvailabilityStatus(teacherNames);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Load failed.");
       setRows([]);
+      setBridgingRows([]);
       setDrafts({});
+      setShowDegreeBridgingSection(false);
       setSavedAvailabilityTeachers(new Set());
     } finally {
       setLoading(false);
@@ -307,7 +398,9 @@ export function ModuleBasicSettingsEditor({
   useEffect(() => {
     setNewTeacherForm(buildEmptyTeacherForm(selectedAcademicYear));
     setRows([]);
+    setBridgingRows([]);
     setDrafts({});
+    setShowDegreeBridgingSection(false);
     setSavedAvailabilityTeachers(new Set());
     void loadTeachers(selectedAcademicYear);
   }, [selectedAcademicYear]);
@@ -395,12 +488,9 @@ export function ModuleBasicSettingsEditor({
     }
   }
 
-  function buildDraftUpdatesForLoadedRows() {
-    return rows.map((row) => {
-      const key = moduleDefaultAssignmentKey(
-        row.module.module_code,
-        row.module.stream_code
-      );
+  function buildDraftUpdatesForRows(sourceRows: ProgrammeModuleTeacherRow[]) {
+    return sourceRows.map((row) => {
+      const key = rowDraftKey(row.module);
       const draft = drafts[key] ?? buildDraftFromRow(row, teachers, true);
 
       return {
@@ -419,7 +509,7 @@ export function ModuleBasicSettingsEditor({
   }
 
   async function handleSaveAll() {
-    if (!programmeCode || rows.length === 0) return;
+    if (!programmeCode || !hasAssignableRows) return;
 
     if (!canEditAssignments) {
       setMessage(
@@ -439,21 +529,53 @@ export function ModuleBasicSettingsEditor({
     setMessage("");
 
     try {
-      const prepared = buildDraftUpdatesForLoadedRows();
-      const payload = prepared.map((row) => row.input);
+      const normalPrepared = buildDraftUpdatesForRows(rows);
+      const bridgingPrepared = buildDraftUpdatesForRows(bridgingRows);
+      const payload = [...normalPrepared, ...bridgingPrepared].map(
+        (row) => row.input
+      );
 
       await upsertModuleDefaultAssignments(payload);
-      await syncModuleOfferingsFromTeacherAssignment({
-        academicYear: selectedAcademicYear,
-        programmeCode,
-        moduleTerm,
-        createdBy: user.id,
-        modules: rows.map((row) => row.module),
-        offerings: prepared.map((row) => ({
-          moduleId: row.module.id,
-          offering: row.draft.offering,
-        })),
-      });
+
+      if (normalPrepared.length > 0) {
+        await syncModuleOfferingsFromTeacherAssignment({
+          academicYear: selectedAcademicYear,
+          programmeCode,
+          moduleTerm,
+          createdBy: user.id,
+          modules: rows.map((row) => row.module),
+          offerings: normalPrepared.map((row) => ({
+            moduleId: row.module.id,
+            offering: row.draft.offering,
+          })),
+        });
+      }
+
+      const bridgingByProgramme = new Map<
+        string,
+        typeof bridgingPrepared
+      >();
+      for (const item of bridgingPrepared) {
+        const hdProgramme = String(item.module.programme_code ?? "").trim();
+        if (!hdProgramme) continue;
+        const list = bridgingByProgramme.get(hdProgramme) ?? [];
+        list.push(item);
+        bridgingByProgramme.set(hdProgramme, list);
+      }
+
+      for (const [hdProgramme, items] of bridgingByProgramme.entries()) {
+        await syncModuleOfferingsFromTeacherAssignment({
+          academicYear: selectedAcademicYear,
+          programmeCode: hdProgramme,
+          moduleTerm,
+          createdBy: user.id,
+          modules: items.map((row) => row.module),
+          offerings: items.map((row) => ({
+            moduleId: row.module.id,
+            offering: row.draft.offering,
+          })),
+        });
+      }
 
       await loadRows();
       setMessage(
@@ -467,7 +589,7 @@ export function ModuleBasicSettingsEditor({
   }
 
   async function handleUpdateTimetable() {
-    if (!programmeCode || rows.length === 0) return;
+    if (!programmeCode || !hasAssignableRows) return;
 
     if (!canEditAssignments) {
       setMessage(
@@ -487,7 +609,10 @@ export function ModuleBasicSettingsEditor({
     setMessage("");
 
     try {
-      const prepared = buildDraftUpdatesForLoadedRows();
+      const prepared = [
+        ...buildDraftUpdatesForRows(rows),
+        ...buildDraftUpdatesForRows(bridgingRows),
+      ];
       const syncResult = await syncTeachersFromModuleDefaultsToTimetable({
         academicYear: selectedAcademicYear,
         updates: prepared.map((row) => ({
@@ -609,7 +734,9 @@ export function ModuleBasicSettingsEditor({
               onChange={(event) => {
                 setProgrammeCode(event.target.value);
                 setRows([]);
+                setBridgingRows([]);
                 setDrafts({});
+                setShowDegreeBridgingSection(false);
               }}
               disabled={isBusy}
             >
@@ -631,7 +758,9 @@ export function ModuleBasicSettingsEditor({
               onChange={(event) => {
                 setModuleTerm(event.target.value as ModuleTerm);
                 setRows([]);
+                setBridgingRows([]);
                 setDrafts({});
+                setShowDegreeBridgingSection(false);
               }}
               disabled={isBusy}
             >
@@ -651,6 +780,19 @@ export function ModuleBasicSettingsEditor({
               onClick={() => void loadRows()}
             >
               {loading ? t.loading : t.loadModuleTeachers}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary whitespace-nowrap"
+              disabled={isBusy || !programmeCode || isReadOnlyYear}
+              title={t.addBridgingModule}
+              onClick={() => {
+                setMessage("");
+                setAddBridgingOpen(true);
+              }}
+            >
+              {t.addBridgingModule}
             </button>
 
             {!hideTeacherAvailabilityButton && (
@@ -684,7 +826,7 @@ export function ModuleBasicSettingsEditor({
             <button
               type="button"
               className="btn btn-secondary whitespace-nowrap"
-              disabled={controlsDisabled || rows.length === 0}
+              disabled={controlsDisabled || !hasAssignableRows}
               onClick={() => void handleSaveAll()}
             >
               {saving ? t.loading : t.saveAll}
@@ -693,7 +835,7 @@ export function ModuleBasicSettingsEditor({
             <button
               type="button"
               className="btn btn-secondary whitespace-nowrap"
-              disabled={controlsDisabled || rows.length === 0}
+              disabled={controlsDisabled || !hasAssignableRows}
               title={t.moduleBasicSettingsUpdateTimetableHint}
               onClick={() => void handleUpdateTimetable()}
             >
@@ -795,136 +937,301 @@ export function ModuleBasicSettingsEditor({
 
       {loading ? (
         <LoadingState />
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-slate-500">
-          {programmeCode
-            ? t.moduleTeacherAssignmentEmpty
-            : t.moduleTeacherAssignmentSelectProgramme}
-        </p>
       ) : (
-        <TableViewport size="courseSearch" className="min-h-[24rem] w-full">
-          <table className="data-table min-w-max text-sm">
-            <thead>
-              <tr>
-                <th>{t.moduleCode}</th>
-                <th>{t.moduleName}</th>
-                <th>{t.moduleTerm}</th>
-                <th>{t.programmeStream}</th>
-                <th>{t.proposedTeacher}</th>
-                <th>{t.teachingStatusForThisModule}</th>
-                <th>{t.moduleMode}</th>
-                <th>{t.moduleYear}</th>
-                <th>{t.moduleOfferingThisYear}</th>
-                <th>{t.teacherAvailability}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const key = moduleDefaultAssignmentKey(
-                  row.module.module_code,
-                  row.module.stream_code
-                );
-                const draft = drafts[key] ?? buildDraftFromRow(row, teachers, true);
-                const teacherName = String(draft.teacherName ?? "").trim();
-                const showAvailabilityStatus =
-                  teacherName &&
-                  !isTBC(teacherName) &&
-                  !isTeacherExcludedFromScheduleDropdown(teacherName);
-                const availabilitySaved =
-                  showAvailabilityStatus &&
-                  savedAvailabilityTeachers.has(teacherName);
-
-                return (
-                  <tr key={key}>
-                    <td className="font-mono whitespace-nowrap">
-                      {row.module.module_code}
-                    </td>
-                    <td className="whitespace-nowrap">
-                      {row.module.module_name ?? "-"}
-                    </td>
-                    <td className="whitespace-nowrap">{row.module.module_term}</td>
-                    <td className="whitespace-nowrap">
-                      {normalizeStream(row.module.stream_code)}
-                    </td>
-                    <td>
-                      <InstanceTeacherSelect
-                        value={draft.teacherName}
-                        teachers={sortedTeachers}
-                        disabled={!canEditAssignments}
-                        onChange={(nextTeacherName) =>
-                          handleTeacherChange(key, nextTeacherName)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <select
-                        className="form-select min-w-20"
-                        value={draft.teachingStatus}
-                        title={t.teachingStatusForThisModule}
-                        disabled={!canEditAssignments}
-                        onChange={(event) =>
-                          updateDraft(key, {
-                            teachingStatus: event.target.value as TeachingStatus,
-                          })
-                        }
-                      >
-                        <option value="PT">PT</option>
-                        <option value="FT">FT</option>
-                      </select>
-                    </td>
-                    <td>
-                      <select
-                        className="form-select min-w-24"
-                        value={draft.mode}
-                        title={t.moduleMode}
-                        disabled={!canEditAssignments}
-                        onChange={(event) =>
-                          updateDraft(key, {
-                            mode: event.target.value as TeachingMode,
-                          })
-                        }
-                      >
-                        {modeOptions.map((mode) => (
-                          <option key={mode} value={mode}>
-                            {modeOptionLabel(mode)}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="whitespace-nowrap">
-                      {String(row.module.module_year ?? "").trim() || "—"}
-                    </td>
-                    <td>
-                      <select
-                        className="form-select min-w-28"
-                        value={draft.offering ? "yes" : "no"}
-                        title={t.moduleOfferingThisYear}
-                        disabled={!canEditAssignments}
-                        onChange={(event) =>
-                          updateDraft(key, {
-                            offering: event.target.value === "yes",
-                          })
-                        }
-                      >
-                        <option value="yes">{t.moduleOfferingYes}</option>
-                        <option value="no">{t.moduleOfferingNo}</option>
-                      </select>
-                    </td>
-                    <td className="whitespace-nowrap">
-                      {!showAvailabilityStatus ? (
-                        <span className="text-slate-400">—</span>
-                      ) : availabilitySaved ? (
-                        <span className="text-emerald-700">{t.teacherAvailabilitySaved}</span>
-                      ) : (
-                        <span className="text-amber-700">{t.teacherAvailabilityMissing}</span>
-                      )}
-                    </td>
+        <div className="space-y-6">
+          {rows.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              {programmeCode
+                ? t.moduleTeacherAssignmentEmpty
+                : t.moduleTeacherAssignmentSelectProgramme}
+            </p>
+          ) : (
+            <TableViewport size="courseSearch" className="min-h-[24rem] w-full">
+              <table className="data-table min-w-max text-sm">
+                <thead>
+                  <tr>
+                    <th>{t.moduleCode}</th>
+                    <th>{t.moduleName}</th>
+                    <th>{t.moduleTerm}</th>
+                    <th>{t.programmeStream}</th>
+                    <th>{t.proposedTeacher}</th>
+                    <th>{t.teachingStatusForThisModule}</th>
+                    <th>{t.moduleMode}</th>
+                    <th>{t.moduleYear}</th>
+                    <th>{t.moduleOfferingThisYear}</th>
+                    <th>{t.teacherAvailability}</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </TableViewport>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const key = rowDraftKey(row.module);
+                    const draft =
+                      drafts[key] ?? buildDraftFromRow(row, teachers, true);
+                    const teacherName = String(draft.teacherName ?? "").trim();
+                    const showAvailabilityStatus =
+                      teacherName &&
+                      !isTBC(teacherName) &&
+                      !isTeacherExcludedFromScheduleDropdown(teacherName);
+                    const availabilitySaved =
+                      showAvailabilityStatus &&
+                      savedAvailabilityTeachers.has(teacherName);
+
+                    return (
+                      <tr key={key}>
+                        <td className="font-mono whitespace-nowrap">
+                          {row.module.module_code}
+                        </td>
+                        <td className="whitespace-nowrap">
+                          {row.module.module_name ?? "-"}
+                        </td>
+                        <td className="whitespace-nowrap">
+                          {row.module.module_term}
+                        </td>
+                        <td className="whitespace-nowrap">
+                          {normalizeStream(row.module.stream_code)}
+                        </td>
+                        <td>
+                          <InstanceTeacherSelect
+                            value={draft.teacherName}
+                            teachers={sortedTeachers}
+                            disabled={!canEditAssignments}
+                            onChange={(nextTeacherName) =>
+                              handleTeacherChange(key, nextTeacherName)
+                            }
+                          />
+                        </td>
+                        <td>
+                          <select
+                            className="form-select min-w-20"
+                            value={draft.teachingStatus}
+                            title={t.teachingStatusForThisModule}
+                            disabled={!canEditAssignments}
+                            onChange={(event) =>
+                              updateDraft(key, {
+                                teachingStatus: event.target
+                                  .value as TeachingStatus,
+                              })
+                            }
+                          >
+                            <option value="PT">PT</option>
+                            <option value="FT">FT</option>
+                          </select>
+                        </td>
+                        <td>
+                          <select
+                            className="form-select min-w-24"
+                            value={draft.mode}
+                            title={t.moduleMode}
+                            disabled={!canEditAssignments}
+                            onChange={(event) =>
+                              updateDraft(key, {
+                                mode: event.target.value as TeachingMode,
+                              })
+                            }
+                          >
+                            {modeOptions.map((mode) => (
+                              <option key={mode} value={mode}>
+                                {modeOptionLabel(mode)}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="whitespace-nowrap">
+                          {String(row.module.module_year ?? "").trim() || "—"}
+                        </td>
+                        <td>
+                          <select
+                            className="form-select min-w-28"
+                            value={draft.offering ? "yes" : "no"}
+                            title={t.moduleOfferingThisYear}
+                            disabled={!canEditAssignments}
+                            onChange={(event) =>
+                              updateDraft(key, {
+                                offering: event.target.value === "yes",
+                              })
+                            }
+                          >
+                            <option value="yes">{t.moduleOfferingYes}</option>
+                            <option value="no">{t.moduleOfferingNo}</option>
+                          </select>
+                        </td>
+                        <td className="whitespace-nowrap">
+                          {!showAvailabilityStatus ? (
+                            <span className="text-slate-400">—</span>
+                          ) : availabilitySaved ? (
+                            <span className="text-emerald-700">
+                              {t.teacherAvailabilitySaved}
+                            </span>
+                          ) : (
+                            <span className="text-amber-700">
+                              {t.teacherAvailabilityMissing}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </TableViewport>
+          )}
+
+          {showDegreeBridgingSection && (
+            <section className="space-y-2">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">
+                  {t.degreeTermBridgingModulesTitle}
+                </h3>
+                <p className="text-sm text-slate-600">
+                  {t.degreeTermBridgingModulesHint.replace(
+                    "{term}",
+                    moduleTerm
+                  )}
+                </p>
+              </div>
+
+              {bridgingRows.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+                  {t.degreeTermBridgingModulesEmpty}
+                </p>
+              ) : (
+                <TableViewport size="courseSearch" className="min-h-[12rem] w-full">
+                  <table className="data-table min-w-max text-sm">
+                    <thead>
+                      <tr>
+                        <th>{t.moduleCode}</th>
+                        <th>{t.moduleName}</th>
+                        <th>{t.moduleTerm}</th>
+                        <th>{t.programmeCode}</th>
+                        <th>{t.programmeStream}</th>
+                        <th>{t.proposedTeacher}</th>
+                        <th>{t.teachingStatusForThisModule}</th>
+                        <th>{t.moduleMode}</th>
+                        <th>{t.moduleYear}</th>
+                        <th>{t.moduleOfferingThisYear}</th>
+                        <th>{t.teacherAvailability}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bridgingRows.map((row) => {
+                        const key = rowDraftKey(row.module);
+                        const draft =
+                          drafts[key] ?? buildDraftFromRow(row, teachers, true);
+                        const teacherName = String(draft.teacherName ?? "").trim();
+                        const showAvailabilityStatus =
+                          teacherName &&
+                          !isTBC(teacherName) &&
+                          !isTeacherExcludedFromScheduleDropdown(teacherName);
+                        const availabilitySaved =
+                          showAvailabilityStatus &&
+                          savedAvailabilityTeachers.has(teacherName);
+
+                        return (
+                          <tr key={key}>
+                            <td className="font-mono whitespace-nowrap">
+                              {row.module.module_code}
+                            </td>
+                            <td className="whitespace-nowrap">
+                              {row.module.module_name ?? "-"}
+                            </td>
+                            <td className="whitespace-nowrap">
+                              {row.module.module_term}
+                            </td>
+                            <td className="whitespace-nowrap">
+                              {row.module.programme_code}
+                            </td>
+                            <td className="whitespace-nowrap">
+                              {normalizeStream(row.module.stream_code)}
+                            </td>
+                            <td>
+                              <InstanceTeacherSelect
+                                value={draft.teacherName}
+                                teachers={sortedTeachers}
+                                disabled={!canEditAssignments}
+                                onChange={(nextTeacherName) =>
+                                  handleTeacherChange(key, nextTeacherName)
+                                }
+                              />
+                            </td>
+                            <td>
+                              <select
+                                className="form-select min-w-20"
+                                value={draft.teachingStatus}
+                                title={t.teachingStatusForThisModule}
+                                disabled={!canEditAssignments}
+                                onChange={(event) =>
+                                  updateDraft(key, {
+                                    teachingStatus: event.target
+                                      .value as TeachingStatus,
+                                  })
+                                }
+                              >
+                                <option value="PT">PT</option>
+                                <option value="FT">FT</option>
+                              </select>
+                            </td>
+                            <td>
+                              <select
+                                className="form-select min-w-24"
+                                value={draft.mode}
+                                title={t.moduleMode}
+                                disabled={!canEditAssignments}
+                                onChange={(event) =>
+                                  updateDraft(key, {
+                                    mode: event.target.value as TeachingMode,
+                                  })
+                                }
+                              >
+                                {modeOptions.map((mode) => (
+                                  <option key={mode} value={mode}>
+                                    {modeOptionLabel(mode)}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="whitespace-nowrap">
+                              {String(row.module.module_year ?? "").trim() ||
+                                "—"}
+                            </td>
+                            <td>
+                              <select
+                                className="form-select min-w-28"
+                                value={draft.offering ? "yes" : "no"}
+                                title={t.moduleOfferingThisYear}
+                                disabled={!canEditAssignments}
+                                onChange={(event) =>
+                                  updateDraft(key, {
+                                    offering: event.target.value === "yes",
+                                  })
+                                }
+                              >
+                                <option value="yes">{t.moduleOfferingYes}</option>
+                                <option value="no">{t.moduleOfferingNo}</option>
+                              </select>
+                            </td>
+                            <td className="whitespace-nowrap">
+                              {!showAvailabilityStatus ? (
+                                <span className="text-slate-400">—</span>
+                              ) : availabilitySaved ? (
+                                <span className="text-emerald-700">
+                                  {t.teacherAvailabilitySaved}
+                                </span>
+                              ) : (
+                                <span className="text-amber-700">
+                                  {t.teacherAvailabilityMissing}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </TableViewport>
+              )}
+            </section>
+          )}
+        </div>
       )}
 
       {!hideTeacherAvailabilityButton && (
@@ -936,6 +1243,19 @@ export function ModuleBasicSettingsEditor({
           readOnly={isReadOnlyYear}
         />
       )}
+
+      <AddBridgingModuleModal
+        open={addBridgingOpen}
+        onClose={() => setAddBridgingOpen(false)}
+        academicYear={selectedAcademicYear}
+        programmeCode={programmeCode}
+        moduleTerm={moduleTerm}
+        onCompleted={() => {
+          if (programmeCode) {
+            void loadRows();
+          }
+        }}
+      />
     </div>
   );
 }

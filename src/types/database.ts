@@ -86,6 +86,26 @@ export interface ModuleRow {
   updated_at: string;
 }
 
+/** Term-scoped short bridging offering (e.g. GS401B from GS401). */
+export type BridgingModuleOfferingStatus = "active" | "inactive";
+
+export interface BridgingModuleOfferingRow {
+  id: string;
+  academic_year: string;
+  module_term: ModuleTerm;
+  parent_module_id: string;
+  bridging_module_id: string;
+  parent_module_code: string;
+  bridging_module_code: string;
+  programme_code: string;
+  stream_code: string;
+  status: BridgingModuleOfferingStatus;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ModuleAdjustmentRow {
   id: string;
   module_id: string;
