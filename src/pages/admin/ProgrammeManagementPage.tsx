@@ -13,6 +13,7 @@ import {
   type ProgrammeInput,
 } from "../../services/programmeService";
 import type { ProgrammeRow } from "../../types";
+import { PROGRAMME_TYPE_OPTIONS } from "../../types/common";
 
 const emptyForm: ProgrammeInput = {
   programme_type: "",
@@ -215,8 +216,11 @@ export function ProgrammeManagementPage() {
                   }
                 >
                   <option value="">Select</option>
-                  <option value="HD">HD</option>
-                  <option value="Degree">Degree</option>
+                  {PROGRAMME_TYPE_OPTIONS.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
                 </select>
               </div>
 

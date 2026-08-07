@@ -243,6 +243,78 @@ export async function deleteTimetableSessionsForInstanceCodes(params: {
   });
 }
 
+/**
+ * Weekly date changes replace sessions without L/T kinds — clear preserve_kinds
+ * so the next Daily generate can rebuild labels from contact hours.
+ */
+export async function clearDailyLabelPlanLocksForModules(params: {
+  timetableModuleIds?: string[];
+  moduleInstanceCodes?: string[];
+}) {
+  const ids = Array.from(
+    new Set(
+      (params.timetableModuleIds ?? [])
+        .map((id) => String(id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+  const codes = Array.from(
+    new Set(
+      (params.moduleInstanceCodes ?? [])
+        .map((code) => String(code ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (ids.length === 0 && codes.length === 0) return;
+
+  const now = new Date().toISOString();
+
+  if (ids.length > 0) {
+    for (const batch of chunkValues(ids, 100)) {
+      const { error } = await supabase
+        .from("timetable_modules")
+        .update({
+          daily_label_plan_override: null,
+          updated_at: now,
+        })
+        .in("id", batch);
+
+      if (error) {
+        if (
+          /daily_label_plan_override/i.test(error.message) ||
+          error.code === "42703"
+        ) {
+          return;
+        }
+        throw error;
+      }
+    }
+  }
+
+  if (codes.length > 0) {
+    for (const batch of chunkValues(codes, 100)) {
+      const { error } = await supabase
+        .from("timetable_modules")
+        .update({
+          daily_label_plan_override: null,
+          updated_at: now,
+        })
+        .in("module_instance_code", batch);
+
+      if (error) {
+        if (
+          /daily_label_plan_override/i.test(error.message) ||
+          error.code === "42703"
+        ) {
+          return;
+        }
+        throw error;
+      }
+    }
+  }
+}
+
 function sessionInsertIdentityKey(row: {
   timetable_module_id: string;
   session_date: string;
@@ -309,6 +381,11 @@ async function insertTimetableSessionBatches(payload: Array<Record<string, unkno
       moduleInstanceCodes: instanceCodes,
     });
 
+    await clearDailyLabelPlanLocksForModules({
+      timetableModuleIds: moduleIds,
+      moduleInstanceCodes: instanceCodes,
+    });
+
     const { error: retryError } = await supabase
       .from("timetable_sessions")
       .insert(batch);
@@ -359,6 +436,11 @@ export async function createTimetableSessions(params: {
 
   const moduleIds = payload.map((row) => row.timetable_module_id);
   const instanceCodes = payload.map((row) => row.module_instance_code);
+
+  await clearDailyLabelPlanLocksForModules({
+    timetableModuleIds: moduleIds,
+    moduleInstanceCodes: instanceCodes,
+  });
 
   await deleteTimetableSessionsForModuleIds({ timetableModuleIds: moduleIds });
   await deleteTimetableSessionsForInstanceCodes({
@@ -744,6 +826,10 @@ export async function deleteWeeklyPlacementSessions(params: {
 
   const startNorm = normalizeSessionTime(params.startTime);
 
+  await clearDailyLabelPlanLocksForModules({
+    moduleInstanceCodes: [code],
+  });
+
   for (const batch of chunkValues(dates, 50)) {
     const { error } = await supabase
       .from("timetable_sessions")
@@ -791,6 +877,14 @@ export async function insertWeeklyPlacementSessions(params: {
   if (payload.length === 0) return;
 
   await ensureDefaultTimetableClassrooms();
+
+  await clearDailyLabelPlanLocksForModules({
+    timetableModuleIds: payload.map((row) =>
+      String(row.timetable_module_id ?? "").trim()
+    ),
+    moduleInstanceCodes: payload.map((row) => row.module_instance_code),
+  });
+
   await insertTimetableSessionBatches(payload);
 }
 

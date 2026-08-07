@@ -17,6 +17,8 @@ export type {
   PlanningOfferingStatus,
 } from "./common";
 
+export { PROGRAMME_TYPE_OPTIONS } from "./common";
+
 export type {
   AppUserRow,
   AppSettingRow,

@@ -3,6 +3,7 @@ import type { TimetableClassroomRow, TimetableScheduleTerm, TimetableSessionRow 
 import {
   buildTeachingDatesForWeekday,
   createTimetableSessions,
+  clearDailyLabelPlanLocksForModules,
   deleteTimetableSessionsForInstanceCodes,
   deleteTimetableSessionsForModuleIds,
   effectiveRoomCapacity,
@@ -804,6 +805,10 @@ export async function autoScheduleInstances(params: {
   }
 
   if (forceReschedule && reschedulingModuleIds.size > 0) {
+    await clearDailyLabelPlanLocksForModules({
+      timetableModuleIds: Array.from(reschedulingModuleIds),
+      moduleInstanceCodes: Array.from(reschedulingInstanceCodes),
+    });
     await deleteTimetableSessionsForModuleIds({
       timetableModuleIds: Array.from(reschedulingModuleIds),
     });

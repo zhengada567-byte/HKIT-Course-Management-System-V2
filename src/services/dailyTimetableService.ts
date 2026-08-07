@@ -11,6 +11,7 @@ import {
   buildPreserveKindLabelAssignments,
   isDailyLabelPlanLocked,
   parseDailyLabelPlanOverride,
+  resolveSessionKindForRelabel,
   type DailyLabelPlanOverride,
 } from "../lib/dailyTimetableLabelOverride";
 import {
@@ -969,36 +970,51 @@ export async function applyDailyLabelsToTimetableModule(
   const forceChronological = options?.forceChronological === true;
 
   if (!forceChronological && override?.strategy === "preserve_kinds") {
-    const assignments = buildPreserveKindLabelAssignments({
-      sessions: studyWeekSessions.map((row) => ({
-        id: row.id,
-        status: row.status as TimetableSessionStatus,
-        session_date: normalizeSessionDate(row.session_date),
-        start_time: normalizeSessionTime(row.start_time),
-        session_kind: row.session_kind,
-        session_label: row.session_label,
-      })),
+    const hasPreservableKind = studyWeekSessions.some((row) => {
+      if (row.status === "cancel") return false;
+      return (
+        resolveSessionKindForRelabel({
+          session_kind: row.session_kind,
+          session_label: row.session_label,
+        }) != null
+      );
     });
 
-    const now = new Date().toISOString();
-    let updatedCount = 0;
+    if (hasPreservableKind) {
+      const assignments = buildPreserveKindLabelAssignments({
+        sessions: studyWeekSessions.map((row) => ({
+          id: row.id,
+          status: row.status as TimetableSessionStatus,
+          session_date: normalizeSessionDate(row.session_date),
+          start_time: normalizeSessionTime(row.start_time),
+          session_kind: row.session_kind,
+          session_label: row.session_label,
+        })),
+      });
 
-    for (const assignment of assignments) {
-      const { error } = await supabase
-        .from("timetable_sessions")
-        .update({
-          session_label: assignment.session_label,
-          session_kind: assignment.session_kind,
-          session_number: assignment.session_number,
-          updated_at: now,
-        })
-        .eq("id", assignment.id);
+      const now = new Date().toISOString();
+      let updatedCount = 0;
 
-      if (error) throw error;
-      updatedCount += 1;
+      for (const assignment of assignments) {
+        const { error } = await supabase
+          .from("timetable_sessions")
+          .update({
+            session_label: assignment.session_label,
+            session_kind: assignment.session_kind,
+            session_number: assignment.session_number,
+            updated_at: now,
+          })
+          .eq("id", assignment.id);
+
+        if (error) throw error;
+        updatedCount += 1;
+      }
+
+      return { updatedCount };
     }
 
-    return { updatedCount };
+    // Weekly reschedule left lock but no L/T kinds — fall back to contact hours.
+    await setDailyLabelPlanOverride(timetableModuleId, null);
   }
 
   const weekday = inferWeekdayFromSessions(

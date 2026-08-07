@@ -28,7 +28,15 @@ export type PlanningOfferingStatus = "active" | "excluded";
 
 export type TeachingMode = "Day" | "Night" | "Saturday";
 
-export type ProgrammeType = "HD" | "Degree" | string;
+export type ProgrammeType = "HD" | "Degree" | "MSC" | "QFL3" | string;
+
+/** Canonical programme type values for admin / filters. */
+export const PROGRAMME_TYPE_OPTIONS = [
+  "HD",
+  "Degree",
+  "MSC",
+  "QFL3",
+] as const;
 
 export interface SelectOption {
   label: string;

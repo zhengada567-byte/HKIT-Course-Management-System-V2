@@ -19,6 +19,7 @@ import {
   downloadStudyPlanCsv,
   type StudyPlanExportScope,
 } from "../../../../services/studyPlanExportService";
+import { PROGRAMME_TYPE_OPTIONS } from "../../../../types/common";
 
 interface Props {
   students: StudyPlanStudent[];
@@ -762,8 +763,11 @@ export default function StudentListTab({
                 disabled={exporting}
                 className="w-full rounded border px-3 py-2 text-sm"
               >
-                <option value="Degree">Degree</option>
-                <option value="HD">HD</option>
+                {PROGRAMME_TYPE_OPTIONS.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
               </select>
             </div>
           )}
