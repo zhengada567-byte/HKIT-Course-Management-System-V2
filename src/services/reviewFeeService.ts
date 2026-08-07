@@ -16,10 +16,21 @@ export type ProgrammeReviewFeeRow = {
   programme_code: string;
   fee_type: ProgrammeFeeType;
   amount: number;
+  validity_from_month: number | null;
+  validity_from_year: number | null;
+  validity_to_month: number | null;
+  validity_to_year: number | null;
   notes: string | null;
   updated_by: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ReviewValidityPeriod = {
+  fromMonth: number | null;
+  fromYear: number | null;
+  toMonth: number | null;
+  toYear: number | null;
 };
 
 function normalizeProgrammeCode(value: string) {
@@ -42,6 +53,28 @@ function parseAmount(value: number | string, field = "Amount") {
     throw new Error(`${field} must be a non-negative number.`);
   }
   return Math.round(n * 100) / 100;
+}
+
+function parseOptionalMonth(value: number | string | null | undefined) {
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return null;
+  }
+  const n = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isInteger(n) || n < 1 || n > 12) {
+    throw new Error("Month must be between 1 and 12.");
+  }
+  return n;
+}
+
+function parseOptionalYear(value: number | string | null | undefined) {
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return null;
+  }
+  const n = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isInteger(n) || n < 1990 || n > 2100) {
+    throw new Error("Year must be a valid 4-digit year.");
+  }
+  return n;
 }
 
 export async function listProgrammeReviewFees(params: {
@@ -69,10 +102,11 @@ export async function upsertProgrammeReviewFee(params: {
   programmeCode: string;
   feeType: ProgrammeFeeType;
   amount: number | string;
+  validity?: ReviewValidityPeriod | null;
   notes?: string | null;
   updatedBy?: string | null;
 }) {
-  const payload = {
+  const payload: Record<string, unknown> = {
     academic_year: normalizeAcademicYear(params.academicYear),
     programme_code: normalizeProgrammeCode(params.programmeCode),
     fee_type: normalizeFeeType(params.feeType),
@@ -81,6 +115,13 @@ export async function upsertProgrammeReviewFee(params: {
     updated_by: params.updatedBy ?? null,
     updated_at: new Date().toISOString(),
   };
+
+  if (params.feeType === "review" && params.validity) {
+    payload.validity_from_month = parseOptionalMonth(params.validity.fromMonth);
+    payload.validity_from_year = parseOptionalYear(params.validity.fromYear);
+    payload.validity_to_month = parseOptionalMonth(params.validity.toMonth);
+    payload.validity_to_year = parseOptionalYear(params.validity.toYear);
+  }
 
   const { data, error } = await supabase
     .from("programme_review_fees")

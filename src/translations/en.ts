@@ -156,7 +156,7 @@ export const en = {
   guideAccountHrReviewFees:
     "By programme and academic year: enter review, registration, annual audit (AR to NCR), or periodic fees (tab switch).",
   guideAccountHrScholarshipExpenses:
-    "For HDBA / HDHC / HDC: enter Y1 and Y2 HKIT DAE articulation headcounts; total = (Y1+Y2) × $10,000.",
+    "List all HD programmes. Defaults: HDBA / HDC / HDHC = $10,000; HDEE / HDCI = $0 per student / year (editable). Total = (Y1+Y2) × rate.",
   guideAccountHrReferralScheme:
     "Enter Referral Scheme amounts manually by programme and term.",
   guideAccountHrSspMiscCosts:
@@ -246,7 +246,7 @@ export const en = {
   reviewFeesDescription:
     "Enter review, registration, annual audit (AR to NCR), or periodic fees manually by programme for each academic year.",
   reviewFeesHint:
-    "Select an academic year, switch fee type tabs, then enter and save the amount for each programme.",
+    "Select an academic year, switch fee type tabs, then enter and save the amount for each programme. On Review fee, also enter the validity period (from month/year to month/year). Saving HDBA copies fee and validity to other HD programmes (editable afterwards).",
   reviewFeeTab: "Review fee",
   registrationFeeTab: "Registration fee",
   annualAuditFeeTab: "Annual audit fee (AR to NCR)",
@@ -255,20 +255,30 @@ export const en = {
   registrationFeeAmount: "Registration fee",
   annualAuditFeeAmount: "Annual audit fee (AR to NCR)",
   periodicFeeAmount: "Periodic fee",
+  reviewValidityPeriod: "Validity period",
+  reviewValidityFromMonth: "Valid from month",
+  reviewValidityFromYear: "Valid from year",
+  reviewValidityTo: "to",
+  reviewValidityToMonth: "Valid to month",
+  reviewValidityToYear: "Valid to year",
+  year: "Year",
+  reviewFeeCopiedToHd:
+    "HDBA saved. Fee and validity copied to other HD programmes (you can still edit each one).",
   reviewFeeSaved: "Fee saved.",
   programmeFeeSaved: "Fee saved.",
   scholarshipExpensesTitle: "Scholarship Expenses",
   scholarshipExpensesDescription:
-    "HKIT DAE students articulating to HDBA / HDHC / HDC receive $10,000 scholarship per academic year.",
+    "Enter scholarship headcounts and per-student amounts for each HD programme.",
   scholarshipExpensesHint:
-    "Select an academic year, then manually enter Y1 and Y2 headcounts of HKIT DAE students who articulated into each programme.",
+    "Select an academic year. All HD programmes are listed. Defaults: HDBA / HDC / HDHC = 10000.00; HDEE / HDCI = 0.00 (manual override allowed).",
   scholarshipAmountPerStudent: "Scholarship per student / year",
   scholarshipY1DaeCount: "Y1 (HKIT DAE → HD)",
   scholarshipY2DaeCount: "Y2 (HKIT DAE → HD)",
   scholarshipTotalExpense: "Total scholarship expense",
   scholarshipFormulaHint:
-    "Total = (Y1 count + Y2 count) × $10,000 per student.",
+    "Total = (Y1 count + Y2 count) × scholarship per student for that programme.",
   scholarshipExpenseSaved: "Scholarship expense saved.",
+
   referralSchemeTitle: "Referral Scheme",
   referralSchemeDescription:
     "Enter Referral Scheme amounts manually by programme and term.",

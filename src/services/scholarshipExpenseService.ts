@@ -1,13 +1,15 @@
 import { normalizeAcademicYear } from "../lib/utils";
 import { supabase } from "../lib/supabase";
 
-/** Programmes currently eligible for HKIT DAE → HD scholarship. */
-export const SCHOLARSHIP_PROGRAMME_CODES = ["HDBA", "HDHC", "HDC"] as const;
+/** Default HK$ per student / year when no saved row exists. */
+export const SCHOLARSHIP_DEFAULT_AMOUNT_BY_CODE: Record<string, number> = {
+  HDBA: 10000,
+  HDC: 10000,
+  HDHC: 10000,
+  HDEE: 0,
+  HDCI: 0,
+};
 
-export type ScholarshipProgrammeCode =
-  (typeof SCHOLARSHIP_PROGRAMME_CODES)[number];
-
-/** HK$ per HKIT DAE student per academic year. */
 export const SCHOLARSHIP_AMOUNT_PER_STUDENT = 10000;
 
 export type ProgrammeScholarshipExpenseRow = {
@@ -39,9 +41,12 @@ function parseCount(value: number | string, field: string) {
   return Math.max(0, Math.round(n));
 }
 
-export function isScholarshipProgramme(programmeCode: string) {
+export function defaultScholarshipAmountPerStudent(programmeCode: string) {
   const code = String(programmeCode ?? "").trim().toUpperCase();
-  return (SCHOLARSHIP_PROGRAMME_CODES as readonly string[]).includes(code);
+  if (Object.prototype.hasOwnProperty.call(SCHOLARSHIP_DEFAULT_AMOUNT_BY_CODE, code)) {
+    return SCHOLARSHIP_DEFAULT_AMOUNT_BY_CODE[code];
+  }
+  return 0;
 }
 
 export function calculateScholarshipTotal(params: {
@@ -80,22 +85,18 @@ export async function upsertProgrammeScholarshipExpense(params: {
   updatedBy?: string | null;
 }) {
   const programmeCode = normalizeProgrammeCode(params.programmeCode);
-  if (!isScholarshipProgramme(programmeCode)) {
-    throw new Error(
-      `Scholarship expenses currently apply to ${SCHOLARSHIP_PROGRAMME_CODES.join(", ")} only.`
-    );
-  }
-
   const y1Count = parseCount(params.y1Count, "Y1 count");
   const y2Count = parseCount(params.y2Count, "Y2 count");
-  const amountPerStudent =
-    params.amountPerStudent != null && String(params.amountPerStudent).trim() !== ""
+
+  const amountRaw =
+    params.amountPerStudent != null &&
+    String(params.amountPerStudent).trim() !== ""
       ? Number(params.amountPerStudent)
-      : SCHOLARSHIP_AMOUNT_PER_STUDENT;
-  if (!Number.isFinite(amountPerStudent) || amountPerStudent < 0) {
+      : defaultScholarshipAmountPerStudent(programmeCode);
+  if (!Number.isFinite(amountRaw) || amountRaw < 0) {
     throw new Error("Amount per student must be a non-negative number.");
   }
-  const rate = Math.round(amountPerStudent * 100) / 100;
+  const rate = Math.round(amountRaw * 100) / 100;
   const totalAmount = calculateScholarshipTotal({
     y1Count,
     y2Count,

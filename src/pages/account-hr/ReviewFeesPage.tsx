@@ -5,6 +5,7 @@ import { LoadingState } from "../../components/ui/LoadingState";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
+import { isHDProgrammeType } from "../programme-leader/make-study-plan/helpers";
 import { listProgrammes } from "../../services/programmeService";
 import {
   listProgrammeReviewFees,
@@ -16,14 +17,45 @@ import type { ProgrammeRow } from "../../types";
 import { ACCOUNT_HR_DEFAULT_ACADEMIC_YEAR } from "./accountHrAcademicYear";
 import { AccountHrAcademicYearSelect } from "./AccountHrAcademicYearSelect";
 
+const MONTH_OPTIONS = [
+  { value: 1, label: "Jan" },
+  { value: 2, label: "Feb" },
+  { value: 3, label: "Mar" },
+  { value: 4, label: "Apr" },
+  { value: 5, label: "May" },
+  { value: 6, label: "Jun" },
+  { value: 7, label: "Jul" },
+  { value: 8, label: "Aug" },
+  { value: 9, label: "Sep" },
+  { value: 10, label: "Oct" },
+  { value: 11, label: "Nov" },
+  { value: 12, label: "Dec" },
+] as const;
+
+const REVIEW_SOURCE_HD_CODE = "HDBA";
+const EXCLUDED_PROGRAMME_CODES = new Set(["HDCCI"]);
+
+type ValidityDraft = {
+  fromMonth: string;
+  fromYear: string;
+  toMonth: string;
+  toYear: string;
+};
+
+function emptyValidity(): ValidityDraft {
+  return { fromMonth: "", fromYear: "", toMonth: "", toYear: "" };
+}
+
 function uniqueProgrammeMeta(programmes: ProgrammeRow[]) {
-  const byCode = new Map<string, { code: string; name: string }>();
+  const byCode = new Map<string, { code: string; isHd: boolean }>();
   for (const row of programmes) {
     const code = String(row.programme_code ?? "").trim().toUpperCase();
-    if (!code || byCode.has(code)) continue;
+    if (!code || EXCLUDED_PROGRAMME_CODES.has(code) || byCode.has(code)) {
+      continue;
+    }
     byCode.set(code, {
       code,
-      name: String(row.programme_name ?? "").trim() || code,
+      isHd: isHDProgrammeType(row.programme_type),
     });
   }
   return Array.from(byCode.values()).sort((a, b) =>
@@ -51,6 +83,28 @@ function feeAmountLabel(
   return t.reviewFeeAmount;
 }
 
+function MonthSelect(props: {
+  value: string;
+  onChange: (value: string) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <select
+      className="form-input h-8 w-[4.25rem] px-1 py-0 text-sm"
+      value={props.value}
+      aria-label={props.ariaLabel}
+      onChange={(event) => props.onChange(event.target.value)}
+    >
+      <option value="">—</option>
+      {MONTH_OPTIONS.map((month) => (
+        <option key={month.value} value={String(month.value)}>
+          {month.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export function ReviewFeesPage() {
   const { user } = useAuth();
   const { t } = useLanguage();
@@ -63,13 +117,29 @@ export function ReviewFeesPage() {
   const [savingCode, setSavingCode] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [programmeMeta, setProgrammeMeta] = useState<
-    Array<{ code: string; name: string }>
+    Array<{ code: string; isHd: boolean }>
   >([]);
   const [amountByCode, setAmountByCode] = useState<Record<string, string>>({});
+  const [validityByCode, setValidityByCode] = useState<
+    Record<string, ValidityDraft>
+  >({});
 
+  const showValidity = feeType === "review";
   const programmeCodes = useMemo(
     () => programmeMeta.map((row) => row.code),
     [programmeMeta]
+  );
+  const otherHdCodes = useMemo(
+    () =>
+      programmeMeta
+        .filter((row) => row.isHd && row.code !== REVIEW_SOURCE_HD_CODE)
+        .map((row) => row.code),
+    [programmeMeta]
+  );
+
+  const tableMinWidth = useMemo(
+    () => (showValidity ? "min-w-[720px]" : "min-w-[480px]"),
+    [showValidity]
   );
 
   async function loadProgrammes() {
@@ -89,20 +159,41 @@ export function ReviewFeesPage() {
     setMessage("");
     try {
       const fees = await listProgrammeReviewFees({ academicYear, feeType });
-      const map: Record<string, string> = {};
+      const amounts: Record<string, string> = {};
+      const validity: Record<string, ValidityDraft> = {};
       for (const row of fees) {
-        map[row.programme_code] = String(row.amount);
+        amounts[row.programme_code] = String(row.amount);
+        if (feeType === "review") {
+          validity[row.programme_code] = {
+            fromMonth:
+              row.validity_from_month != null
+                ? String(row.validity_from_month)
+                : "",
+            fromYear:
+              row.validity_from_year != null
+                ? String(row.validity_from_year)
+                : "",
+            toMonth:
+              row.validity_to_month != null
+                ? String(row.validity_to_month)
+                : "",
+            toYear:
+              row.validity_to_year != null ? String(row.validity_to_year) : "",
+          };
+        }
       }
-      setAmountByCode(map);
+      setAmountByCode(amounts);
+      setValidityByCode(validity);
     } catch (error) {
       setAmountByCode({});
+      setValidityByCode({});
       const detail =
         error instanceof Error ? error.message : "Failed to load fees.";
       setMessage(
-        /could not find the table|does not exist|schema cache|fee_type/i.test(
+        /could not find the table|does not exist|schema cache|fee_type|validity_/i.test(
           detail
         )
-          ? `${detail} — please apply migrations 057/060/061 on Supabase.`
+          ? `${detail} — please apply migrations 057/060/061/065 on Supabase.`
           : detail
       );
     } finally {
@@ -118,18 +209,78 @@ export function ReviewFeesPage() {
     void loadFees();
   }, [academicYear, feeType]);
 
+  function updateValidity(
+    programmeCode: string,
+    patch: Partial<ValidityDraft>
+  ) {
+    setValidityByCode((prev) => ({
+      ...prev,
+      [programmeCode]: {
+        ...(prev[programmeCode] ?? emptyValidity()),
+        ...patch,
+      },
+    }));
+  }
+
   async function saveAmount(programmeCode: string) {
     setSavingCode(programmeCode);
     setMessage("");
     try {
+      const draft = validityByCode[programmeCode] ?? emptyValidity();
+      const amount = amountByCode[programmeCode] || "0";
+      const validity =
+        feeType === "review"
+          ? {
+              fromMonth: draft.fromMonth ? Number(draft.fromMonth) : null,
+              fromYear: draft.fromYear ? Number(draft.fromYear) : null,
+              toMonth: draft.toMonth ? Number(draft.toMonth) : null,
+              toYear: draft.toYear ? Number(draft.toYear) : null,
+            }
+          : null;
+
       await upsertProgrammeReviewFee({
         academicYear,
         programmeCode,
         feeType,
-        amount: amountByCode[programmeCode] || "0",
+        amount,
+        validity,
         updatedBy: user?.id ?? null,
       });
-      setMessage(t.programmeFeeSaved);
+
+      // Saving HDBA review fee copies amount + validity to other HD programmes.
+      // Each target can still be edited and saved separately afterwards.
+      if (
+        feeType === "review" &&
+        programmeCode === REVIEW_SOURCE_HD_CODE &&
+        otherHdCodes.length > 0
+      ) {
+        await Promise.all(
+          otherHdCodes.map((code) =>
+            upsertProgrammeReviewFee({
+              academicYear,
+              programmeCode: code,
+              feeType,
+              amount,
+              validity,
+              updatedBy: user?.id ?? null,
+            })
+          )
+        );
+
+        setAmountByCode((prev) => {
+          const next = { ...prev };
+          for (const code of otherHdCodes) next[code] = amount;
+          return next;
+        });
+        setValidityByCode((prev) => {
+          const next = { ...prev };
+          for (const code of otherHdCodes) next[code] = { ...draft };
+          return next;
+        });
+        setMessage(t.reviewFeeCopiedToHd);
+      } else {
+        setMessage(t.programmeFeeSaved);
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed");
     } finally {
@@ -188,48 +339,105 @@ export function ReviewFeesPage() {
       ) : (
         <div className="overflow-x-auto card">
           <div className="card-body">
-            <table className="data-table min-w-[720px]">
+            <table className={`data-table ${tableMinWidth}`}>
               <thead>
                 <tr>
                   <th>{t.programmeCode}</th>
-                  <th>{t.programmeName}</th>
+                  {showValidity && (
+                    <th>{t.reviewValidityPeriod}</th>
+                  )}
                   <th>{feeAmountLabel(feeType, t)}</th>
                   <th>{t.actions}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
-                {programmeMeta.map((row) => (
-                  <tr key={row.code}>
-                    <td className="font-medium">{row.code}</td>
-                    <td className="text-slate-600">{row.name}</td>
-                    <td>
-                      <input
-                        className="form-input min-w-28"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={amountByCode[row.code] ?? ""}
-                        onChange={(event) =>
-                          setAmountByCode((prev) => ({
-                            ...prev,
-                            [row.code]: event.target.value,
-                          }))
-                        }
-                        placeholder={t.accountingFillPlaceholder}
-                      />
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        disabled={savingCode === row.code}
-                        onClick={() => void saveAmount(row.code)}
-                      >
-                        {savingCode === row.code ? t.loading : t.save}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {programmeCodes.map((code) => {
+                  const validity = validityByCode[code] ?? emptyValidity();
+                  return (
+                    <tr key={code}>
+                      <td className="font-medium">{code}</td>
+                      {showValidity && (
+                        <td className="whitespace-nowrap">
+                          <div className="inline-flex items-center gap-1">
+                            <MonthSelect
+                              value={validity.fromMonth}
+                              ariaLabel={t.reviewValidityFromMonth}
+                              onChange={(value) =>
+                                updateValidity(code, { fromMonth: value })
+                              }
+                            />
+                            <input
+                              className="form-input h-8 w-14 px-1 py-0 text-sm"
+                              type="number"
+                              min={1990}
+                              max={2100}
+                              step={1}
+                              placeholder="YYYY"
+                              aria-label={t.reviewValidityFromYear}
+                              value={validity.fromYear}
+                              onChange={(event) =>
+                                updateValidity(code, {
+                                  fromYear: event.target.value,
+                                })
+                              }
+                            />
+                            <span className="px-0.5 text-xs text-slate-400">
+                              –
+                            </span>
+                            <MonthSelect
+                              value={validity.toMonth}
+                              ariaLabel={t.reviewValidityToMonth}
+                              onChange={(value) =>
+                                updateValidity(code, { toMonth: value })
+                              }
+                            />
+                            <input
+                              className="form-input h-8 w-14 px-1 py-0 text-sm"
+                              type="number"
+                              min={1990}
+                              max={2100}
+                              step={1}
+                              placeholder="YYYY"
+                              aria-label={t.reviewValidityToYear}
+                              value={validity.toYear}
+                              onChange={(event) =>
+                                updateValidity(code, {
+                                  toYear: event.target.value,
+                                })
+                              }
+                            />
+                          </div>
+                        </td>
+                      )}
+                      <td>
+                        <input
+                          className="form-input h-8 w-28"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={amountByCode[code] ?? ""}
+                          onChange={(event) =>
+                            setAmountByCode((prev) => ({
+                              ...prev,
+                              [code]: event.target.value,
+                            }))
+                          }
+                          placeholder={t.accountingFillPlaceholder}
+                        />
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={savingCode === code}
+                          onClick={() => void saveAmount(code)}
+                        >
+                          {savingCode === code ? t.loading : t.save}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

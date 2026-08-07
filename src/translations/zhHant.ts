@@ -140,7 +140,7 @@ export const zhHant = {
   guideAccountHrReviewFees:
     "按課程、學年手動輸入評審／登記／年審（AR to NCR）／Periodic fee（可用 tab 切換）。",
   guideAccountHrScholarshipExpenses:
-    "HDBA／HDHC／HDC：手動輸入 Y1、Y2 的 HKIT DAE 升學人數；總額 = (Y1+Y2) × $10,000。",
+    "列出全部 HD 課程。預設每人每學年：HDBA／HDC／HDHC = $10,000；HDEE／HDCI = $0（可人手修改）。總額 = (Y1+Y2) × 該課程金額。",
   guideAccountHrReferralScheme:
     "按課程、學期手動輸入 Referral Scheme 金額。",
   guideAccountHrSspMiscCosts:
@@ -226,8 +226,9 @@ export const zhHant = {
   ftStaffCostSaved: "全職員工費用已儲存。",
   reviewFeesTitle: "評審／登記／年審／Periodic Fee",
   reviewFeesDescription:
-    "按課程、學年手動輸入評審、登記、年審（AR to NCR）或 Periodic fee。",
-  reviewFeesHint: "選擇學年後，用 tab 切換費用類型，為各課程輸入並儲存金額。",
+    "按課程代碼、學年手動輸入評審、登記、年審（AR to NCR）或 Periodic fee。",
+  reviewFeesHint:
+    "選擇學年後，用 tab 切換費用類型，為各課程代碼輸入並儲存金額。評審費用可人手填寫有效期（由月／年至月／年）。儲存 HDBA 時會自動複製費用與有效期至其他 HD 課程（之後仍可人手修改）。",
   reviewFeeTab: "評審費用",
   registrationFeeTab: "登記費用",
   annualAuditFeeTab: "年審費用（AR to NCR）",
@@ -236,18 +237,28 @@ export const zhHant = {
   registrationFeeAmount: "登記費用",
   annualAuditFeeAmount: "年審費用（AR to NCR）",
   periodicFeeAmount: "Periodic fee",
+  reviewValidityPeriod: "有效期",
+  reviewValidityFromMonth: "有效期起（月）",
+  reviewValidityFromYear: "有效期起（年）",
+  reviewValidityTo: "至",
+  reviewValidityToMonth: "有效期迄（月）",
+  reviewValidityToYear: "有效期迄（年）",
+  year: "年",
+  reviewFeeCopiedToHd:
+    "HDBA 已儲存，費用與有效期已複製到其他 HD 課程（仍可人手修改）。",
   reviewFeeSaved: "費用已儲存。",
   programmeFeeSaved: "費用已儲存。",
   scholarshipExpensesTitle: "獎學金支出",
   scholarshipExpensesDescription:
-    "由 HKIT DAE 升上 HDBA／HDHC／HDC 的學生，每學年獎學金 $10,000。",
+    "為各 HD 課程輸入獎學金人數及每人每學年金額。",
   scholarshipExpensesHint:
-    "選擇學年後，手動填入各課程當年由 HKIT DAE 升學上來的 Y1、Y2 人數。",
+    "選擇學年後列出全部 HD。預設：HDBA／HDC／HDHC = 10000.00；HDEE／HDCI = 0.00（可人手修改）。",
   scholarshipAmountPerStudent: "每人每學年獎學金",
   scholarshipY1DaeCount: "Y1（HKIT DAE → HD）",
   scholarshipY2DaeCount: "Y2（HKIT DAE → HD）",
   scholarshipTotalExpense: "獎學金支出總額",
-  scholarshipFormulaHint: "總額 = (Y1 人數 + Y2 人數) × $10,000。",
+  scholarshipFormulaHint:
+    "總額 = (Y1 人數 + Y2 人數) × 該課程每人每學年獎學金。",
   scholarshipExpenseSaved: "獎學金支出已儲存。",
   referralSchemeTitle: "Referral Scheme",
   referralSchemeDescription: "按課程、學期手動輸入 Referral Scheme 金額。",
