@@ -381,8 +381,6 @@ export const en = {
   tuitionIncomeTotal: "Tuition income total",
   tuitionFeeSaved: "Tuition fee saved.",
   savedFeesCount: "saved fee row(s)",
-  guideAccountHrTuitionSummary:
-    "Enter programme tuition fee per academic year (HKIT defaults). For each term, view student counts and fill tuition income manually.",
   partnerSharingPageTitle: "Sharing to Partner",
   partnerSharingPageDescription:
     "Partner U (Degree), Partner 个人 (UWLCFI), and Sharing to FLU (HDEE).",
