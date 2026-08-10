@@ -162,7 +162,32 @@ async function listAssignmentsForTimetableModuleIds(ids: string[]) {
   const latestByModuleId = new Map<string, TeachingAssignmentRow>();
   for (const row of (data ?? []) as TeachingAssignmentRow[]) {
     const existing = latestByModuleId.get(row.timetable_module_id);
-    if (!existing || row.assignment_version >= existing.assignment_version) {
+    if (!existing) {
+      latestByModuleId.set(row.timetable_module_id, row);
+      continue;
+    }
+
+    // Prefer the same "best" row contact-hours uses: confirmed → version → updated_at.
+    const existingConfirmed = Boolean(existing.confirmed);
+    const nextConfirmed = Boolean(row.confirmed);
+    if (nextConfirmed && !existingConfirmed) {
+      latestByModuleId.set(row.timetable_module_id, row);
+      continue;
+    }
+    if (existingConfirmed && !nextConfirmed) continue;
+
+    const existingVersion = Number(existing.assignment_version ?? 0);
+    const nextVersion = Number(row.assignment_version ?? 0);
+    if (nextVersion > existingVersion) {
+      latestByModuleId.set(row.timetable_module_id, row);
+      continue;
+    }
+    if (nextVersion < existingVersion) continue;
+
+    if (
+      String(row.updated_at ?? "").localeCompare(String(existing.updated_at ?? "")) >
+      0
+    ) {
       latestByModuleId.set(row.timetable_module_id, row);
     }
   }
@@ -180,6 +205,7 @@ type TimetableTeacherApplyTarget = {
 export async function applyTeacherToTimetableModuleInstance(params: {
   academicYear: string;
   target: TimetableTeacherApplyTarget;
+  /** Omit to auto-load the best existing assignment; pass null to force insert. */
   existingAssignment?: TeachingAssignmentRow | null;
   updatedBy?: string | null;
   updatedAt?: string;
@@ -197,7 +223,16 @@ export async function applyTeacherToTimetableModuleInstance(params: {
       teacherName: normalizeText(params.target.teacherName) || "TBC",
     })) ?? (normalizeText(params.target.teacherName) || "TBC");
 
-  const existing = params.existingAssignment ?? null;
+  // When caller omits existingAssignment, update the same "best" row used by
+  // contact-hours / loading — never insert a parallel assignment_version=1 that
+  // loses to an older confirmed FT/PT row (weekly teacher change bug).
+  let existing = params.existingAssignment;
+  if (existing === undefined) {
+    const rows = await listAssignmentsForTimetableModuleIds([
+      params.target.timetableModule.id,
+    ]);
+    existing = rows[0] ?? null;
+  }
 
   if (existing) {
     const { error } = await supabase

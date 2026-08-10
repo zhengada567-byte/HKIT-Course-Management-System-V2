@@ -16,6 +16,10 @@ import type { TimetableModuleRow } from "../types";
 import type { TimetableModuleInstanceRow } from "./timetableModuleInstanceService";
 import { applyTeacherToTimetableModuleInstance } from "./moduleDefaultTimetableSyncService";
 import {
+  listTeachers,
+  resolveTeacherEmploymentFromCatalog,
+} from "./teacherService";
+import {
   addHoursToTime,
   buildTeachingDatesForWeekday,
   deleteWeeklyPlacementSessions,
@@ -721,6 +725,8 @@ async function persistWeeklyTeacherChanges(params: {
     ])
   );
 
+  const teachers = await listTeachers(params.academicYear);
+
   let teacherUpdatedCount = 0;
 
   for (const change of changes) {
@@ -734,12 +740,19 @@ async function persistWeeklyTeacherChanges(params: {
       );
     }
 
+    const employment = resolveTeacherEmploymentFromCatalog(
+      change.teacherName,
+      teachers
+    );
+    const teachingStatus =
+      employment === "FT" || employment === "PT" ? employment : "PT";
+
     await applyTeacherToTimetableModuleInstance({
       academicYear: params.academicYear,
       target: {
         timetableModule,
         teacherName: change.teacherName,
-        teachingStatus: "PT",
+        teachingStatus,
         mode:
           timetableModule.mode === "Day" ||
           timetableModule.mode === "Night" ||
