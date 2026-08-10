@@ -481,7 +481,32 @@ export const en = {
   studentWeeklyConflictWarnMissingClass: "No enrolled class",
   studentWeeklyConflictWarnMissingPattern: "No weekly timetable for enrolled class",
   studentWeeklyConflictWarningsMore: "…and {count} more warning(s).",
-  classroomWeeklyConflictStep: "3. Classroom timetable conflicts",
+  classroomDateInspectStep: "3. Inspect classrooms by date",
+  classroomDateInspectStepHint:
+    "Pick a calendar date to view all sessions that day across every programme. Check free rooms, occupied time windows, and same-day room clashes.",
+  classroomDateInspectDate: "Date",
+  classroomDateInspectLoad: "Inspect date",
+  classroomDateInspectSelectDate: "Please select a date first.",
+  classroomDateInspectFailed: "Failed to inspect classrooms for this date.",
+  classroomDateInspectEmpty:
+    "Select a date and click Inspect date to load that day's timetable and room availability.",
+  classroomDateInspectSummary:
+    "{date} ({weekday}): {sessions} session(s) · {freeRooms}/{rooms} room(s) fully free · {conflicts} room clash(es).",
+  classroomDateInspectSessionsTitle: "All sessions that day",
+  classroomDateInspectRoomsTitle: "Room availability",
+  classroomDateInspectConflictsTitle: "Same-day room clashes",
+  classroomDateInspectNoSessions: "No sessions found on this date.",
+  classroomDateInspectNoRooms: "No rooms to show for the current filter.",
+  classroomDateInspectNoConflicts: "No same-day room clashes on this date.",
+  classroomDateInspectFreeOnly: "Fully free rooms only",
+  classroomDateInspectTime: "Time",
+  classroomDateInspectRoomSize: "Size",
+  classroomDateInspectRoomType: "Type",
+  classroomDateInspectRoomStatus: "Status",
+  classroomDateInspectFullyFree: "Fully free",
+  classroomDateInspectOccupied: "Occupied",
+  classroomDateInspectOccupiedWindows: "Occupied windows",
+  classroomWeeklyConflictStep: "4. Classroom timetable conflicts",
   classroomWeeklyConflictStepHint:
     "Detect same-room clashes by calendar date for the selected academic year and term (Online/TBC rooms ignored). Only same-day overlaps count; same known teacher is not a conflict.",
   classroomWeeklyConflictDetect: "Detect classroom conflicts",
@@ -500,7 +525,7 @@ export const en = {
   room: "Room",
   studentId: "Student ID",
   weekday: "Weekday",
-  dailyTimetableStep: "3. Daily timetable",
+  dailyTimetableStep: "5. Daily timetable",
   dailyTimetableStepHint:
     "Assigns L1–L9 / T1–T3 (most HD), L1–L12 only (HD401/HD402/HD405), or teaching+tutorial labels from contact hours, using study-week dates only.",
   weeklyTimetableAdminInstanceHint:

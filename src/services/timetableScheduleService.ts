@@ -139,13 +139,21 @@ export async function listTimetableClassrooms(): Promise<TimetableClassroomRow[]
 
 export async function listTimetableSessions(params: {
   academicYear: string;
+  sessionDate?: string;
 }): Promise<TimetableSessionRow[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("timetable_sessions")
     .select("*")
     .eq("academic_year", params.academicYear)
     .order("session_date", { ascending: true })
     .order("start_time", { ascending: true });
+
+  const sessionDate = String(params.sessionDate ?? "").trim().slice(0, 10);
+  if (sessionDate) {
+    query = query.eq("session_date", sessionDate);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return [];

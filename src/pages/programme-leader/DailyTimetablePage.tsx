@@ -20,6 +20,7 @@ import {
   type TimetableScheduleTerm,
 } from "../../services/timetableScheduleService";
 import { ClassroomWeeklyConflictPanel } from "../admin/components/ClassroomWeeklyConflictPanel";
+import { ClassroomDateInspectPanel } from "../admin/components/ClassroomDateInspectPanel";
 import {
   formatProgrammeCodeOptionLabel,
   isMixedProgrammeCode,
@@ -309,7 +310,8 @@ export function DailyTimetablePage() {
 
       {!loading && result && result.modules.length === 0 && <EmptyState />}
 
-      <div className="mt-6">
+      <div className="mt-6 space-y-6">
+        <ClassroomDateInspectPanel academicYear={academicYear} />
         <ClassroomWeeklyConflictPanel academicYear={academicYear} term={term} />
       </div>
     </div>
