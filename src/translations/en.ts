@@ -493,6 +493,8 @@ export const en = {
     "Scanned {modules} module(s) / {rooms} room(s). Conflicts shown: {conflicts}.",
   classroomWeeklyConflictRoomFilter: "Room filter",
   classroomWeeklyConflictOverlap: "Overlap",
+  classroomWeeklyConflictDates: "Overlap dates",
+  classroomWeeklyConflictNoSharedDates: "No shared calendar dates",
   classroomWeeklyConflictModuleA: "Module A",
   classroomWeeklyConflictModuleB: "Module B",
   allRooms: "All rooms",

@@ -93,6 +93,7 @@ export function ClassroomWeeklyConflictPanel({
       "term",
       "room_code",
       "weekday",
+      "overlap_dates",
       "overlap_start",
       "overlap_end",
       "module_a",
@@ -112,6 +113,7 @@ export function ClassroomWeeklyConflictPanel({
       term,
       clash.roomCode,
       clash.weekdayLabel,
+      clash.overlapDates.join("; "),
       clash.overlapStart,
       clash.overlapEnd,
       clash.moduleCodeA,
@@ -247,6 +249,20 @@ function ConflictTable({ rows }: { rows: ClassroomWeeklyConflict[] }) {
               key: "weekday",
               header: t.weekday,
               render: (row) => row.weekdayLabel,
+            },
+            {
+              key: "dates",
+              header: t.classroomWeeklyConflictDates,
+              render: (row) =>
+                row.overlapDates.length > 0 ? (
+                  <div className="max-w-xs whitespace-pre-wrap font-mono text-xs text-slate-700">
+                    {row.overlapDates.join("\n")}
+                  </div>
+                ) : (
+                  <span className="text-xs text-amber-700">
+                    {t.classroomWeeklyConflictNoSharedDates}
+                  </span>
+                ),
             },
             {
               key: "overlap",

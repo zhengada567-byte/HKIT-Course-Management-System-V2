@@ -13,6 +13,8 @@ export type ClassroomWeeklyConflict = {
   roomCode: string;
   weekday: number;
   weekdayLabel: string;
+  /** Calendar dates where both modules actually share this room/time clash. */
+  overlapDates: string[];
   overlapStart: string;
   overlapEnd: string;
   moduleCodeA: string;
@@ -44,6 +46,7 @@ type RoomSlot = {
   programmeCode: string;
   teacherName: string;
   teacherKey: string | null;
+  dates: string[];
 };
 
 function normalizeText(value: string | null | undefined) {
@@ -131,7 +134,7 @@ export async function detectClassroomWeeklyConflicts(params: {
     return Boolean(instance && moduleByInstance.has(instance));
   });
 
-  const seenPattern = new Set<string>();
+  const seenPattern = new Map<string, RoomSlot>();
   const slots: RoomSlot[] = [];
 
   for (const session of termSessions) {
@@ -156,8 +159,13 @@ export async function detectClassroomWeeklyConflicts(params: {
     if (timeToMinutes(start) >= timeToMinutes(end)) continue;
 
     const dedupeKey = `${roomCode.toUpperCase()}|${instanceCode}|${jsDay}|${start}|${end}`;
-    if (seenPattern.has(dedupeKey)) continue;
-    seenPattern.add(dedupeKey);
+    const existing = seenPattern.get(dedupeKey);
+    if (existing) {
+      if (!existing.dates.includes(dateIso)) {
+        existing.dates.push(dateIso);
+      }
+      continue;
+    }
 
     const module =
       moduleById.get(normalizeText(session.timetable_module_id)) ??
@@ -165,7 +173,7 @@ export async function detectClassroomWeeklyConflicts(params: {
 
     const teacherName = normalizeText(session.teacher_name);
 
-    slots.push({
+    const slot: RoomSlot = {
       roomCode,
       weekday: jsDay,
       start,
@@ -178,7 +186,10 @@ export async function detectClassroomWeeklyConflicts(params: {
       programmeCode: normalizeText(module?.programme_code),
       teacherName,
       teacherKey: teacherIdentityKey(teacherName),
-    });
+      dates: [dateIso],
+    };
+    seenPattern.set(dedupeKey, slot);
+    slots.push(slot);
   }
 
   const byRoomWeekday = new Map<string, RoomSlot[]>();
@@ -214,6 +225,10 @@ export async function detectClassroomWeeklyConflicts(params: {
             ? [a, b]
             : [b, a];
         const window = overlapWindow(left, right);
+        const rightDateSet = new Set(right.dates);
+        const overlapDates = left.dates
+          .filter((date) => rightDateSet.has(date))
+          .sort((x, y) => x.localeCompare(y));
         const key = [
           left.roomCode.toUpperCase(),
           String(left.weekday),
@@ -230,6 +245,7 @@ export async function detectClassroomWeeklyConflicts(params: {
           roomCode: left.roomCode,
           weekday: left.weekday,
           weekdayLabel: schedulingWeekdayLabel(left.weekday),
+          overlapDates,
           overlapStart: window.start,
           overlapEnd: window.end,
           moduleCodeA: left.moduleCode,

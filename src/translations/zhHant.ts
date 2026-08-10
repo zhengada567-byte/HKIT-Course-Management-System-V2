@@ -465,6 +465,8 @@ export const zhHant = {
     "已掃描 {modules} 個科目／{rooms} 間教室。顯示衝突：{conflicts}。",
   classroomWeeklyConflictRoomFilter: "教室篩選",
   classroomWeeklyConflictOverlap: "重疊時段",
+  classroomWeeklyConflictDates: "重合日期",
+  classroomWeeklyConflictNoSharedDates: "無共同上課日期",
   classroomWeeklyConflictModuleA: "科目 A",
   classroomWeeklyConflictModuleB: "科目 B",
   allRooms: "全部教室",
