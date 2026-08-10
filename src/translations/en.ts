@@ -481,6 +481,22 @@ export const en = {
   studentWeeklyConflictWarnMissingClass: "No enrolled class",
   studentWeeklyConflictWarnMissingPattern: "No weekly timetable for enrolled class",
   studentWeeklyConflictWarningsMore: "…and {count} more warning(s).",
+  classroomWeeklyConflictStep: "3. Classroom timetable conflicts",
+  classroomWeeklyConflictStepHint:
+    "Detect same-room weekly clashes for the selected academic year and term (Online/TBC rooms ignored). Overlapping classes in one room are listed below.",
+  classroomWeeklyConflictDetect: "Detect classroom conflicts",
+  classroomWeeklyConflictDetectFailed: "Failed to detect classroom timetable conflicts.",
+  classroomWeeklyConflictEmpty:
+    "Click Detect classroom conflicts to scan weekly room clashes.",
+  classroomWeeklyConflictNone: "No classroom weekly timetable conflicts found.",
+  classroomWeeklyConflictSummary:
+    "Scanned {modules} module(s) / {rooms} room(s). Conflicts shown: {conflicts}.",
+  classroomWeeklyConflictRoomFilter: "Room filter",
+  classroomWeeklyConflictOverlap: "Overlap",
+  classroomWeeklyConflictModuleA: "Module A",
+  classroomWeeklyConflictModuleB: "Module B",
+  allRooms: "All rooms",
+  room: "Room",
   studentId: "Student ID",
   weekday: "Weekday",
   dailyTimetableStep: "3. Daily timetable",

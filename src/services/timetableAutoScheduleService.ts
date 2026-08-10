@@ -670,7 +670,14 @@ export async function autoScheduleInstances(params: {
   preferredStartByCode: Record<string, string>; // HH:mm, empty = any time
   /** When true, delete and replace existing sessions for instances in this run. */
   forceReschedule?: boolean;
+  /** Required: only admin may auto-schedule weekly timetable. */
+  actorRole?: string | null;
 }) {
+  const role = String(params.actorRole ?? "").trim().toLowerCase();
+  if (role !== "admin") {
+    throw new Error("Only admin can auto-schedule the weekly timetable.");
+  }
+
   const forceReschedule = params.forceReschedule === true;
   const instancesByCode = new Map<string, TimetableModuleInstanceRow>();
   for (const instance of params.instances) {

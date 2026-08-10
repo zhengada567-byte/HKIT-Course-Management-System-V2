@@ -35,6 +35,8 @@ export function ScheduleStep(props: {
   sourceTimetableModuleCount?: number;
   crossProgrammeInstanceCount?: number;
   classroomRefreshToken?: number;
+  /** Auto-schedule weekly timetable is admin-only. */
+  isAdmin?: boolean;
 }) {
   const {
     academicYear,
@@ -44,6 +46,7 @@ export function ScheduleStep(props: {
     sourceTimetableModuleCount = 0,
     crossProgrammeInstanceCount = 0,
     classroomRefreshToken = 0,
+    isAdmin = false,
   } = props;
 
   const [classrooms, setClassrooms] = useState<TimetableClassroomRow[]>([]);
@@ -290,6 +293,11 @@ export function ScheduleStep(props: {
   );
 
   async function handleAutoSchedule() {
+    if (!isAdmin) {
+      setAutoError("Only admin can auto-schedule the weekly timetable.");
+      return;
+    }
+
     setAutoLoading(true);
     setAutoError(null);
     setAutoResult(null);
@@ -304,6 +312,7 @@ export function ScheduleStep(props: {
         classrooms,
         preferredStartByCode,
         forceReschedule: false,
+        actorRole: "admin",
       });
 
       setAutoFailures(result.failures);
@@ -325,10 +334,13 @@ export function ScheduleStep(props: {
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <div className="text-lg font-semibold">排課（自動排課）</div>
+        <div className="text-lg font-semibold">排課</div>
         <div className="mt-1 text-sm text-slate-600">
           以 <span className="font-medium">module_instance_code</span>{" "}
           為排課單位（來自分班後的 instances 表）。
+          {!isAdmin
+            ? " 自動排課僅限 Admin；Programme Leader 可使用下方每周時間表人手調整並儲存。"
+            : null}
         </div>
       </div>
 
@@ -357,6 +369,7 @@ export function ScheduleStep(props: {
         )}
       </div>
 
+      {isAdmin ? (
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="text-sm font-medium text-slate-900">自動排課前設定</div>
 
@@ -588,22 +601,30 @@ export function ScheduleStep(props: {
               </div>
             </div>
           )}
-
-          <WeeklyTimetableEditor
-            academicYear={academicYear}
-            term={scheduleTerm}
-            programmeCode={programmeCode || undefined}
-            timetableInstances={instancesForSelectedTerm}
-            classrooms={classrooms}
-            preferredStartByCode={preferredStartByCode}
-            startTimeOptions={startTimeOptions}
-            allowEditAllGridModules
-            availabilitySummaryLocation="SSP"
-            open={weeklyOpen}
-            onOpenChange={setWeeklyOpen}
-            refreshToken={weeklyRefreshToken}
-          />
         </div>
+      </div>
+      ) : (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          自動排課（Auto schedule）僅限 Admin。請使用下方每周時間表人手調整並按
+          Save Timetable 儲存。
+        </div>
+      )}
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <WeeklyTimetableEditor
+          academicYear={academicYear}
+          term={scheduleTerm}
+          programmeCode={programmeCode || undefined}
+          timetableInstances={instancesForSelectedTerm}
+          classrooms={classrooms}
+          preferredStartByCode={preferredStartByCode}
+          startTimeOptions={startTimeOptions}
+          allowEditAllGridModules
+          availabilitySummaryLocation="SSP"
+          open={weeklyOpen}
+          onOpenChange={setWeeklyOpen}
+          refreshToken={weeklyRefreshToken}
+        />
       </div>
     </div>
   );

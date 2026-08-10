@@ -928,7 +928,7 @@ export function WeeklyTimetableEditor(props: {
           ? `，更新 ${result.teacherUpdatedCount} 位老師`
           : "";
       setSaveMessage(
-        `已儲存至系統：新增 ${result.savedCount} 項，移除 ${result.removedCount} 項${teacherPart}。其他 PL 自動排課會讀取這些已儲存時段。`
+        `已儲存至系統：新增 ${result.savedCount} 項，移除 ${result.removedCount} 項${teacherPart}。其他 PL 查看每周時間表時會讀取這些已儲存時段。`
       );
       onAfterSave?.();
     } catch (error) {
@@ -1431,7 +1431,7 @@ export function WeeklyTimetableEditor(props: {
             </div>
             <div className="mt-1 text-xs text-slate-600">
               {instancePanelDescription ??
-                "編輯後請按 Save Timetable 才會寫入系統；下方列表顯示本 Programme 待排模組。Save 後其他 PL 自動排課會避開已儲存的時段。"}
+                "編輯後請按 Save Timetable 才會寫入系統；下方列表顯示本 Programme 待排模組。Save 後其他 PL 查看每周時間表時會避開／讀取已儲存的時段。"}
             </div>
             <div className="mt-3 overflow-x-auto">
               <table className="min-w-full text-sm">

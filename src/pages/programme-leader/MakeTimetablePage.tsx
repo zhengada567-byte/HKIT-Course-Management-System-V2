@@ -2410,6 +2410,7 @@ export function MakeTimetablePage() {
                 scheduleInstances.length - plManagedScheduleInstances.length
               }
               classroomRefreshToken={classroomRefreshToken}
+              isAdmin={isAdmin}
             />
           )}
         </>
