@@ -483,7 +483,7 @@ export const en = {
   studentWeeklyConflictWarningsMore: "…and {count} more warning(s).",
   classroomWeeklyConflictStep: "3. Classroom timetable conflicts",
   classroomWeeklyConflictStepHint:
-    "Detect same-room weekly clashes for the selected academic year and term (Online/TBC rooms ignored). Overlaps with the same known teacher are not treated as classroom conflicts.",
+    "Detect same-room clashes by calendar date for the selected academic year and term (Online/TBC rooms ignored). Only same-day overlaps count; same known teacher is not a conflict.",
   classroomWeeklyConflictDetect: "Detect classroom conflicts",
   classroomWeeklyConflictDetectFailed: "Failed to detect classroom timetable conflicts.",
   classroomWeeklyConflictEmpty:
@@ -494,7 +494,6 @@ export const en = {
   classroomWeeklyConflictRoomFilter: "Room filter",
   classroomWeeklyConflictOverlap: "Overlap",
   classroomWeeklyConflictDates: "Overlap dates",
-  classroomWeeklyConflictNoSharedDates: "No shared calendar dates",
   classroomWeeklyConflictModuleA: "Module A",
   classroomWeeklyConflictModuleB: "Module B",
   allRooms: "All rooms",

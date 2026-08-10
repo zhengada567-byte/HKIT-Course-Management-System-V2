@@ -456,7 +456,7 @@ export const zhHant = {
   studentWeeklyConflictWarningsMore: "…另有 {count} 項警告。",
   classroomWeeklyConflictStep: "3. 衝突教室列表",
   classroomWeeklyConflictStepHint:
-    "偵測所選學年／學期的每周課表是否有同一教室時段重疊（忽略 Online／TBC）。同一已知老師任教的不同科目不計為教室衝突。",
+    "按上課日期偵測所選學年／學期是否同一教室撞堂（忽略 Online／TBC）。僅同一天時段重疊才算衝突；同一已知老師任教不計為教室衝突。",
   classroomWeeklyConflictDetect: "偵測教室衝突",
   classroomWeeklyConflictDetectFailed: "偵測教室衝突失敗。",
   classroomWeeklyConflictEmpty: "按「偵測教室衝突」開始掃描每周教室撞堂。",
@@ -466,7 +466,6 @@ export const zhHant = {
   classroomWeeklyConflictRoomFilter: "教室篩選",
   classroomWeeklyConflictOverlap: "重疊時段",
   classroomWeeklyConflictDates: "重合日期",
-  classroomWeeklyConflictNoSharedDates: "無共同上課日期",
   classroomWeeklyConflictModuleA: "科目 A",
   classroomWeeklyConflictModuleB: "科目 B",
   allRooms: "全部教室",

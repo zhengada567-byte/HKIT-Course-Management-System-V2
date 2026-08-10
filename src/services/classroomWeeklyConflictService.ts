@@ -13,7 +13,7 @@ export type ClassroomWeeklyConflict = {
   roomCode: string;
   weekday: number;
   weekdayLabel: string;
-  /** Calendar dates where both modules actually share this room/time clash. */
+  /** Calendar dates where both modules actually clash in this room. */
   overlapDates: string[];
   overlapStart: string;
   overlapEnd: string;
@@ -36,7 +36,8 @@ export type ClassroomWeeklyConflictResult = {
   moduleCount: number;
 };
 
-type RoomSlot = {
+type DaySlot = {
+  date: string;
   roomCode: string;
   weekday: number;
   start: string;
@@ -46,7 +47,10 @@ type RoomSlot = {
   programmeCode: string;
   teacherName: string;
   teacherKey: string | null;
-  dates: string[];
+};
+
+type AggregatedConflict = ClassroomWeeklyConflict & {
+  dateSet: Set<string>;
 };
 
 function normalizeText(value: string | null | undefined) {
@@ -96,12 +100,10 @@ function isIgnorableRoom(roomCode: string) {
 }
 
 /**
- * Detect same-room weekly timetable clashes for a term.
- * Uses the weekly pattern (weekday + start/end) derived from daily sessions,
- * so repeated term weeks collapse to one conflict row per pattern pair.
- *
- * Same teacher on both overlapping modules is not treated as a classroom conflict
- * (e.g. different subjects intentionally sharing a room with one teacher).
+ * Detect same-room timetable clashes for a term by calendar date.
+ * Two modules conflict only when they occupy the same room on the same date
+ * with overlapping times. Same known teacher is not treated as a conflict.
+ * Matching date clashes are collapsed into one row per room / weekday / pair.
  */
 export async function detectClassroomWeeklyConflicts(params: {
   academicYear: string;
@@ -134,8 +136,8 @@ export async function detectClassroomWeeklyConflicts(params: {
     return Boolean(instance && moduleByInstance.has(instance));
   });
 
-  const seenPattern = new Map<string, RoomSlot>();
-  const slots: RoomSlot[] = [];
+  const daySlots: DaySlot[] = [];
+  const seenDaySlot = new Set<string>();
 
   for (const session of termSessions) {
     const roomCode = normalizeText(session.room_code);
@@ -158,14 +160,9 @@ export async function detectClassroomWeeklyConflicts(params: {
     }
     if (timeToMinutes(start) >= timeToMinutes(end)) continue;
 
-    const dedupeKey = `${roomCode.toUpperCase()}|${instanceCode}|${jsDay}|${start}|${end}`;
-    const existing = seenPattern.get(dedupeKey);
-    if (existing) {
-      if (!existing.dates.includes(dateIso)) {
-        existing.dates.push(dateIso);
-      }
-      continue;
-    }
+    const dayKey = `${roomCode.toUpperCase()}|${dateIso}|${instanceCode}|${start}|${end}`;
+    if (seenDaySlot.has(dayKey)) continue;
+    seenDaySlot.add(dayKey);
 
     const module =
       moduleById.get(normalizeText(session.timetable_module_id)) ??
@@ -173,7 +170,8 @@ export async function detectClassroomWeeklyConflicts(params: {
 
     const teacherName = normalizeText(session.teacher_name);
 
-    const slot: RoomSlot = {
+    daySlots.push({
+      date: dateIso,
       roomCode,
       weekday: jsDay,
       start,
@@ -186,24 +184,20 @@ export async function detectClassroomWeeklyConflicts(params: {
       programmeCode: normalizeText(module?.programme_code),
       teacherName,
       teacherKey: teacherIdentityKey(teacherName),
-      dates: [dateIso],
-    };
-    seenPattern.set(dedupeKey, slot);
-    slots.push(slot);
+    });
   }
 
-  const byRoomWeekday = new Map<string, RoomSlot[]>();
-  for (const slot of slots) {
-    const key = `${slot.roomCode.toUpperCase()}|${slot.weekday}`;
-    const list = byRoomWeekday.get(key) ?? [];
+  const byRoomDate = new Map<string, DaySlot[]>();
+  for (const slot of daySlots) {
+    const key = `${slot.roomCode.toUpperCase()}|${slot.date}`;
+    const list = byRoomDate.get(key) ?? [];
     list.push(slot);
-    byRoomWeekday.set(key, list);
+    byRoomDate.set(key, list);
   }
 
-  const conflicts: ClassroomWeeklyConflict[] = [];
-  const conflictKeys = new Set<string>();
+  const aggregated = new Map<string, AggregatedConflict>();
 
-  for (const group of byRoomWeekday.values()) {
+  for (const group of byRoomDate.values()) {
     group.sort((a, b) => {
       if (a.start !== b.start) return a.start.localeCompare(b.start);
       return a.moduleInstanceCode.localeCompare(b.moduleInstanceCode);
@@ -225,10 +219,6 @@ export async function detectClassroomWeeklyConflicts(params: {
             ? [a, b]
             : [b, a];
         const window = overlapWindow(left, right);
-        const rightDateSet = new Set(right.dates);
-        const overlapDates = left.dates
-          .filter((date) => rightDateSet.has(date))
-          .sort((x, y) => x.localeCompare(y));
         const key = [
           left.roomCode.toUpperCase(),
           String(left.weekday),
@@ -238,14 +228,17 @@ export async function detectClassroomWeeklyConflicts(params: {
           right.moduleInstanceCode,
         ].join("|");
 
-        if (conflictKeys.has(key)) continue;
-        conflictKeys.add(key);
+        const existing = aggregated.get(key);
+        if (existing) {
+          existing.dateSet.add(left.date);
+          continue;
+        }
 
-        conflicts.push({
+        aggregated.set(key, {
           roomCode: left.roomCode,
           weekday: left.weekday,
           weekdayLabel: schedulingWeekdayLabel(left.weekday),
-          overlapDates,
+          overlapDates: [],
           overlapStart: window.start,
           overlapEnd: window.end,
           moduleCodeA: left.moduleCode,
@@ -258,19 +251,33 @@ export async function detectClassroomWeeklyConflicts(params: {
           programmeCodeB: right.programmeCode,
           teacherNameB: right.teacherName,
           timeWindowB: `${right.start}–${right.end}`,
+          dateSet: new Set([left.date]),
         });
       }
     }
   }
 
+  const conflicts: ClassroomWeeklyConflict[] = Array.from(aggregated.values()).map(
+    (row) => {
+      const { dateSet, ...conflict } = row;
+      return {
+        ...conflict,
+        overlapDates: Array.from(dateSet).sort((x, y) => x.localeCompare(y)),
+      };
+    }
+  );
+
   conflicts.sort((a, b) => {
     const room = a.roomCode.localeCompare(b.roomCode);
     if (room !== 0) return room;
     if (a.weekday !== b.weekday) return a.weekday - b.weekday;
+    const dateA = a.overlapDates[0] ?? "";
+    const dateB = b.overlapDates[0] ?? "";
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
     return a.overlapStart.localeCompare(b.overlapStart);
   });
 
-  const rooms = new Set(slots.map((slot) => slot.roomCode.toUpperCase()));
+  const rooms = new Set(daySlots.map((slot) => slot.roomCode.toUpperCase()));
 
   return {
     conflicts,

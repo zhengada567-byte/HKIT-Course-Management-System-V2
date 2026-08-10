@@ -253,16 +253,11 @@ function ConflictTable({ rows }: { rows: ClassroomWeeklyConflict[] }) {
             {
               key: "dates",
               header: t.classroomWeeklyConflictDates,
-              render: (row) =>
-                row.overlapDates.length > 0 ? (
-                  <div className="max-w-xs whitespace-pre-wrap font-mono text-xs text-slate-700">
-                    {row.overlapDates.join("\n")}
-                  </div>
-                ) : (
-                  <span className="text-xs text-amber-700">
-                    {t.classroomWeeklyConflictNoSharedDates}
-                  </span>
-                ),
+              render: (row) => (
+                <div className="max-w-xs whitespace-pre-wrap font-mono text-xs text-slate-700">
+                  {row.overlapDates.join("\n")}
+                </div>
+              ),
             },
             {
               key: "overlap",
