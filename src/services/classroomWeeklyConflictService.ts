@@ -1,4 +1,7 @@
-import { schedulingWeekdayLabel } from "../lib/timetableSchedulingRules";
+import {
+  normalizeTeacherNameKey,
+  schedulingWeekdayLabel,
+} from "../lib/timetableSchedulingRules";
 import { normalizeAcademicYear } from "../lib/utils";
 import { listTimetableModules } from "./timetableService";
 import {
@@ -15,10 +18,12 @@ export type ClassroomWeeklyConflict = {
   moduleCodeA: string;
   moduleInstanceCodeA: string;
   programmeCodeA: string;
+  teacherNameA: string;
   timeWindowA: string;
   moduleCodeB: string;
   moduleInstanceCodeB: string;
   programmeCodeB: string;
+  teacherNameB: string;
   timeWindowB: string;
 };
 
@@ -37,10 +42,21 @@ type RoomSlot = {
   moduleCode: string;
   moduleInstanceCode: string;
   programmeCode: string;
+  teacherName: string;
+  teacherKey: string | null;
 };
 
 function normalizeText(value: string | null | undefined) {
   return String(value ?? "").trim();
+}
+
+/** Comparable teacher identity; null when unknown / TBC (cannot treat as same teacher). */
+function teacherIdentityKey(name: string | null | undefined): string | null {
+  const raw = normalizeText(name);
+  if (!raw) return null;
+  const key = normalizeTeacherNameKey(raw);
+  if (!key || key === "tbc") return null;
+  return key;
 }
 
 function timeToMinutes(value: string) {
@@ -80,6 +96,9 @@ function isIgnorableRoom(roomCode: string) {
  * Detect same-room weekly timetable clashes for a term.
  * Uses the weekly pattern (weekday + start/end) derived from daily sessions,
  * so repeated term weeks collapse to one conflict row per pattern pair.
+ *
+ * Same teacher on both overlapping modules is not treated as a classroom conflict
+ * (e.g. different subjects intentionally sharing a room with one teacher).
  */
 export async function detectClassroomWeeklyConflicts(params: {
   academicYear: string;
@@ -144,6 +163,8 @@ export async function detectClassroomWeeklyConflicts(params: {
       moduleById.get(normalizeText(session.timetable_module_id)) ??
       moduleByInstance.get(instanceCode);
 
+    const teacherName = normalizeText(session.teacher_name);
+
     slots.push({
       roomCode,
       weekday: jsDay,
@@ -155,6 +176,8 @@ export async function detectClassroomWeeklyConflicts(params: {
         instanceCode,
       moduleInstanceCode: instanceCode,
       programmeCode: normalizeText(module?.programme_code),
+      teacherName,
+      teacherKey: teacherIdentityKey(teacherName),
     });
   }
 
@@ -181,6 +204,10 @@ export async function detectClassroomWeeklyConflicts(params: {
         const b = group[j]!;
         if (a.moduleInstanceCode === b.moduleInstanceCode) continue;
         if (!overlaps(a, b)) continue;
+        // Different modules with the same known teacher share the room intentionally.
+        if (a.teacherKey && b.teacherKey && a.teacherKey === b.teacherKey) {
+          continue;
+        }
 
         const [left, right] =
           a.moduleInstanceCode.localeCompare(b.moduleInstanceCode) <= 0
@@ -208,10 +235,12 @@ export async function detectClassroomWeeklyConflicts(params: {
           moduleCodeA: left.moduleCode,
           moduleInstanceCodeA: left.moduleInstanceCode,
           programmeCodeA: left.programmeCode,
+          teacherNameA: left.teacherName,
           timeWindowA: `${left.start}–${left.end}`,
           moduleCodeB: right.moduleCode,
           moduleInstanceCodeB: right.moduleInstanceCode,
           programmeCodeB: right.programmeCode,
+          teacherNameB: right.teacherName,
           timeWindowB: `${right.start}–${right.end}`,
         });
       }

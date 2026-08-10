@@ -98,10 +98,12 @@ export function ClassroomWeeklyConflictPanel({
       "module_a",
       "instance_a",
       "programme_a",
+      "teacher_a",
       "time_a",
       "module_b",
       "instance_b",
       "programme_b",
+      "teacher_b",
       "time_b",
     ];
 
@@ -115,10 +117,12 @@ export function ClassroomWeeklyConflictPanel({
       clash.moduleCodeA,
       clash.moduleInstanceCodeA,
       clash.programmeCodeA,
+      clash.teacherNameA,
       clash.timeWindowA,
       clash.moduleCodeB,
       clash.moduleInstanceCodeB,
       clash.programmeCodeB,
+      clash.teacherNameB,
       clash.timeWindowB,
     ]);
 
@@ -260,6 +264,9 @@ function ConflictTable({ rows }: { rows: ClassroomWeeklyConflict[] }) {
                   <div className="text-slate-500">
                     {row.programmeCodeA || "—"}
                   </div>
+                  <div className="text-slate-600">
+                    {row.teacherNameA || "—"}
+                  </div>
                 </div>
               ),
             },
@@ -273,6 +280,9 @@ function ConflictTable({ rows }: { rows: ClassroomWeeklyConflict[] }) {
                   <div>{row.timeWindowB}</div>
                   <div className="text-slate-500">
                     {row.programmeCodeB || "—"}
+                  </div>
+                  <div className="text-slate-600">
+                    {row.teacherNameB || "—"}
                   </div>
                 </div>
               ),

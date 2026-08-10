@@ -19,6 +19,7 @@ import {
   type TimetableClassroomRow,
   type TimetableScheduleTerm,
 } from "../../services/timetableScheduleService";
+import { ClassroomWeeklyConflictPanel } from "../admin/components/ClassroomWeeklyConflictPanel";
 import {
   formatProgrammeCodeOptionLabel,
   isMixedProgrammeCode,
@@ -307,6 +308,10 @@ export function DailyTimetablePage() {
       )}
 
       {!loading && result && result.modules.length === 0 && <EmptyState />}
+
+      <div className="mt-6">
+        <ClassroomWeeklyConflictPanel academicYear={academicYear} term={term} />
+      </div>
     </div>
   );
 }
