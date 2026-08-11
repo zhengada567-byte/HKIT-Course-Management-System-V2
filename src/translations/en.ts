@@ -5,6 +5,7 @@ export const en = {
   username: "Username",
   password: "Password",
   dashboard: "Dashboard",
+  sidebarOthers: "Others",
   plDashboardWelcome:
     "Welcome to HKIT Course Management. Below is a short guide to each sidebar item; click to open the page.",
   plDashboardCurrentTerm: "Current term settings",

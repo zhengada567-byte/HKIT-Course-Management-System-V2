@@ -3,15 +3,16 @@ import { useState } from "react";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
+import { ACCOUNT_HR_LOGIN_ENABLED } from "../../lib/featureFlags";
 import { changeAppUserPassword } from "../../services/passwordService";
+
+type PasswordTarget = "pl" | "admin" | "AccountHR";
 
 export function AdminPasswordManagementPage() {
   const { user } = useAuth();
   const { t } = useLanguage();
 
-  const [targetUsername, setTargetUsername] = useState<
-    "pl" | "admin" | "AccountHR"
-  >("pl");
+  const [targetUsername, setTargetUsername] = useState<PasswordTarget>("pl");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -57,7 +58,11 @@ export function AdminPasswordManagementPage() {
     <div className="page-container">
       <PageHeader
         title={t.passwordManagement}
-        description="Admin can change Programme Leader, Admin, and AccountHR passwords."
+        description={
+          ACCOUNT_HR_LOGIN_ENABLED
+            ? "Admin can change Programme Leader, Admin, and AccountHR passwords."
+            : "Admin can change Programme Leader and Admin passwords."
+        }
       />
 
       <form className="card max-w-xl" onSubmit={handleSave}>
@@ -68,14 +73,14 @@ export function AdminPasswordManagementPage() {
               className="form-select"
               value={targetUsername}
               onChange={(event) =>
-                setTargetUsername(
-                  event.target.value as "pl" | "admin" | "AccountHR"
-                )
+                setTargetUsername(event.target.value as PasswordTarget)
               }
             >
               <option value="pl">Programme Leader - pl</option>
               <option value="admin">Admin - admin</option>
-              <option value="AccountHR">AccountHR - AccountHR</option>
+              {ACCOUNT_HR_LOGIN_ENABLED ? (
+                <option value="AccountHR">AccountHR - AccountHR</option>
+              ) : null}
             </select>
           </div>
 

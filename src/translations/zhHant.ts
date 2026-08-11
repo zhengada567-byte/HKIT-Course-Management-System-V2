@@ -5,6 +5,7 @@ export const zhHant = {
   username: "用戶名稱",
   password: "密碼",
   dashboard: "主頁",
+  sidebarOthers: "其他",
   plDashboardWelcome:
     "歡迎使用 HKIT 課程管理系統。以下為左側選單各功能的簡要說明，點擊可前往該頁面。",
   plDashboardCurrentTerm: "目前學期設定",

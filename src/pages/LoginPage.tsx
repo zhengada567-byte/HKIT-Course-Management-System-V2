@@ -3,9 +3,10 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../contexts/AuthContext";
 import { useLanguage } from "../contexts/LanguageContext";
+import { ACCOUNT_HR_LOGIN_ENABLED } from "../lib/featureFlags";
 import type { UserRole } from "../types";
 
-const ROLE_OPTIONS: {
+const ALL_ROLE_OPTIONS: {
   role: UserRole;
   username: string;
   labelKey: "programmeLeader" | "admin" | "staff" | "accountHr";
@@ -16,6 +17,10 @@ const ROLE_OPTIONS: {
   { role: "staff", username: "staff", labelKey: "staff", passwordless: true },
   { role: "account_hr", username: "AccountHR", labelKey: "accountHr" },
 ];
+
+const ROLE_OPTIONS = ALL_ROLE_OPTIONS.filter(
+  (option) => ACCOUNT_HR_LOGIN_ENABLED || option.role !== "account_hr"
+);
 
 export function LoginPage() {
   const { isAuthenticated, login, loginStaff } = useAuth();

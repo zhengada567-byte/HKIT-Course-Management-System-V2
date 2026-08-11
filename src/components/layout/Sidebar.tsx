@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "../../lib/utils";
+import { ACCOUNT_HR_LOGIN_ENABLED } from "../../lib/featureFlags";
 import { useAuth } from "../../contexts/AuthContext";
 import { useFeatureUpdateLocks } from "../../contexts/FeatureUpdateLockContext";
 import { useLanguage } from "../../contexts/LanguageContext";
@@ -49,6 +50,8 @@ interface NavItem {
   labelByRole?: Partial<Record<UserRole, string>>;
   icon: React.ComponentType<{ className?: string }>;
   roles?: UserRole[];
+  /** Admin sees these under the Others section (AccountHR tools while in development). */
+  section?: "main" | "others";
   disabled?: boolean;
   disabledReason?: string;
 }
@@ -83,7 +86,9 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       to: "/dashboard",
       label: t.dashboard,
       icon: LayoutDashboard,
-      roles: ["admin", "programme_leader", "staff", "account_hr"],
+      roles: ACCOUNT_HR_LOGIN_ENABLED
+        ? ["admin", "programme_leader", "staff", "account_hr"]
+        : ["admin", "programme_leader", "staff"],
     },
     {
       to: "/admin/programmes",
@@ -105,67 +110,79 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       to: "/academic-calendar",
       label: t.academicCalendar,
       icon: CalendarDays,
-      roles: ["programme_leader", "admin", "staff", "account_hr"],
+      roles: ACCOUNT_HR_LOGIN_ENABLED
+        ? ["programme_leader", "admin", "staff", "account_hr"]
+        : ["programme_leader", "admin", "staff"],
     },
     {
       to: "/account-hr/hourly-rates",
       label: t.ptTeacherCostsTitle,
       icon: DollarSign,
-      roles: ["account_hr", "admin"],
+      roles: ACCOUNT_HR_LOGIN_ENABLED ? ["account_hr", "admin"] : ["admin"],
+      section: "others",
     },
     {
       to: "/account-hr/promotion-expenses",
       label: t.promotionExpensesTitle,
       icon: Megaphone,
-      roles: ["account_hr", "admin"],
+      roles: ACCOUNT_HR_LOGIN_ENABLED ? ["account_hr", "admin"] : ["admin"],
+      section: "others",
     },
     {
       to: "/account-hr/ft-staff-costs",
       label: t.ftStaffCostsTitle,
       icon: UsersRound,
-      roles: ["account_hr", "admin"],
+      roles: ACCOUNT_HR_LOGIN_ENABLED ? ["account_hr", "admin"] : ["admin"],
+      section: "others",
     },
     {
       to: "/account-hr/review-fees",
       label: t.reviewFeesTitle,
       icon: ClipboardCheck,
-      roles: ["account_hr", "admin"],
+      roles: ACCOUNT_HR_LOGIN_ENABLED ? ["account_hr", "admin"] : ["admin"],
+      section: "others",
     },
     {
       to: "/account-hr/scholarship-expenses",
       label: t.scholarshipExpensesTitle,
       icon: Award,
-      roles: ["account_hr", "admin"],
+      roles: ACCOUNT_HR_LOGIN_ENABLED ? ["account_hr", "admin"] : ["admin"],
+      section: "others",
     },
     {
       to: "/account-hr/referral-scheme",
       label: t.referralSchemeTitle,
       icon: Share2,
-      roles: ["account_hr", "admin"],
+      roles: ACCOUNT_HR_LOGIN_ENABLED ? ["account_hr", "admin"] : ["admin"],
+      section: "others",
     },
     {
       to: "/account-hr/ssp-misc-costs",
       label: t.sspMiscCostsTitle,
       icon: Building2,
-      roles: ["account_hr", "admin"],
+      roles: ACCOUNT_HR_LOGIN_ENABLED ? ["account_hr", "admin"] : ["admin"],
+      section: "others",
     },
     {
       to: "/account-hr/external-review",
       label: t.externalReviewEngagementsTitle,
       icon: UserRoundSearch,
-      roles: ["account_hr", "admin"],
+      roles: ACCOUNT_HR_LOGIN_ENABLED ? ["account_hr", "admin"] : ["admin"],
+      section: "others",
     },
     {
       to: "/account-hr/tuition-summary",
       label: t.tuitionSummaryTitle,
       icon: Wallet,
-      roles: ["account_hr", "admin"],
+      roles: ACCOUNT_HR_LOGIN_ENABLED ? ["account_hr", "admin"] : ["admin"],
+      section: "others",
     },
     {
       to: "/account-hr/partner-sharing",
       label: t.partnerSharingPageTitle,
       icon: HandCoins,
-      roles: ["account_hr", "admin"],
+      roles: ACCOUNT_HR_LOGIN_ENABLED ? ["account_hr", "admin"] : ["admin"],
+      section: "others",
     },
     {
       to: "/teacher-loading",
@@ -261,45 +278,70 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
     return item.roles.includes(role);
   });
 
+  function resolveItemSection(item: NavItem): "main" | "others" {
+    if (item.section !== "others") return "main";
+    // AccountHR role keeps these as primary nav when that login is enabled.
+    if (role === "account_hr") return "main";
+    return "others";
+  }
+
+  const mainItems = visibleItems.filter(
+    (item) => resolveItemSection(item) === "main"
+  );
+  const otherItems = visibleItems.filter(
+    (item) => resolveItemSection(item) === "others"
+  );
+
+  function renderNavItem(item: NavItem) {
+    const Icon = item.icon;
+
+    if (item.disabled) {
+      return (
+        <button
+          key={item.to}
+          type="button"
+          title={item.disabledReason}
+          disabled
+          className="flex w-full cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-400"
+        >
+          <Icon className="h-4 w-4" />
+          <span>{resolveNavLabel(item, role)}</span>
+        </button>
+      );
+    }
+
+    return (
+      <NavLink
+        key={item.to}
+        to={item.to}
+        onClick={onMobileClose}
+        className={({ isActive }) =>
+          cn(
+            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
+            isActive
+              ? "bg-blue-50 text-blue-700"
+              : "text-slate-700 hover:bg-slate-100"
+          )
+        }
+      >
+        <Icon className="h-4 w-4" />
+        <span>{resolveNavLabel(item, role)}</span>
+      </NavLink>
+    );
+  }
+
   const nav = (
     <nav className="space-y-1">
-      {visibleItems.map((item) => {
-        const Icon = item.icon;
+      {mainItems.map((item) => renderNavItem(item))}
 
-        if (item.disabled) {
-          return (
-            <button
-              key={item.to}
-              type="button"
-              title={item.disabledReason}
-              disabled
-              className="flex w-full cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-400"
-            >
-              <Icon className="h-4 w-4" />
-              <span>{resolveNavLabel(item, role)}</span>
-            </button>
-          );
-        }
-
-        return (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            onClick={onMobileClose}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
-                isActive
-                  ? "bg-blue-50 text-blue-700"
-                  : "text-slate-700 hover:bg-slate-100"
-              )
-            }
-          >
-            <Icon className="h-4 w-4" />
-            <span>{resolveNavLabel(item, role)}</span>
-          </NavLink>
-        );
-      })}
+      {otherItems.length > 0 ? (
+        <div className="pt-3">
+          <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            {t.sidebarOthers}
+          </p>
+          <div className="space-y-1">{otherItems.map((item) => renderNavItem(item))}</div>
+        </div>
+      ) : null}
     </nav>
   );
 
