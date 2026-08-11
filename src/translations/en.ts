@@ -35,6 +35,12 @@ export const en = {
   guidePlDailyTimetable:
     "View and edit daily L/T sessions for your programme (status, makeup, remarks).",
   courseSearch: "Course Search",
+  courseSearchDownloadAll: "Download all modules (Excel)",
+  courseSearchDownloadAllHint:
+    "Admin only. One Excel file with one sheet per programme.",
+  courseSearchDownloadAllDone:
+    "Downloaded module catalogue: {programmes} programme(s), {modules} module(s).",
+  courseSearchDownloadAllFailed: "Failed to download module catalogue.",
   teacherLoading: "Teacher Loading",
   teacherLoadingDescription:
     "Shows non-TBC teachers' actual loading by term with HD and Degree counts. Filter uses catalogue employment (FT/PT), not per-module teaching status. Sep/Feb uses the timetable when scheduled; otherwise assignments.",

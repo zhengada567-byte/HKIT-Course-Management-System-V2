@@ -27,6 +27,7 @@ import {
   buildCourseSearchDraft,
   buildModuleCatalogBreakdown,
   deleteCourseSearchModule,
+  downloadAllCourseModulesExcel,
   saveCourseSearchModule,
   searchCourses,
   type CourseSearchModuleDraft,
@@ -94,6 +95,7 @@ export function CourseSearchPage() {
   const [savingAll, setSavingAll] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [creatingModule, setCreatingModule] = useState(false);
+  const [exportingAll, setExportingAll] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newModuleForm, setNewModuleForm] = useState<ModuleInput>(
     defaultNewModuleForm("", "")
@@ -102,7 +104,11 @@ export function CourseSearchPage() {
   const addFormRef = useRef<HTMLFormElement | null>(null);
 
   const isBusy =
-    savingAll || Boolean(savingId) || Boolean(deletingId) || creatingModule;
+    savingAll ||
+    Boolean(savingId) ||
+    Boolean(deletingId) ||
+    creatingModule ||
+    exportingAll;
 
   const canEdit = role === "programme_leader" || role === "admin";
   const updatesLocked = isFeatureUpdateBlockedForRole(
@@ -376,6 +382,30 @@ export function CourseSearchPage() {
     }
   }
 
+  async function handleDownloadAllModules() {
+    if (role !== "admin") return;
+
+    setExportingAll(true);
+    setMessage("");
+
+    try {
+      const result = await downloadAllCourseModulesExcel({ role });
+      setMessage(
+        t.courseSearchDownloadAllDone
+          .replace("{programmes}", String(result.programmeCount))
+          .replace("{modules}", String(result.moduleCount))
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : t.courseSearchDownloadAllFailed
+      );
+    } finally {
+      setExportingAll(false);
+    }
+  }
+
   return (
     <div className="page-container">
       <PageHeader
@@ -464,6 +494,18 @@ export function CourseSearchPage() {
                 onClick={() => void handleSaveAll()}
               >
                 {savingAll ? t.loading : t.saveAll}
+              </button>
+            )}
+
+            {role === "admin" && (
+              <button
+                type="button"
+                className="btn btn-secondary whitespace-nowrap"
+                disabled={isBusy || exportingAll}
+                onClick={() => void handleDownloadAllModules()}
+                title={t.courseSearchDownloadAllHint}
+              >
+                {exportingAll ? t.loading : t.courseSearchDownloadAll}
               </button>
             )}
           </div>

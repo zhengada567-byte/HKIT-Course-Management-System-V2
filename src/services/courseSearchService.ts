@@ -1,3 +1,6 @@
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+
 import { normalizeProgrammeYear } from "../lib/programmeYear";
 import { supabase } from "../lib/supabase";
 import { assertFeatureUpdatesAllowed } from "./featureLockService";
@@ -308,4 +311,107 @@ export async function deleteCourseSearchModule(
   });
 
   await deleteModule(row.module_id);
+}
+
+function excelSheetName(programmeCode: string, used: Set<string>) {
+  const raw = normalizeText(programmeCode) || "Unknown";
+  let base = raw
+    .replace(/[\\/?*[\]:]/g, "_")
+    .slice(0, 31);
+  if (!base) base = "Unknown";
+
+  let name = base;
+  let suffix = 2;
+  while (used.has(name.toUpperCase())) {
+    const tag = `_${suffix}`;
+    name = `${base.slice(0, Math.max(1, 31 - tag.length))}${tag}`;
+    suffix += 1;
+  }
+  used.add(name.toUpperCase());
+  return name;
+}
+
+function moduleRowToExportObject(row: CourseSearchRow) {
+  return {
+    "Programme Code": row.programme_code,
+    Stream: row.stream_code || "nil",
+    "Module Code": row.module_code,
+    "Module Name": row.module_name ?? "",
+    Year: row.module_year ?? "",
+    Term: row.module_term,
+    Type: row.module_type,
+    "Uses Computer": row.uses_computer,
+    "Teaching Hours": row.module_teaching_contact_hours,
+    "Tutorial Hours": row.module_tutorial_contact_hours,
+  };
+}
+
+/**
+ * Admin-only: download the full module catalogue as one Excel workbook,
+ * one sheet per programme (sorted by programme code).
+ */
+export async function downloadAllCourseModulesExcel(params?: {
+  role?: UserRole | null;
+}): Promise<{ programmeCount: number; moduleCount: number }> {
+  if (params?.role !== "admin") {
+    throw new Error("Only Admin can download all course modules.");
+  }
+
+  const rows = await searchCourses({});
+  if (rows.length === 0) {
+    throw new Error("No modules found to export.");
+  }
+
+  const byProgramme = new Map<string, CourseSearchRow[]>();
+  for (const row of rows) {
+    const code = normalizeText(row.programme_code) || "Unknown";
+    const list = byProgramme.get(code) ?? [];
+    list.push(row);
+    byProgramme.set(code, list);
+  }
+
+  const programmeCodes = Array.from(byProgramme.keys()).sort((a, b) =>
+    a.localeCompare(b)
+  );
+
+  const workbook = XLSX.utils.book_new();
+  const usedSheetNames = new Set<string>();
+
+  const indexRows = programmeCodes.map((code) => ({
+    "Programme Code": code,
+    "Module Count": byProgramme.get(code)?.length ?? 0,
+  }));
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.json_to_sheet(indexRows),
+    excelSheetName("Index", usedSheetNames)
+  );
+
+  for (const code of programmeCodes) {
+    const modules = byProgramme.get(code) ?? [];
+    const sheet = XLSX.utils.json_to_sheet(
+      modules.map((row) => moduleRowToExportObject(row))
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      sheet,
+      excelSheetName(code, usedSheetNames)
+    );
+  }
+
+  const buffer = XLSX.write(workbook, {
+    bookType: "xlsx",
+    type: "array",
+  });
+
+  const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  saveAs(
+    new Blob([buffer]),
+    `HKIT_Module_Catalogue_By_Programme_${dateStamp}.xlsx`
+  );
+
+  return {
+    programmeCount: programmeCodes.length,
+    moduleCount: rows.length,
+  };
 }

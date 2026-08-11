@@ -31,6 +31,11 @@ export const zhHant = {
   guidePlDailyTimetable:
     "檢視及編輯本課程每日 L/T 課節（狀態、補課、備註等）。",
   courseSearch: "課程搜尋",
+  courseSearchDownloadAll: "下載全部科目（Excel）",
+  courseSearchDownloadAllHint: "僅 Admin。一個 Excel，按 Programme 分工作表。",
+  courseSearchDownloadAllDone:
+    "已下載科目目錄：{programmes} 個課程、{modules} 個科目。",
+  courseSearchDownloadAllFailed: "下載科目目錄失敗。",
   teacherLoading: "教師教學量",
   teacherLoadingDescription:
     "顯示非 TBC 教師按學期的實際教學量，以及 HD／Degree 科目數目。篩選以教師名册聘用身份（FT／PT）為準，與夜課／日課（此科教學身份）無關。九月／二月已排時間表者從時間表計算，其餘從教學分配計算。",
