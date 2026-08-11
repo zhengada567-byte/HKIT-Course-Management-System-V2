@@ -393,6 +393,7 @@ export function CourseSearchPage() {
       setMessage(
         t.courseSearchDownloadAllDone
           .replace("{programmes}", String(result.programmeCount))
+          .replace("{streams}", String(result.streamGroupCount))
           .replace("{modules}", String(result.moduleCount))
       );
     } catch (error) {

@@ -313,8 +313,8 @@ export async function deleteCourseSearchModule(
   await deleteModule(row.module_id);
 }
 
-function excelSheetName(programmeCode: string, used: Set<string>) {
-  const raw = normalizeText(programmeCode) || "Unknown";
+function excelSheetName(label: string, used: Set<string>) {
+  const raw = normalizeText(label) || "Unknown";
   let base = raw
     .replace(/[\\/?*[\]:]/g, "_")
     .slice(0, 31);
@@ -346,13 +346,28 @@ function moduleRowToExportObject(row: CourseSearchRow) {
   };
 }
 
+function exportStreamLabel(streamCode: string | null | undefined) {
+  const text = normalizeText(streamCode);
+  if (!text || text.toLowerCase() === "nil") return "nil";
+  return normalizeStream(text) || "nil";
+}
+
+function programmeStreamSortKey(programmeCode: string, streamLabel: string) {
+  const streamRank = streamLabel === "nil" ? 0 : 1;
+  return `${programmeCode}\u0000${streamRank}\u0000${streamLabel}`;
+}
+
 /**
  * Admin-only: download the full module catalogue as one Excel workbook,
- * one sheet per programme (sorted by programme code).
+ * one sheet per programme + stream.
  */
 export async function downloadAllCourseModulesExcel(params?: {
   role?: UserRole | null;
-}): Promise<{ programmeCount: number; moduleCount: number }> {
+}): Promise<{
+  programmeCount: number;
+  streamGroupCount: number;
+  moduleCount: number;
+}> {
   if (params?.role !== "admin") {
     throw new Error("Only Admin can download all course modules.");
   }
@@ -362,40 +377,58 @@ export async function downloadAllCourseModulesExcel(params?: {
     throw new Error("No modules found to export.");
   }
 
-  const byProgramme = new Map<string, CourseSearchRow[]>();
+  const byProgrammeStream = new Map<string, CourseSearchRow[]>();
+  const programmes = new Set<string>();
+
   for (const row of rows) {
-    const code = normalizeText(row.programme_code) || "Unknown";
-    const list = byProgramme.get(code) ?? [];
+    const programmeCode = normalizeText(row.programme_code) || "Unknown";
+    const streamLabel = exportStreamLabel(row.stream_code);
+    programmes.add(programmeCode);
+    const key = `${programmeCode}\u0000${streamLabel}`;
+    const list = byProgrammeStream.get(key) ?? [];
     list.push(row);
-    byProgramme.set(code, list);
+    byProgrammeStream.set(key, list);
   }
 
-  const programmeCodes = Array.from(byProgramme.keys()).sort((a, b) =>
-    a.localeCompare(b)
-  );
+  const groupKeys = Array.from(byProgrammeStream.keys()).sort((a, b) => {
+    const [progA = "", streamA = ""] = a.split("\u0000");
+    const [progB = "", streamB = ""] = b.split("\u0000");
+    return programmeStreamSortKey(progA, streamA).localeCompare(
+      programmeStreamSortKey(progB, streamB)
+    );
+  });
 
   const workbook = XLSX.utils.book_new();
   const usedSheetNames = new Set<string>();
 
-  const indexRows = programmeCodes.map((code) => ({
-    "Programme Code": code,
-    "Module Count": byProgramme.get(code)?.length ?? 0,
-  }));
+  const indexRows = groupKeys.map((key) => {
+    const [programmeCode = "Unknown", streamLabel = "nil"] = key.split("\u0000");
+    return {
+      "Programme Code": programmeCode,
+      Stream: streamLabel,
+      "Module Count": byProgrammeStream.get(key)?.length ?? 0,
+    };
+  });
   XLSX.utils.book_append_sheet(
     workbook,
     XLSX.utils.json_to_sheet(indexRows),
     excelSheetName("Index", usedSheetNames)
   );
 
-  for (const code of programmeCodes) {
-    const modules = byProgramme.get(code) ?? [];
+  for (const key of groupKeys) {
+    const [programmeCode = "Unknown", streamLabel = "nil"] = key.split("\u0000");
+    const modules = byProgrammeStream.get(key) ?? [];
     const sheet = XLSX.utils.json_to_sheet(
       modules.map((row) => moduleRowToExportObject(row))
     );
+    const sheetLabel =
+      streamLabel === "nil"
+        ? programmeCode
+        : `${programmeCode}_${streamLabel}`;
     XLSX.utils.book_append_sheet(
       workbook,
       sheet,
-      excelSheetName(code, usedSheetNames)
+      excelSheetName(sheetLabel, usedSheetNames)
     );
   }
 
@@ -407,11 +440,12 @@ export async function downloadAllCourseModulesExcel(params?: {
   const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   saveAs(
     new Blob([buffer]),
-    `HKIT_Module_Catalogue_By_Programme_${dateStamp}.xlsx`
+    `HKIT_Module_Catalogue_By_Programme_Stream_${dateStamp}.xlsx`
   );
 
   return {
-    programmeCount: programmeCodes.length,
+    programmeCount: programmes.size,
+    streamGroupCount: groupKeys.length,
     moduleCount: rows.length,
   };
 }

@@ -37,9 +37,9 @@ export const en = {
   courseSearch: "Course Search",
   courseSearchDownloadAll: "Download all modules (Excel)",
   courseSearchDownloadAllHint:
-    "Admin only. One Excel file with one sheet per programme.",
+    "Admin only. One Excel file with one sheet per programme and stream.",
   courseSearchDownloadAllDone:
-    "Downloaded module catalogue: {programmes} programme(s), {modules} module(s).",
+    "Downloaded module catalogue: {programmes} programme(s), {streams} stream group(s), {modules} module(s).",
   courseSearchDownloadAllFailed: "Failed to download module catalogue.",
   teacherLoading: "Teacher Loading",
   teacherLoadingDescription:

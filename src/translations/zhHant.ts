@@ -32,9 +32,10 @@ export const zhHant = {
     "檢視及編輯本課程每日 L/T 課節（狀態、補課、備註等）。",
   courseSearch: "課程搜尋",
   courseSearchDownloadAll: "下載全部科目（Excel）",
-  courseSearchDownloadAllHint: "僅 Admin。一個 Excel，按 Programme 分工作表。",
+  courseSearchDownloadAllHint:
+    "僅 Admin。一個 Excel，按 Programme + Stream 分工作表。",
   courseSearchDownloadAllDone:
-    "已下載科目目錄：{programmes} 個課程、{modules} 個科目。",
+    "已下載科目目錄：{programmes} 個課程、{streams} 個 stream 組、{modules} 個科目。",
   courseSearchDownloadAllFailed: "下載科目目錄失敗。",
   teacherLoading: "教師教學量",
   teacherLoadingDescription:
