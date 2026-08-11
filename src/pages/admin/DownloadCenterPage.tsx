@@ -5,7 +5,7 @@ import { PageHeader } from "../../components/ui/PageHeader";
 import { useAcademicYear } from "../../contexts/AcademicYearContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
-import { downloadAdminModuleOfferingsExcel } from "../../services/adminDownloadCenterService";
+import { downloadAdminClassroomAvailabilityExcel, downloadAdminModuleOfferingsExcel } from "../../services/adminDownloadCenterService";
 import { downloadAllCourseModulesExcel } from "../../services/courseSearchService";
 import { listProgrammes } from "../../services/programmeService";
 import type { ProgrammeRow } from "../../types";
@@ -24,6 +24,7 @@ export function DownloadCenterPage() {
   const [message, setMessage] = useState("");
   const [exportingCatalogue, setExportingCatalogue] = useState(false);
   const [exportingOfferings, setExportingOfferings] = useState(false);
+  const [exportingClassrooms, setExportingClassrooms] = useState(false);
 
   useEffect(() => {
     void listProgrammes()
@@ -43,7 +44,7 @@ export function DownloadCenterPage() {
     [programmes]
   );
 
-  const busy = exportingCatalogue || exportingOfferings;
+  const busy = exportingCatalogue || exportingOfferings || exportingClassrooms;
 
   async function handleDownloadCatalogue() {
     if (role !== "admin") return;
@@ -65,6 +66,31 @@ export function DownloadCenterPage() {
       );
     } finally {
       setExportingCatalogue(false);
+    }
+  }
+
+  async function handleDownloadClassrooms() {
+    if (role !== "admin") return;
+    setExportingClassrooms(true);
+    setMessage("");
+    try {
+      const result = await downloadAdminClassroomAvailabilityExcel({
+        academicYear,
+        role,
+      });
+      setMessage(
+        t.adminDownloadClassroomsDone
+          .replace("{rooms}", String(result.roomCount))
+          .replace("{na}", String(result.notAvailableCount))
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : t.adminDownloadClassroomsFailed
+      );
+    } finally {
+      setExportingClassrooms(false);
     }
   }
 
@@ -199,6 +225,42 @@ export function DownloadCenterPage() {
                 <Download className="h-4 w-4" />
               )}
               {exportingOfferings ? t.loading : t.adminDownloadOfferingsButton}
+            </button>
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card-body space-y-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">
+                {t.adminDownloadClassroomsTitle}
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                {t.adminDownloadClassroomsHint}
+              </p>
+            </div>
+
+            <div>
+              <label className="form-label">{t.academicYear}</label>
+              <input
+                className="form-input max-w-xs bg-slate-50"
+                value={academicYear}
+                readOnly
+              />
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-primary inline-flex items-center gap-2"
+              disabled={busy}
+              onClick={() => void handleDownloadClassrooms()}
+            >
+              {exportingClassrooms ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              {exportingClassrooms ? t.loading : t.adminDownloadClassroomsButton}
             </button>
           </div>
         </section>

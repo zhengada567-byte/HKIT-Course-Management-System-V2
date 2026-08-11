@@ -10,8 +10,15 @@ import {
   normalizeStream,
   sanitizeAcademicYearForFilename,
 } from "../lib/utils";
-import type { TeachingAssignmentRow, TimetableModuleRow, UserRole } from "../types";
+import type { ModuleTerm, TeachingAssignmentRow, TimetableModuleRow, UserRole } from "../types";
 import { listAssignments } from "./assignmentService";
+import { loadEnrolledClassSizeByInstanceCode } from "./studyPlanEnrollmentService";
+import {
+  listClassroomNotAvailableForRooms,
+} from "./timetableClassroomService";
+import {
+  listTimetableClassrooms,
+} from "./timetableScheduleService";
 import {
   listTimetableModuleInstances,
   type TimetableModuleInstanceRow,
@@ -30,13 +37,7 @@ export type AdminOfferingExportRow = {
   mode: string;
   assignedTeacher: string;
   teachingStatus: string;
-  expectedClassSize: number | null;
   actualClassSize: number | null;
-  combineType: string;
-  combinedCode: string;
-  splitGroupSize: number | null;
-  instanceIndex: number | null;
-  assignmentConfirmed: boolean;
 };
 
 function normalizeText(value: unknown) {
@@ -130,13 +131,7 @@ function offeringToExcelObject(row: AdminOfferingExportRow) {
     Mode: row.mode,
     "Assigned Teacher": row.assignedTeacher,
     "Teaching Status": row.teachingStatus,
-    "Expected Class Size": row.expectedClassSize ?? "",
     "Actual Class Size": row.actualClassSize ?? "",
-    "Combine Type": row.combineType,
-    "Combined Code": row.combinedCode,
-    "Split Group Size": row.splitGroupSize ?? "",
-    "Instance Index": row.instanceIndex ?? "",
-    "Assignment Confirmed": row.assignmentConfirmed ? "Yes" : "No",
   };
 }
 
@@ -166,12 +161,31 @@ export async function buildAdminOfferingExportRows(params: {
 }): Promise<AdminOfferingExportRow[]> {
   const academicYear = normalizeAcademicYear(params.academicYear);
   const programmeFilter = normalizeText(params.programmeCode).toUpperCase();
+  const terms: ModuleTerm[] = ["Sep", "Feb", "Jun"];
 
-  const [instances, modules, assignments] = await Promise.all([
+  const [instances, modules, assignments, ...enrolledMaps] = await Promise.all([
     listTimetableModuleInstances({ academicYear }),
     listTimetableModules({ academicYear }),
     listAssignments(academicYear),
+    ...terms.map((offeredTerm) =>
+      loadEnrolledClassSizeByInstanceCode({
+        academicYear,
+        offeredTerm,
+        includeBridging: true,
+      })
+    ),
   ]);
+
+  /** Live study-plan headcount by enrolled class (same as weekly actual size). */
+  const enrolledCountByInstance = new Map<string, number>();
+  for (const map of enrolledMaps) {
+    for (const [code, count] of map) {
+      enrolledCountByInstance.set(
+        code,
+        Math.max(enrolledCountByInstance.get(code) ?? 0, count)
+      );
+    }
+  }
 
   const moduleByInstance = new Map<string, TimetableModuleRow>();
   for (const module of modules) {
@@ -198,19 +212,11 @@ export async function buildAdminOfferingExportRows(params: {
       ? assignmentByModuleId.get(module.id)
       : undefined;
 
-    const expectedSize =
-      instance.instance_expected_size != null
-        ? Number(instance.instance_expected_size)
-        : module?.expected_student_number != null
-          ? Number(module.expected_student_number)
-          : null;
-
-    const actualSize =
-      instance.instance_actual_size != null
-        ? Number(instance.instance_actual_size)
-        : module?.actual_student_number != null
-          ? Number(module.actual_student_number)
-          : null;
+    const liveCount = enrolledCountByInstance.get(instanceCode.toUpperCase());
+    const actualClassSize =
+      liveCount != null && liveCount > 0
+        ? liveCount
+        : null;
 
     rows.push({
       academicYear,
@@ -231,25 +237,7 @@ export async function buildAdminOfferingExportRows(params: {
         assignment?.teacher_name
       ),
       teachingStatus: normalizeText(assignment?.teaching_status),
-      expectedClassSize: Number.isFinite(expectedSize as number)
-        ? (expectedSize as number)
-        : null,
-      actualClassSize: Number.isFinite(actualSize as number)
-        ? (actualSize as number)
-        : null,
-      combineType: normalizeText(module?.combine_type) || "none",
-      combinedCode: normalizeText(module?.combined_code),
-      splitGroupSize:
-        instance.split_group_size != null
-          ? Number(instance.split_group_size)
-          : null,
-      instanceIndex:
-        instance.instance_index != null
-          ? Number(instance.instance_index)
-          : null,
-      assignmentConfirmed: Boolean(
-        module?.assignment_confirmed || assignment?.confirmed
-      ),
+      actualClassSize,
     });
   }
 
@@ -335,5 +323,149 @@ export async function downloadAdminModuleOfferingsExcel(params: {
   return {
     programmeCount: programmeCodes.length,
     classCount: rows.length,
+  };
+}
+
+const CLASSROOM_AVAILABILITY_PERIODS = ["AM", "PM", "EVENING"] as const;
+const CLASSROOM_AVAILABILITY_WEEKDAYS: Array<{
+  id: 1 | 2 | 3 | 4 | 5 | 6;
+  label: string;
+}> = [
+  { id: 1, label: "Mon" },
+  { id: 2, label: "Tue" },
+  { id: 3, label: "Wed" },
+  { id: 4, label: "Thu" },
+  { id: 5, label: "Fri" },
+  { id: 6, label: "Sat" },
+];
+
+/**
+ * Admin-only: classroom master list + weekly availability (Not Available grid).
+ * Same source as Make Timetable → Classroom Management.
+ */
+export async function downloadAdminClassroomAvailabilityExcel(params: {
+  academicYear: string;
+  role?: UserRole | null;
+}): Promise<{ roomCount: number; notAvailableCount: number }> {
+  if (params.role !== "admin") {
+    throw new Error("Only Admin can download classroom availability.");
+  }
+
+  const academicYear = normalizeAcademicYear(params.academicYear);
+  const classrooms = await listTimetableClassrooms();
+  const rooms = [...classrooms].sort((a, b) =>
+    a.room_code.localeCompare(b.room_code)
+  );
+
+  if (rooms.length === 0) {
+    throw new Error("No classrooms found.");
+  }
+
+  const naRows = await listClassroomNotAvailableForRooms({
+    academicYear,
+    roomCodes: rooms.map((room) => room.room_code),
+  });
+
+  const naKeySet = new Set(
+    naRows.map(
+      (row) =>
+        `${normalizeText(row.room_code).toUpperCase()}|${row.weekday}|${row.period}`
+    )
+  );
+
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.json_to_sheet(
+      rooms.map((room) => ({
+        "Room Code": room.room_code,
+        Location: room.location,
+        "Room Number": room.room_number,
+        "Room Size": room.room_size,
+        "Room Type": room.room_type,
+      }))
+    ),
+    "Rooms"
+  );
+
+  const matrixRows = rooms.map((room) => {
+    const row: Record<string, string | number> = {
+      "Room Code": room.room_code,
+      Location: room.location,
+      "Room Size": room.room_size,
+      "Room Type": room.room_type,
+    };
+
+    for (const day of CLASSROOM_AVAILABILITY_WEEKDAYS) {
+      for (const period of CLASSROOM_AVAILABILITY_PERIODS) {
+        const key = `${room.room_code.toUpperCase()}|${day.id}|${period}`;
+        row[`${day.label} ${period}`] = naKeySet.has(key)
+          ? "Not Available"
+          : "Available";
+      }
+    }
+
+    return row;
+  });
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.json_to_sheet(matrixRows),
+    "Weekly Availability"
+  );
+
+  const naList = naRows
+    .map((row) => {
+      const day =
+        CLASSROOM_AVAILABILITY_WEEKDAYS.find((item) => item.id === row.weekday)
+          ?.label ?? String(row.weekday);
+      return {
+        "Academic Year": academicYear,
+        "Room Code": row.room_code,
+        Weekday: day,
+        Period: row.period,
+        Status: "Not Available",
+      };
+    })
+    .sort((a, b) => {
+      const room = String(a["Room Code"]).localeCompare(String(b["Room Code"]));
+      if (room !== 0) return room;
+      return String(a.Weekday).localeCompare(String(b.Weekday));
+    });
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.json_to_sheet(
+      naList.length > 0
+        ? naList
+        : [
+            {
+              "Academic Year": academicYear,
+              "Room Code": "",
+              Weekday: "",
+              Period: "",
+              Status: "No Not Available slots recorded",
+            },
+          ]
+    ),
+    "Not Available List"
+  );
+
+  const buffer = XLSX.write(workbook, {
+    bookType: "xlsx",
+    type: "array",
+  });
+
+  const ay = sanitizeAcademicYearForFilename(academicYear);
+  const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  saveAs(
+    new Blob([buffer]),
+    `HKIT_Classroom_Availability_${ay}_${dateStamp}.xlsx`
+  );
+
+  return {
+    roomCount: rooms.length,
+    notAvailableCount: naRows.length,
   };
 }

@@ -67,7 +67,7 @@ export const zhHant = {
   passwordManagement: "密碼管理",
   adminDownloadCenterTitle: "下載專區",
   adminDownloadCenterDescription:
-    "僅 Admin：下載全部科目目錄（按課程／stream），以及班次開課資料（老師、Mode、班別、人數）。",
+    "僅 Admin：下載全部科目目錄（按課程／stream），以及班次開課資料（老師、Mode、班別、實際人數）。",
   adminDownloadCenterAdminOnly: "僅 Admin 可使用下載專區。",
   adminDownloadCatalogueTitle: "1. 按課程下載全部科目目錄",
   adminDownloadCatalogueHint:
@@ -78,11 +78,18 @@ export const zhHant = {
   adminDownloadCatalogueFailed: "下載科目目錄失敗。",
   adminDownloadOfferingsTitle: "2. 按學年下載班次開課資料",
   adminDownloadOfferingsHint:
-    "下載目前學年的班次：科目基本資料、任教老師、Mode、class instance、class size。可選篩選 Programme。",
+    "下載目前學年的班次：科目基本資料、任教老師、Mode、class instance，以及實際人數（來自學習計劃分班）。可選篩選 Programme。",
   adminDownloadOfferingsButton: "下載班次開課資料",
   adminDownloadOfferingsDone:
     "已下載班次開課資料：{programmes} 個課程、{classes} 個班次。",
   adminDownloadOfferingsFailed: "下載班次開課資料失敗。",
+  adminDownloadClassroomsTitle: "3. 教室可用時段",
+  adminDownloadClassroomsHint:
+    "下載教室清單，以及本學年每周可用／不可用時段（星期一至六 × AM／PM／Evening）。",
+  adminDownloadClassroomsButton: "下載教室可用時段",
+  adminDownloadClassroomsDone:
+    "已下載教室可用時段：{rooms} 間教室、{na} 個不可用時段。",
+  adminDownloadClassroomsFailed: "下載教室可用時段失敗。",
   makeTimetable: "製作時間表",
   moduleTeacherAssignment: "科目教師設定",
   moduleBasicSettings: "科目基本設定",

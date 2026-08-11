@@ -73,7 +73,7 @@ export const en = {
   passwordManagement: "Password Management",
   adminDownloadCenterTitle: "Download Center",
   adminDownloadCenterDescription:
-    "Admin-only exports: full module catalogue by programme/stream, and class offerings (teacher, mode, instance, class size).",
+    "Admin-only exports: full module catalogue by programme/stream, and class offerings (teacher, mode, instance, actual class size from study-plan assignment).",
   adminDownloadCenterAdminOnly: "Only Admin can use the download center.",
   adminDownloadCatalogueTitle: "1. Module catalogue by programme",
   adminDownloadCatalogueHint:
@@ -84,11 +84,18 @@ export const en = {
   adminDownloadCatalogueFailed: "Failed to download module catalogue.",
   adminDownloadOfferingsTitle: "2. Class offerings (by academic year)",
   adminDownloadOfferingsHint:
-    "Download class instances for the current academic year: module basics, assigned teacher, mode, class instance, and class size. Optional programme filter.",
+    "Download class instances for the current academic year: module basics, assigned teacher, mode, class instance, and actual class size (from study-plan class assignment). Optional programme filter.",
   adminDownloadOfferingsButton: "Download class offerings",
   adminDownloadOfferingsDone:
     "Downloaded class offerings: {programmes} programme(s), {classes} class(es).",
   adminDownloadOfferingsFailed: "Failed to download class offerings.",
+  adminDownloadClassroomsTitle: "3. Classroom availability",
+  adminDownloadClassroomsHint:
+    "Download classroom master list and weekly availability (Available / Not Available by weekday and AM/PM/Evening) for the current academic year.",
+  adminDownloadClassroomsButton: "Download classroom availability",
+  adminDownloadClassroomsDone:
+    "Downloaded classroom availability: {rooms} room(s), {na} Not Available slot(s).",
+  adminDownloadClassroomsFailed: "Failed to download classroom availability.",
   makeTimetable: "Make Timetable",
   moduleTeacherAssignment: "Module Teacher Assignment",
   moduleBasicSettings: "Module Basic Settings",
