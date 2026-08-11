@@ -12,6 +12,7 @@ import {
   upsertModule,
   type ModuleInput,
 } from "./moduleService";
+import { listProgrammes } from "./programmeService";
 import {
   getModuleTermOrder,
   getModuleYearOrder,
@@ -352,14 +353,31 @@ function exportStreamLabel(streamCode: string | null | undefined) {
   return normalizeStream(text) || "nil";
 }
 
-function programmeStreamSortKey(programmeCode: string, streamLabel: string) {
-  const streamRank = streamLabel === "nil" ? 0 : 1;
-  return `${programmeCode}\u0000${streamRank}\u0000${streamLabel}`;
+function sortExportModules(rows: CourseSearchRow[]) {
+  return [...rows].sort((a, b) => {
+    const yearDiff =
+      getModuleYearOrder(a.module_year) - getModuleYearOrder(b.module_year);
+    if (yearDiff !== 0) return yearDiff;
+
+    const termDiff =
+      getModuleTermOrder(a.module_term) - getModuleTermOrder(b.module_term);
+    if (termDiff !== 0) return termDiff;
+
+    const streamA = exportStreamLabel(a.stream_code);
+    const streamB = exportStreamLabel(b.stream_code);
+    const streamRankA = streamA === "nil" ? 0 : 1;
+    const streamRankB = streamB === "nil" ? 0 : 1;
+    if (streamRankA !== streamRankB) return streamRankA - streamRankB;
+    if (streamA !== streamB) return streamA.localeCompare(streamB);
+
+    return a.module_code.localeCompare(b.module_code);
+  });
 }
 
 /**
- * Admin-only: download the full module catalogue as one Excel workbook,
- * one sheet per programme + stream.
+ * Admin-only: download the full module catalogue as one Excel workbook.
+ * One sheet per programme stream. Common (nil) modules are included under
+ * every stream of that programme — same rule as Course Search filtering.
  */
 export async function downloadAllCourseModulesExcel(params?: {
   role?: UserRole | null;
@@ -372,59 +390,120 @@ export async function downloadAllCourseModulesExcel(params?: {
     throw new Error("Only Admin can download all course modules.");
   }
 
-  const rows = await searchCourses({});
+  const [programmes, rows] = await Promise.all([
+    listProgrammes(),
+    searchCourses({}),
+  ]);
+
   if (rows.length === 0) {
     throw new Error("No modules found to export.");
   }
 
-  const byProgrammeStream = new Map<string, CourseSearchRow[]>();
-  const programmes = new Set<string>();
-
+  const modulesByProgramme = new Map<string, CourseSearchRow[]>();
   for (const row of rows) {
     const programmeCode = normalizeText(row.programme_code) || "Unknown";
-    const streamLabel = exportStreamLabel(row.stream_code);
-    programmes.add(programmeCode);
-    const key = `${programmeCode}\u0000${streamLabel}`;
-    const list = byProgrammeStream.get(key) ?? [];
+    const list = modulesByProgramme.get(programmeCode) ?? [];
     list.push(row);
-    byProgrammeStream.set(key, list);
+    modulesByProgramme.set(programmeCode, list);
   }
 
-  const groupKeys = Array.from(byProgrammeStream.keys()).sort((a, b) => {
-    const [progA = "", streamA = ""] = a.split("\u0000");
-    const [progB = "", streamB = ""] = b.split("\u0000");
-    return programmeStreamSortKey(progA, streamA).localeCompare(
-      programmeStreamSortKey(progB, streamB)
-    );
-  });
+  /** Named streams per programme (nil excluded). From programmes table + module rows. */
+  const namedStreamsByProgramme = new Map<string, Set<string>>();
+
+  function addNamedStream(programmeCode: string, streamLabel: string) {
+    if (!streamLabel || streamLabel === "nil") return;
+    const set = namedStreamsByProgramme.get(programmeCode) ?? new Set<string>();
+    set.add(streamLabel);
+    namedStreamsByProgramme.set(programmeCode, set);
+  }
+
+  for (const programme of programmes) {
+    const programmeCode = normalizeText(programme.programme_code);
+    if (!programmeCode) continue;
+    addNamedStream(programmeCode, exportStreamLabel(programme.programme_stream));
+  }
+
+  for (const [programmeCode, moduleRows] of modulesByProgramme) {
+    for (const row of moduleRows) {
+      addNamedStream(programmeCode, exportStreamLabel(row.stream_code));
+    }
+  }
+
+  type SheetGroup = {
+    programmeCode: string;
+    streamLabel: string;
+    modules: CourseSearchRow[];
+  };
+
+  const sheetGroups: SheetGroup[] = [];
+
+  const programmeCodes = Array.from(
+    new Set([
+      ...modulesByProgramme.keys(),
+      ...namedStreamsByProgramme.keys(),
+    ])
+  ).sort((a, b) => a.localeCompare(b));
+
+  for (const programmeCode of programmeCodes) {
+    const moduleRows = modulesByProgramme.get(programmeCode) ?? [];
+    const namedStreams = Array.from(
+      namedStreamsByProgramme.get(programmeCode) ?? []
+    ).sort((a, b) => a.localeCompare(b));
+
+    if (namedStreams.length === 0) {
+      // No named streams: one sheet with the programme's full catalogue.
+      sheetGroups.push({
+        programmeCode,
+        streamLabel: "nil",
+        modules: sortExportModules(moduleRows),
+      });
+      continue;
+    }
+
+    for (const streamLabel of namedStreams) {
+      const completeList = moduleRows.filter((row) => {
+        const rowStream = exportStreamLabel(row.stream_code);
+        return rowStream === "nil" || rowStream === streamLabel;
+      });
+
+      sheetGroups.push({
+        programmeCode,
+        streamLabel,
+        modules: sortExportModules(completeList),
+      });
+    }
+  }
 
   const workbook = XLSX.utils.book_new();
   const usedSheetNames = new Set<string>();
 
-  const indexRows = groupKeys.map((key) => {
-    const [programmeCode = "Unknown", streamLabel = "nil"] = key.split("\u0000");
-    return {
-      "Programme Code": programmeCode,
-      Stream: streamLabel,
-      "Module Count": byProgrammeStream.get(key)?.length ?? 0,
-    };
-  });
+  const indexRows = sheetGroups.map((group) => ({
+    "Programme Code": group.programmeCode,
+    Stream: group.streamLabel,
+    "Module Count": group.modules.length,
+    "Includes Nil Modules":
+      group.streamLabel === "nil"
+        ? "N/A"
+        : group.modules.some(
+            (row) => exportStreamLabel(row.stream_code) === "nil"
+          )
+          ? "Yes"
+          : "No",
+  }));
   XLSX.utils.book_append_sheet(
     workbook,
     XLSX.utils.json_to_sheet(indexRows),
     excelSheetName("Index", usedSheetNames)
   );
 
-  for (const key of groupKeys) {
-    const [programmeCode = "Unknown", streamLabel = "nil"] = key.split("\u0000");
-    const modules = byProgrammeStream.get(key) ?? [];
+  for (const group of sheetGroups) {
     const sheet = XLSX.utils.json_to_sheet(
-      modules.map((row) => moduleRowToExportObject(row))
+      group.modules.map((row) => moduleRowToExportObject(row))
     );
     const sheetLabel =
-      streamLabel === "nil"
-        ? programmeCode
-        : `${programmeCode}_${streamLabel}`;
+      group.streamLabel === "nil"
+        ? group.programmeCode
+        : `${group.programmeCode}_${group.streamLabel}`;
     XLSX.utils.book_append_sheet(
       workbook,
       sheet,
@@ -444,8 +523,8 @@ export async function downloadAllCourseModulesExcel(params?: {
   );
 
   return {
-    programmeCount: programmes.size,
-    streamGroupCount: groupKeys.length,
+    programmeCount: programmeCodes.length,
+    streamGroupCount: sheetGroups.length,
     moduleCount: rows.length,
   };
 }

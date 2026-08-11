@@ -33,9 +33,9 @@ export const zhHant = {
   courseSearch: "課程搜尋",
   courseSearchDownloadAll: "下載全部科目（Excel）",
   courseSearchDownloadAllHint:
-    "僅 Admin。一個 Excel，按 Programme + Stream 分工作表。",
+    "僅 Admin。一個 Excel；每個 Programme Stream 工作表包含該 stream 科目，以及共用（nil）科目。",
   courseSearchDownloadAllDone:
-    "已下載科目目錄：{programmes} 個課程、{streams} 個 stream 組、{modules} 個科目。",
+    "已下載科目目錄：{programmes} 個課程、{streams} 個 stream 工作表、目錄科目 {modules} 個。",
   courseSearchDownloadAllFailed: "下載科目目錄失敗。",
   teacherLoading: "教師教學量",
   teacherLoadingDescription:
