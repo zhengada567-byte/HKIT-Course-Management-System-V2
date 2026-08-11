@@ -24,6 +24,7 @@ import { ModuleTeacherAssignmentPage } from "../pages/programme-leader/ModuleTea
 import { DailyTimetablePage } from "../pages/admin/DailyTimetablePage";
 import { StudyPlanEnrollmentPage } from "../pages/admin/StudyPlanEnrollmentPage";
 import { FeatureUpdateLocksPage } from "../pages/admin/FeatureUpdateLocksPage";
+import { DownloadCenterPage } from "../pages/admin/DownloadCenterPage";
 import { HourlyRatesPage } from "../pages/account-hr/HourlyRatesPage";
 import { PromotionExpensesPage } from "../pages/account-hr/PromotionExpensesPage";
 import { FtStaffCostsPage } from "../pages/account-hr/FtStaffCostsPage";
@@ -244,6 +245,14 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute allowedRoles={["admin"]}>
             <FeatureUpdateLocksPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "admin/download-center",
+        element: (
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <DownloadCenterPage />
           </ProtectedRoute>
         ),
       },

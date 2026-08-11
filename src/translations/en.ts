@@ -71,6 +71,24 @@ export const en = {
   teacherManagement: "Teacher Management",
   moduleManagement: "Module Management",
   passwordManagement: "Password Management",
+  adminDownloadCenterTitle: "Download Center",
+  adminDownloadCenterDescription:
+    "Admin-only exports: full module catalogue by programme/stream, and class offerings (teacher, mode, instance, class size).",
+  adminDownloadCenterAdminOnly: "Only Admin can use the download center.",
+  adminDownloadCatalogueTitle: "1. Module catalogue by programme",
+  adminDownloadCatalogueHint:
+    "Download all catalogue modules. One Excel workbook: Index + one sheet per programme stream (shared nil modules included under every stream).",
+  adminDownloadCatalogueButton: "Download module catalogue",
+  adminDownloadCatalogueDone:
+    "Downloaded catalogue: {programmes} programme(s), {streams} stream sheet(s), {modules} module(s).",
+  adminDownloadCatalogueFailed: "Failed to download module catalogue.",
+  adminDownloadOfferingsTitle: "2. Class offerings (by academic year)",
+  adminDownloadOfferingsHint:
+    "Download class instances for the current academic year: module basics, assigned teacher, mode, class instance, and class size. Optional programme filter.",
+  adminDownloadOfferingsButton: "Download class offerings",
+  adminDownloadOfferingsDone:
+    "Downloaded class offerings: {programmes} programme(s), {classes} class(es).",
+  adminDownloadOfferingsFailed: "Failed to download class offerings.",
   makeTimetable: "Make Timetable",
   moduleTeacherAssignment: "Module Teacher Assignment",
   moduleBasicSettings: "Module Basic Settings",

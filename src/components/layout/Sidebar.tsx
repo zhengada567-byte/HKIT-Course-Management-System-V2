@@ -13,6 +13,7 @@ import {
   KeyRound,
   LayoutDashboard,
   Lock,
+  Download,
   Search,
   TableProperties,
   Upload,
@@ -253,6 +254,12 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       to: "/admin/feature-update-locks",
       label: t.featureUpdateLocksTitle,
       icon: Lock,
+      roles: ["admin"],
+    },
+    {
+      to: "/admin/download-center",
+      label: t.adminDownloadCenterTitle,
+      icon: Download,
       roles: ["admin"],
     },
     {

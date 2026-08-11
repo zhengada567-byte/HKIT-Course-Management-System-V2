@@ -65,6 +65,24 @@ export const zhHant = {
   teacherManagement: "教師管理",
   moduleManagement: "科目管理",
   passwordManagement: "密碼管理",
+  adminDownloadCenterTitle: "下載專區",
+  adminDownloadCenterDescription:
+    "僅 Admin：下載全部科目目錄（按課程／stream），以及班次開課資料（老師、Mode、班別、人數）。",
+  adminDownloadCenterAdminOnly: "僅 Admin 可使用下載專區。",
+  adminDownloadCatalogueTitle: "1. 按課程下載全部科目目錄",
+  adminDownloadCatalogueHint:
+    "下載完整科目目錄。一個 Excel：Index + 每個 Programme Stream 一個工作表（nil 共用科目會納入每個 stream）。",
+  adminDownloadCatalogueButton: "下載科目目錄",
+  adminDownloadCatalogueDone:
+    "已下載科目目錄：{programmes} 個課程、{streams} 個 stream 工作表、{modules} 個科目。",
+  adminDownloadCatalogueFailed: "下載科目目錄失敗。",
+  adminDownloadOfferingsTitle: "2. 按學年下載班次開課資料",
+  adminDownloadOfferingsHint:
+    "下載目前學年的班次：科目基本資料、任教老師、Mode、class instance、class size。可選篩選 Programme。",
+  adminDownloadOfferingsButton: "下載班次開課資料",
+  adminDownloadOfferingsDone:
+    "已下載班次開課資料：{programmes} 個課程、{classes} 個班次。",
+  adminDownloadOfferingsFailed: "下載班次開課資料失敗。",
   makeTimetable: "製作時間表",
   moduleTeacherAssignment: "科目教師設定",
   moduleBasicSettings: "科目基本設定",
